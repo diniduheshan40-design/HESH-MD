@@ -1,9 +1,32 @@
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { GoogleGenAI } from '@google/genai';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const phoneNumber = process.env.PHONE_NUMBER;
+
+async function askOpenRouter(userPrompt) {
+    try {
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "meta-llama/llama-3.3-70b-instruct:free",
+                messages: [
+                    { role: "system", content: "ඔබ සුහදශීලී WhatsApp AI සහායකයෙකි. පිළිතුරු සිංහලෙන් හෝ අදාළ භාෂාවෙන් කෙටියෙන් ලබා දෙන්න." },
+                    { role: "user", content: userPrompt }
+                ]
+            })
+        });
+        const data = await res.json();
+        return data.choices?.[0]?.message?.content || "මට පිළිතුරක් ලබා ගැනීමට නොහැකි විය.";
+    } catch (e) {
+        console.error("AI Error:", e);
+        return "දෝෂයක් සිදු විය.";
+    }
+}
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('session_auth');
@@ -46,19 +69,8 @@ async function startBot() {
         const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
         if (text) {
-            try {
-                const response = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
-                    contents: text,
-                    config: {
-                        systemInstruction: 'ඔබ සුහදශීලී සහ කෙටියෙන් පිළිතුරු දෙන WhatsApp AI සහායකයෙකි.'
-                    }
-                });
-
-                await sock.sendMessage(sender, { text: response.text });
-            } catch (err) {
-                console.error('AI Error:', err);
-            }
+            const aiReply = await askOpenRouter(text);
+            await sock.sendMessage(sender, { text: aiReply });
         }
     });
 }
