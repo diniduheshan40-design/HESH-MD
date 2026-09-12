@@ -1,13 +1,14 @@
 {
-  "name": "my-whatsapp-bot",
+  "name": "whatsapp-ai-bot",
   "version": "1.0.0",
-  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.13",
-    "pino": "^9.6.0"
+    "@whiskeysockets/baileys": "^6.6.0",
+    "openai": "^4.52.0",
+    "express": "^4.19.2",
+    "pino": "^9.0.0"
   }
 }
