@@ -1,16 +1,22 @@
 const axios = require('axios');
-require('dotenv').config();
+const config = require('./config');
 
 async function askAI(prompt) {
+  const apiKey = config.OPENROUTER_KEYS[0];
+
+  if (!apiKey) {
+    return "❌ API Key එක සකසා නැත. Render Environment එකේ OPENROUTER_API_KEY සකසන්න.";
+  }
+
   try {
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'deepseek/deepseek-chat',
+        model: config.AI_MODEL,
         messages: [
           {
             role: 'system',
-            content: 'You are Heshan AI, a friendly, intelligent WhatsApp assistant. Answer concisely and naturally.'
+            content: `You are ${config.BOT_NAME}, an ultra-fast, intelligent, and friendly WhatsApp AI assistant created by Dinidu Heshan. Always answer helpfully, naturally, and concisely.`
           },
           {
             role: 'user',
@@ -20,18 +26,19 @@ async function askAI(prompt) {
       },
       {
         headers: {
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://render.com',
-          'X-Title': 'Heshan AI Bot'
-        }
+          'X-Title': config.BOT_NAME
+        },
+        timeout: 25000
       }
     );
 
     return response.data.choices[0].message.content;
   } catch (error) {
     console.error('AI Error:', error?.response?.data || error.message);
-    return 'කණගාටුයි, AI සේවාව හා සම්බන්ධ වීමේදී දෝෂයක් ඇති විය.';
+    return '⚡ AI සේවාව හා සම්බන්ධ වීමේදී සුළු දෝෂයක් ඇති විය. කරුණාකර නැවත උත්සාහ කරන්න.';
   }
 }
 
