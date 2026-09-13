@@ -1,7 +1,7 @@
 {
-  "name": "heshan-ai-bot",
-  "version": "1.0.0",
-  "description": "WhatsApp AI Bot with OpenRouter and Pair Web UI",
+  "name": "heshan-md",
+  "version": "2.0.0",
+  "description": "HESHAN-MD WhatsApp AI Bot with MongoDB & OpenRouter",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
