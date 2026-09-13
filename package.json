@@ -1,18 +1,21 @@
 {
   "name": "heshan-md",
-  "version": "2.0.0",
-  "description": "HESHAN-MD WhatsApp AI Bot with MongoDB & OpenRouter",
+  "version": "1.0.0",
+  "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.9",
-    "axios": "^1.7.9",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "mongoose": "^8.9.5",
+    "@whiskeysockets/baileys": "^6.7.24",
+    "express": "^5.2.1",
+    "mongoose": "^9.10.0",
     "node-cache": "^5.1.2",
-    "pino": "^9.6.0"
+    "openai": "^7.15.0",
+    "pino": "^10.3.1"
   }
 }
