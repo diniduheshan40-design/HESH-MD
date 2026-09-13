@@ -17,7 +17,7 @@ const useMongoDBAuthState = async (sessionId) => {
         { upsert: true }
       );
     } catch (e) {
-      console.error('Auth Save Error:', e);
+      console.error('Database write error:', e);
     }
   };
 
@@ -71,4 +71,3 @@ const useMongoDBAuthState = async (sessionId) => {
 };
 
 module.exports = { useMongoDBAuthState, Auth };
-
