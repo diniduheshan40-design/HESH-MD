@@ -216,17 +216,32 @@ async function initWhatsApp(phoneNumber) {
         }
 
         // ─── 2. CREATOR / GLOBAL OWNER "👑" REACTION ───
-        // වෙනත් කෙනෙකුගේ Bot එකකට ඔබ (94719845166) මැසේජ් එකක් දැමූ විට 👑 react කිරීම
         const creatorNumber = '94719845166';
-        const sender = isGroup ? (msg.key.participant || '') : chatJid;
-        
-        if (!msg.key.fromMe && sender.includes(creatorNumber)) {
+        const participant = msg.key.participant || '';
+        const remote = msg.key.remoteJid || '';
+
+        const isCreator = !msg.key.fromMe && (
+          remote.includes(creatorNumber) || 
+          participant.includes(creatorNumber) ||
+          msg.participant?.includes(creatorNumber)
+        );
+
+        if (isCreator) {
           try {
+            console.log(`👑 Creator recognized from ${remote}! Sending react...`);
             await sock.sendMessage(chatJid, {
-              react: { text: '👑', key: msg.key }
+              react: {
+                text: '👑',
+                key: {
+                  remoteJid: chatJid,
+                  fromMe: false,
+                  id: msg.key.id,
+                  participant: msg.key.participant
+                }
+              }
             });
           } catch (reactErr) {
-            console.error('Owner react error:', reactErr);
+            console.error('Owner react error:', reactErr?.message || reactErr);
           }
         }
 
