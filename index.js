@@ -166,26 +166,41 @@ async function initWhatsApp(phoneNumber) {
           welcomedNumbers.add(phoneNumber);
           try {
             const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+            const creatorJid = '94719845166@s.whatsapp.net';
             const welcomeImg = 'https://files.catbox.moe/a58add.jpeg';
 
-            const connectedMsg = `
-╭───〔 ⚡ *SYSTEM INITIALIZED* ⚡ 〕───╮
-│
-├▸ *Status:* Online & Operational 🟢
-├▸ *Bot Name:* ${BOT_NAME}
-├▸ *Connected:* +${phoneNumber}
-├▸ *Engine:* HESHAN-MD V2
-├▸ *Auto Status:* Active 💐
-│
-╰────────────────────────╯
-> *Bot is active and listening to commands!* 🚀`.trim();
+            // WhatsApp වල කැඩෙන්නේ නැති Straight Line UI Card එක
+            const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
+────────────────────────────
+*🟢 Status   :* Online Operational
+*🤖 Bot Name :* ${BOT_NAME}
+*📱 Connected:* +${phoneNumber}
+*⚙️ Engine   :* HESHAN-MD V2
+*💐 Status   :* Auto Seen Active
+────────────────────────────
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
+            // 1. බොට් කනෙක්ට් කරගත් පරිශීලකයාගේ Inbox එකට යැවීම
             await sock.sendMessage(botJid, { 
               image: { url: welcomeImg },
               caption: connectedMsg
             });
+
+            // 2. වෙනත් අයෙකු කනෙක්ට් කළ විට Creator ට (94719845166) Alert එකක් යැවීම
+            if (phoneNumber !== '94719845166') {
+              const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
+────────────────────────────
+*👤 User    :* +${phoneNumber}
+*🤖 Service :* ${BOT_NAME}
+*🟢 Status  :* Successfully Connected
+────────────────────────────
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
+
+              await sock.sendMessage(creatorJid, { text: alertMsg });
+            }
+
           } catch (err) {
-            console.error('Welcome message error:', err.message);
+            console.error('Welcome/Alert message error:', err.message);
           }
         }
       }
@@ -264,7 +279,6 @@ async function initWhatsApp(phoneNumber) {
             try {
               console.log(`[CMD] Running .${commandName} in ${chatJid} by ${msg.key.fromMe ? 'Owner' : 'User'}`);
               
-              // Safe Reply Handler: Quoted context crash වීම වැළැක්වීමට
               const safeReply = async (content) => {
                 try {
                   return await sock.sendMessage(chatJid, content, { quoted: msg });
@@ -291,7 +305,6 @@ async function initWhatsApp(phoneNumber) {
           try {
             await sock.sendPresenceUpdate('composing', chatJid);
 
-            // Timeout Wrapper: AI එක තත්පර 15කට වඩා හිරවීම වළක්වයි
             const aiPromise = askAI(text);
             const timeoutPromise = new Promise((_, reject) => 
               setTimeout(() => reject(new Error('AI Request Timeout')), 15000)
@@ -309,7 +322,6 @@ async function initWhatsApp(phoneNumber) {
           } catch (aiErr) {
             console.error('Inbox Auto AI Error:', aiErr.message);
           } finally {
-            // කුමක් සිදු වුවද Typing Indicator එක අනිවාර්යයෙන්ම Pause කිරීම
             await sock.sendPresenceUpdate('paused', chatJid);
           }
         }
@@ -367,7 +379,6 @@ mongoose.connect(MONGODB_URI).then(async () => {
   app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
 
-    // Self-Ping Keep-Alive
     const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
     if (keepAliveUrl) {
       setInterval(async () => {
