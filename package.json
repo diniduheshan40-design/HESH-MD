@@ -1,16 +1,11 @@
 {
   "name": "heshan-md",
   "version": "1.0.0",
-  "description": "",
+  "description": "WhatsApp Multi-Device Bot",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.24",
     "dotenv": "^16.4.5",
