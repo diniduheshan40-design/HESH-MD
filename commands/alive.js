@@ -1,7 +1,8 @@
 const os = require('os');
+const fetch = require('node-fetch');
 
 function formatUptime(seconds) {
-    seconds = Number(seconds);
+    seconds = Math.floor(Number(seconds) || 0);
     const d = Math.floor(seconds / (3600 * 24));
     const h = Math.floor((seconds % (3600 * 24)) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -11,12 +12,12 @@ function formatUptime(seconds) {
 
 module.exports = {
     name: 'alive',
-    async execute(sock, msg, args, chatJid) {
+    async execute(sock, msg, args, chatJid, safeReply) {
         const targetChat = chatJid || msg.key.remoteJid;
         const pushname = msg.pushName || 'User';
 
         try {
-            // 1. Command එක ආපු ගමන් ⚡ React කරනවා
+            // 1. Command එක ආපු ගමන් ⚡ React කිරීම
             await sock.sendMessage(targetChat, { 
                 react: { 
                     text: "⚡", 
@@ -28,7 +29,7 @@ module.exports = {
             const uptime = formatUptime(process.uptime());
             const usedRam = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1);
             const totalRam = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
-            const speed = (Date.now() - start).toFixed(3);
+            const latency = Date.now() - start;
 
             const aliveMsg = `╭───❮ ❖ 𝗛 𝗘 𝗦 𝗛 𝗔 𝗡 - 𝗠 𝗗 ❖ ❯───╮
 │  ꜱ ɪ ᴍ ᴘ ʟ ᴇ  •  ꜰ ᴀ ꜱ ᴛ  •  ᴘ ᴏ ᴡ ᴇ ʀ ꜰ ᴜ ʟ
@@ -38,7 +39,7 @@ module.exports = {
 │
 │ ╭───❮ 📊 𝗦𝗬𝗦𝗧𝗘𝗠 𝗠𝗘𝗧𝗥𝗜𝗖𝗦 ❯───
 │ ├─◈ ⏱️ *Uptime*   : ${uptime}
-│ ├─◈ ⚡ *Latency*  : ${speed} ms
+│ ├─◈ ⚡ *Latency*  : ${latency} ms
 │ ├─◈ 🧠 *RAM Load* : ${usedRam}MB / ${totalRam}GB
 │ ├─◈ 🗄️ *Platform* : Linux (Render)
 │ ╰─────────────────────────────
@@ -59,18 +60,25 @@ module.exports = {
 │  > 🔐 ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ
 ╰───────────────────────────────╯`;
 
-            // Image එකක් සමඟ Caption එකක් ලෙස යැවීම
-            await sock.sendMessage(targetChat, {
-                image: { url: 'https://files.catbox.moe/a58add.jpeg' },
-                caption: aliveMsg
-            }, { quoted: msg });
+            // Image එක Buffer එකක් විදිහට load කර යැවීම (Failures වළක්වයි)
+            try {
+                const imgRes = await fetch('https://files.catbox.moe/a58add.jpeg');
+                const imgBuffer = await imgRes.buffer();
+
+                await sock.sendMessage(targetChat, {
+                    image: imgBuffer,
+                    caption: aliveMsg
+                }, { quoted: msg });
+
+            } catch (imgErr) {
+                // Image එක fail වුවහොත් ක්ෂණිකව Text එක පමණක් යවයි
+                await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg });
+            }
 
         } catch (err) {
             console.error('Alive Command Error:', err);
-            // Image එක fail වුණොත් text එක පමණක් යැවීම
-            try {
-                await sock.sendMessage(targetChat, { text: `Error executing alive: ${err.message}` }, { quoted: msg });
-            } catch (e) {}
+            // Fatal Error එකකදී chat එකට log එක යැවීම
+            await sock.sendMessage(targetChat, { text: `❌ Alive Error: ${err.message}` }, { quoted: msg });
         }
     }
 };
