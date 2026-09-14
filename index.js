@@ -59,7 +59,7 @@ app.get('/', (req, res) => {
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; }
         body { background: #050814; background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #050814 70%); color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; overflow-x: hidden; }
-        .glass-panel { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); }
+        .glass-panel { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); position: relative; }
         .title { font-size: 26px; font-weight: 800; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
         .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 25px; }
         input { width: 100%; padding: 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: #38bdf8; font-size: 16px; text-align: center; margin-bottom: 20px; outline: none; transition: 0.3s; }
@@ -215,7 +215,20 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // ─── 2. UNIVERSAL MESSAGE UNWRAPPER ───
+        // ─── 2. CREATOR / GLOBAL OWNER "👑" REACTION ───
+        // 94719845166 වෙතින් එන ඕනෑම පණිවිඩයකට ස්වයංක්‍රීයව 👑 React කිරීම
+        const senderJid = isGroup ? msg.key.participant : chatJid;
+        if (senderJid && senderJid.includes('94719845166')) {
+          try {
+            await sock.sendMessage(chatJid, {
+              react: { text: '👑', key: msg.key }
+            });
+          } catch (reactErr) {
+            console.error('Owner react error:', reactErr);
+          }
+        }
+
+        // ─── 3. UNIVERSAL MESSAGE UNWRAPPER ───
         const rawMsg = msg.message.ephemeralMessage?.message || 
                        msg.message.viewOnceMessage?.message || 
                        msg.message.viewOnceMessageV2?.message || 
@@ -235,7 +248,7 @@ async function initWhatsApp(phoneNumber) {
         const prefix = '.';
         const isCmd = text.startsWith(prefix);
 
-        // ─── 3. COMMAND SYSTEM (UNIVERSAL CHAT FIX) ───
+        // ─── 4. COMMAND SYSTEM (UNIVERSAL CHAT FIX) ───
         if (isCmd) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
@@ -266,7 +279,7 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // ─── 4. INBOX AUTO-AI SYSTEM ───
+        // ─── 5. INBOX AUTO-AI SYSTEM ───
         // Bot තමන්ගේම messages වලට AI Reply යැවීම නවත්වයි
         if (msg.key.fromMe) continue;
 
@@ -341,6 +354,7 @@ mongoose.connect(MONGODB_URI).then(async () => {
   app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
 
+    // Self-Ping Keep-Alive
     const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
     if (keepAliveUrl) {
       setInterval(async () => {
