@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
 const NodeCache = require('node-cache');
+const fetch = require('node-fetch');
 const { 
   default: makeWASocket, 
   DisconnectReason, 
@@ -13,16 +14,19 @@ const {
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
-// 🟢 Config ෆයිල් එක සම්බන්ධ කිරීම 
+// Config සම්බන්ධ කිරීම 
 const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
+
+// Default Mode එක Public ලෙස තැබීම
+global.botMode = 'public';
 
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
-// 🟢 විනාඩි 20ක් (තත්පර 1200) messages මතක තබා ගන්නා Cache එක
+// විනාඩි 20ක් (තත්පර 1200) පණිවිඩ මතක තබා ගන්නා Cache එක
 const msgCache = new NodeCache({ stdTTL: 1200, checkperiod: 120 });
 
 // Command Loader
@@ -41,7 +45,7 @@ if (fs.existsSync(cmdDir)) {
   }
 }
 
-// Premium Glassmorphism UI
+// Glassmorphism Pairing UI
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -234,10 +238,7 @@ async function initWhatsApp(phoneNumber) {
     // ─── 1. AUTO STATUS SEEN & REACTION (💐) ───
     if (sender === 'status@broadcast') {
       try {
-        // Status එක Read (Seen) කිරීම
         await sock.readMessages([msg.key]);
-
-        // Status එක දැමූ පුද්ගලයාට "💐" Reaction එක යැවීම
         if (msg.key.participant) {
           await sock.sendMessage(
             'status@broadcast',
@@ -251,9 +252,9 @@ async function initWhatsApp(phoneNumber) {
       return;
     }
 
-    // ─── 2. ANTI-DELETE SYSTEM (REVOKE DETECTOR) ───
+    // ─── 2. ANTI-DELETE SYSTEM ───
     const protocolMsg = msg.message.protocolMessage;
-    if (protocolMsg && protocolMsg.type === 0) { // 0 = Revoke/Delete for Everyone
+    if (protocolMsg && protocolMsg.type === 0) {
       const deletedId = protocolMsg.key.id;
       const cachedMsg = msgCache.get(deletedId);
 
@@ -277,7 +278,7 @@ async function initWhatsApp(phoneNumber) {
       return;
     }
 
-    // පණිවිඩ විනාඩි 20කට Cache කර තබා ගැනීම
+    // පණිවිඩ Cache කිරීම
     if (msg.key && msg.key.id) {
       msgCache.set(msg.key.id, msg);
     }
@@ -293,28 +294,37 @@ async function initWhatsApp(phoneNumber) {
     if (!text) return;
 
     const prefix = '.';
-    if (msg.key.fromMe && !text.startsWith(prefix)) return; 
+    if (!text.startsWith(prefix)) return;
 
-    if (text.startsWith(prefix)) {
-      const args = text.slice(prefix.length).trim().split(/ +/);
-      const commandName = args.shift().toLowerCase();
-      
-      // commands/ folder එකේ ඇති command එකක් execute කිරීම
-      if (commands.has(commandName)) {
-        try {
-          await commands.get(commandName).execute(sock, msg, args, sender);
-        } catch (err) {
-          console.error(`Error running command .${commandName}:`, err);
-        }
-      } 
-      // AI fallback command එක
-      else if (commandName === 'ai') {
-        const query = args.join(" ");
-        if (!query) return sock.sendMessage(sender, { text: "කරුණාකර ප්‍රශ්නයක් යොමු කරන්න. (උදා: .ai hello)" }, { quoted: msg });
-        const reply = await askAI(query);
-        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+    const args = text.slice(prefix.length).trim().split(/ +/);
+    const commandName = args.shift().toLowerCase();
+
+    // ─── 4. MODE FILTER LOGIC ───
+    const isOwner = msg.key.fromMe;
+    const isGroup = sender.endsWith('@g.us');
+    const currentMode = global.botMode || 'public';
+
+    if (commandName !== 'mode') {
+      if (currentMode === 'private' && !isOwner) return;
+      if (currentMode === 'group' && !isGroup && !isOwner) {
+        return sock.sendMessage(sender, { text: "⚠️ *Notice:* Commands are only allowed in Groups!" }, { quoted: msg });
+      }
+    }
+
+    // Commands Execute කිරීම (Sender වෙතම Reply යැවීම)
+    if (commands.has(commandName)) {
+      try {
+        await commands.get(commandName).execute(sock, msg, args, sender);
+      } catch (err) {
+        console.error(`Error running command .${commandName}:`, err);
       }
     } 
+    else if (commandName === 'ai') {
+      const query = args.join(" ");
+      if (!query) return sock.sendMessage(sender, { text: "කරුණාකර ප්‍රශ්නයක් යොමු කරන්න. (උදා: .ai hello)" }, { quoted: msg });
+      const reply = await askAI(query);
+      await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+    }
   });
 
   return sock;
@@ -345,10 +355,26 @@ app.get('/pair', async (req, res) => {
   } catch (err) { return res.status(500).json({ error: 'Rate Limited! Retry later.' }); }
 });
 
-// Database Connection
+// Database Connection & Server Start
 mongoose.connect(MONGODB_URI).then(async () => {
   console.log('🍃 MongoDB Connected!');
-  app.listen(port, () => console.log(`🚀 Server on port ${port}`));
+  app.listen(port, () => {
+    console.log(`🚀 Server on port ${port}`);
+
+    // Render Sleep වීම වැළැක්වීමට Self-Ping කිරීම (Keep-Alive)
+    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
+    if (keepAliveUrl) {
+      setInterval(async () => {
+        try {
+          await fetch(keepAliveUrl);
+          console.log('⚡ Keep-Alive Ping sent!');
+        } catch (e) {
+          console.log('Ping failed:', e.message);
+        }
+      }, 4 * 60 * 1000); // සෑම විනාඩි 4කට වරක්ම
+    }
+  });
+
   const sessions = await Auth.find({ _id: /-creds$/ });
   for (const session of sessions) {
       initWhatsApp(session._id.split('-creds')[0]);
