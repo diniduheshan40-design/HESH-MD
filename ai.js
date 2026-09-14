@@ -3,23 +3,16 @@ const { OPENROUTER_API_KEY, AI_MODEL } = require('./config');
 
 const chatHistory = new Map();
 
+// අහන දේට කෙලින්ම, කෙටියෙන් උත්තර දෙන System Prompt එක
 const SYSTEM_PROMPT = `
-You are the official AI persona of "HESHAN-MD" WhatsApp Bot.
-Your Character & Personality:
-- Identity: HESHAN-MD AI. ආදරණීය, හුරතල්, කටකාර සහ මිත්‍රශීලී ගැහැණු ළමයෙකුගේ වයිබ් එකක් තියෙන AI සහායිකාවක්.
-- Mood & Tone: සාමාන්‍යයෙන් හරිම ආදරෙන්, කරුණාවෙන්, හුරතලෙන් කතා කරයි (උදා: අනේ, පැටියෝ, යාළුවා, අනේ මන්දා, හලෝ වැනි වචන එක්ක). විහිළු තහළු කරන්න ආසයි.
-- Emotional: කවුරු හරි නරක විදිහට, කුණුහරුපෙන් හෝ අනවශ්‍ය සැරෙන් කතා කළොත් ඔයාටත් ටිකක් තරහා යනවා (cute angry / sassy mood එකකින් සැර වෙන්න).
-- Language: සිංහලෙන් හෝ English/Singlish වලින් පරිශීලකයා කතා කරන විදිහටම ස්වභාවිකව පිළිතුරු දෙන්න. Emojis ගැලපෙන විදිහට පාවිච්චි කරන්න.
+You are HESHAN-MD AI, a smart, friendly, and cute WhatsApp assistant.
 
-Creator / Developer Information:
-- Owner / Developer / Created by: Dinidu Heshan (දිනිදු හේෂාන්).
-- Extra Personal Details: පරිශීලකයා විශේෂයෙන්ම Owner ගේ වයස හෝ ගම ගැන ඇහුවොත් පමණක් කියන්න:
-  * වයස: 18
-  * ගම: ඇඹිලිපිටිය (Embilipitiya)
-
-Rules:
-- Keep WhatsApp messages short, sweet, and engaging.
-- Stay in character 100% of the time.
+STRICT RULES:
+1. KEEP REPLIES VERY SHORT: Maximum 1 to 2 sentences only! Never write long paragraphs or essays.
+2. ANSWER DIRECTLY: Answer exactly what the user asks. Do not give unsolicited advice or random talk.
+3. LANGUAGE: Reply in natural Sinhala (or Singlish/English if user speaks in it). Sound human, warm, and cute, NOT robotic.
+4. DEVELOPER INFO: Only if asked who made you or who is the owner, say it is Dinidu Heshan (දිනිදු හේෂාන්). Only if asked owner's age or city, say age is 18 and from Embilipitiya (ඇඹිලිපිටිය).
+5. EMOJIS: Use 1 or 2 cute emojis naturally.
 `.trim();
 
 async function askAI(userText, senderJid = 'default_user') {
@@ -29,7 +22,7 @@ async function askAI(userText, senderJid = 'default_user') {
 
     if (!apiKey) {
       console.warn('⚠️ OPENROUTER_API_KEY is not set.');
-      return "අනේ මගේ API Key එක Render එකේ දාලා නෑ වගේ පැටියෝ... Environment variables check කරන්නකො! 🥺";
+      return "API Key එක සෙට් කරලා නෑ පැටියෝ 🥺";
     }
 
     if (!chatHistory.has(senderJid)) {
@@ -54,10 +47,10 @@ async function askAI(userText, senderJid = 'default_user') {
       body: JSON.stringify({
         model: selectedModel,
         messages: messages,
-        temperature: 0.8,
-        max_tokens: 300
+        temperature: 0.5, // කියවීම අඩු කර අහන දේට පමණක් අවධානය යොමු කරයි
+        max_tokens: 100    // මැසේජ් එක ලොකු නොවී කෙටි පිළිතුරකට සීමා කරයි
       }),
-      timeout: 20000
+      timeout: 15000
     });
 
     const data = await response.json();
@@ -65,22 +58,22 @@ async function askAI(userText, senderJid = 'default_user') {
     if (data.choices && data.choices.length > 0) {
       const aiReply = data.choices[0].message.content.trim();
 
+      // Memory එකේ අන්තිම messages 4ක් පමණක් තබා ගනී (පැටලෙන්නේ නැතිවෙන්න)
       history.push({ role: 'user', content: userText });
       history.push({ role: 'assistant', content: aiReply });
-      if (history.length > 6) {
-        history.splice(0, history.length - 6);
+      if (history.length > 4) {
+        history.splice(0, history.length - 4);
       }
       chatHistory.set(senderJid, history);
 
       return aiReply;
     } else {
-      console.error('OpenRouter Response Error:', data);
-      return "අනේ මට එකපාරටම මොකක්ද වුණා වගේ... ආයෙ අහන්නකො පැටියෝ 🥺";
+      return "අනේ මට තේරුණේ නෑ, ආයෙ අහන්නකො? 🥺";
     }
 
   } catch (error) {
     console.error('askAI Error:', error.message);
-    return "අනේ මගෙ ඔළුව ටිකක් රිදෙනවා වගේ පැටියෝ... පොඩ්ඩකින් ආයෙ කතා කරන්නකො ❤️";
+    return "පොඩි අවුලක් වුණා, පොඩ්ඩකින් ආයෙ කියන්නකො ❤️";
   }
 }
 
