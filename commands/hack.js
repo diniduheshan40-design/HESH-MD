@@ -7,6 +7,14 @@ module.exports = {
         const chatJid = targetChat || msg.key.remoteJid;
 
         try {
+            // 1. Command එක ගහපු ගමන් User ගේ Message එකට 💀 React කරනවා
+            await sock.sendMessage(chatJid, {
+                react: {
+                    text: "💀",
+                    key: msg.key
+                }
+            });
+
             let sentMsg = await sock.sendMessage(chatJid, { 
                 text: "💻 *[ INITIATING CYBER ATTACK ]*\n\n💉 Injecting Malware..." 
             }, { quoted: msg });
@@ -43,6 +51,15 @@ module.exports = {
                     // Edit fail වුවහොත් loop එක break නොවී දිගටම කරගෙන යාමට
                 }
             }
+
+            // 2. Edit වී අවසන් වූ පසු අන්තිම Message එකට ☠️ React කරනවා
+            await sock.sendMessage(chatJid, {
+                react: {
+                    text: "☠️",
+                    key: sentMsg.key
+                }
+            });
+
         } catch (err) {
             console.error('Hack Command Error:', err);
         }
