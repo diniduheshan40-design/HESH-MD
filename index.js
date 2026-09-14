@@ -162,6 +162,20 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
+        // ─── 🟢 AUTO FOLLOW WHATSAPP CHANNEL ───
+        try {
+          const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
+          if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
+            const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
+            if (channelMeta?.id) {
+              await sock.newsletterFollow(channelMeta.id);
+              console.log(`📢 Channel followed successfully for +${phoneNumber}`);
+            }
+          }
+        } catch (chErr) {
+          console.error('Channel Auto-Follow Error:', chErr.message);
+        }
+
         if (!welcomedNumbers.has(phoneNumber)) {
           welcomedNumbers.add(phoneNumber);
           try {
