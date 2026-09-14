@@ -19,6 +19,9 @@ const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
+// Inbox Auto AI පෙරනිමියෙන් සක්‍රියව තැබීම (Default: true)
+global.autoAiInbox = true;
+
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
@@ -56,13 +59,11 @@ app.get('/', (req, res) => {
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; }
         body { background: #050814; background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #050814 70%); color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; overflow-x: hidden; }
-        .glass-panel { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); position: relative; }
+        .glass-panel { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); }
         .title { font-size: 26px; font-weight: 800; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
         .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 25px; }
-        input { width: 100%; padding: 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: #38bdf8; font-size: 16px; text-align: center; margin-bottom: 20px; outline: none; transition: 0.3s; }
-        input:focus { border-color: #38bdf8; box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); }
-        button { width: 100%; padding: 16px; border-radius: 14px; border: none; background: linear-gradient(90deg, #38bdf8, #818cf8); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.3s; margin-bottom: 12px; }
-        button:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(56, 189, 248, 0.4); }
+        input { width: 100%; padding: 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: #38bdf8; font-size: 16px; text-align: center; margin-bottom: 20px; outline: none; }
+        button { width: 100%; padding: 16px; border-radius: 14px; border: none; background: linear-gradient(90deg, #38bdf8, #818cf8); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 12px; }
         .btn-reset { background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.3); color: #f43f5e; }
         .code-display { font-family: 'JetBrains Mono', monospace; font-size: 32px; font-weight: 800; color: #38bdf8; letter-spacing: 6px; margin-top: 25px; display: none; }
       </style>
@@ -159,7 +160,7 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // Spam වීම වැළැක්වීම සඳහා එක් වරක් පමණක් යැවීම
+        // Spam වීම වැළැක්වීම සඳහා එක් වරක් පමණක් Connecting Message යැවීම
         if (!welcomedNumbers.has(phoneNumber)) {
           welcomedNumbers.add(phoneNumber);
           try {
@@ -194,6 +195,7 @@ async function initWhatsApp(phoneNumber) {
       if (!msg || !msg.message) return;
 
       const chatJid = msg.key.remoteJid;
+      const isGroup = chatJid.endsWith('@g.us');
 
       // ─── 1. AUTO STATUS SEEN & "💐" REACTION ───
       if (chatJid === 'status@broadcast') {
@@ -210,7 +212,10 @@ async function initWhatsApp(phoneNumber) {
         return;
       }
 
-      // ─── 2. UNIVERSAL COMMAND HANDLING ───
+      // Bot විසින්ම යවන පණිවිඩ වලට Auto-Reply නොයැවීම
+      if (msg.key.fromMe) return;
+
+      // ─── 2. TEXT EXTRACTION ───
       const text = (
         msg.message.conversation ||
         msg.message.extendedTextMessage?.text ||
@@ -219,25 +224,37 @@ async function initWhatsApp(phoneNumber) {
         ''
       ).trim();
 
+      if (!text) return;
+
       const prefix = '.';
-      if (!text.startsWith(prefix)) return;
 
-      const args = text.slice(prefix.length).trim().split(/ +/);
-      const commandName = args.shift().toLowerCase();
+      // ─── 3. COMMAND SYSTEM (INBOX & GROUPS) ───
+      if (text.startsWith(prefix)) {
+        const args = text.slice(prefix.length).trim().split(/ +/);
+        const commandName = args.shift().toLowerCase();
 
-      // සියලුම Chats & Groups සඳහා කමාන්ඩ් run කිරීම
-      if (commands.has(commandName)) {
-        try {
-          await commands.get(commandName).execute(sock, msg, args, chatJid);
-        } catch (err) {
-          console.error(`Error running .${commandName}:`, err);
+        if (commands.has(commandName)) {
+          try {
+            await commands.get(commandName).execute(sock, msg, args, chatJid);
+          } catch (err) {
+            console.error(`Error running .${commandName}:`, err);
+          }
+          return;
         }
-      } 
-      else if (commandName === 'ai') {
-        const query = args.join(" ");
-        if (!query) return sock.sendMessage(chatJid, { text: "කරුණාකර ප්‍රශ්නයක් යොමු කරන්න. (උදා: .ai hello)" }, { quoted: msg });
-        const reply = await askAI(query);
-        await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
+      }
+
+      // ─── 4. INBOX ONLY AUTO-AI SYSTEM ───
+      if (!isGroup && global.autoAiInbox) {
+        try {
+          await sock.sendPresenceUpdate('composing', chatJid);
+          const aiReply = await askAI(text);
+          if (aiReply) {
+            await sock.sendMessage(chatJid, { text: aiReply }, { quoted: msg });
+          }
+          await sock.sendPresenceUpdate('paused', chatJid);
+        } catch (aiErr) {
+          console.error('Inbox Auto AI Error:', aiErr);
+        }
       }
     });
 
