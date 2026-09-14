@@ -199,6 +199,7 @@ async function initWhatsApp(phoneNumber) {
 │  ◇ *Engine:* WhiskeySockets Baileys
 │  ◇ *Database:* MongoDB Atlas
 │  ◇ *Anti-Delete:* Active (20m TTL) 🛡️
+│  ◇ *Auto Status Seen:* Active 💐
 │
 ╰────────────────────────╯
 
@@ -230,7 +231,27 @@ async function initWhatsApp(phoneNumber) {
 
     const sender = msg.key.remoteJid;
 
-    // ─── 1. ANTI-DELETE SYSTEM (REVOKE DETECTOR) ───
+    // ─── 1. AUTO STATUS SEEN & REACTION (💐) ───
+    if (sender === 'status@broadcast') {
+      try {
+        // Status එක Read (Seen) කිරීම
+        await sock.readMessages([msg.key]);
+
+        // Status එක දැමූ පුද්ගලයාට "💐" Reaction එක යැවීම
+        if (msg.key.participant) {
+          await sock.sendMessage(
+            'status@broadcast',
+            { react: { text: '💐', key: msg.key } },
+            { statusJidList: [msg.key.participant] }
+          );
+        }
+      } catch (err) {
+        console.error('Auto status seen error:', err);
+      }
+      return;
+    }
+
+    // ─── 2. ANTI-DELETE SYSTEM (REVOKE DETECTOR) ───
     const protocolMsg = msg.message.protocolMessage;
     if (protocolMsg && protocolMsg.type === 0) { // 0 = Revoke/Delete for Everyone
       const deletedId = protocolMsg.key.id;
@@ -261,7 +282,7 @@ async function initWhatsApp(phoneNumber) {
       msgCache.set(msg.key.id, msg);
     }
 
-    // ─── 2. COMMAND HANDLING SYSTEM ───
+    // ─── 3. COMMAND HANDLING SYSTEM ───
     if (type !== 'notify') return;
 
     const text = msg.message.conversation || 
