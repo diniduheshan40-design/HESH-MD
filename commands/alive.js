@@ -1,6 +1,9 @@
 module.exports = {
     name: 'alive',
-    async execute(sock, msg, args, sender) {
+    async execute(sock, msg, args, targetChat) {
+        // chatJid එක හරහා පණිවිඩය ආපු නියම චැට් එකටම reply යැවීම තහවුරු කරයි
+        const chatJid = targetChat || msg.key.remoteJid;
+
         // Uptime ගණනය කිරීම
         const uptimeSeconds = process.uptime();
         const hours = Math.floor(uptimeSeconds / 3600);
@@ -8,7 +11,7 @@ module.exports = {
         const seconds = Math.floor(uptimeSeconds % 60);
         const uptimeStr = `${hours}h ${minutes}m ${seconds}s`;
 
-        // RAM usage එක
+        // RAM Usage එක
         const ramUsage = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
 
         const captionText = `
@@ -25,15 +28,20 @@ module.exports = {
 │
 ╰─────────────────────╯
 
-> *Powered by HESH-MD Engine* 🚀
-`.trim();
+> *Powered by HESH-MD Engine* 🚀`.trim();
 
-        // ඔයා කැමති image එකක direct link එකක් මෙතනට දෙන්න
         const imageUrl = 'https://files.catbox.moe/a58add.jpeg'; 
 
-        await sock.sendMessage(sender, {
-            image: { url: imageUrl },
-            caption: captionText
-        }, { quoted: msg });
+        try {
+            // පින්තූරය සමඟ alive පණිවිඩය යැවීම
+            await sock.sendMessage(chatJid, {
+                image: { url: imageUrl },
+                caption: captionText
+            }, { quoted: msg });
+        } catch (err) {
+            console.error('Alive image send failed, falling back to text:', err);
+            // Image එක load වීමට අපොහොසත් වුවහොත් text එක පමණක් හෝ යවයි
+            await sock.sendMessage(chatJid, { text: captionText }, { quoted: msg });
+        }
     }
 };
