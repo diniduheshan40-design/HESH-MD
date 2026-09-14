@@ -19,14 +19,14 @@ const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
-// Inbox Auto AI පෙරනිමියෙන් සක්‍රියව තැබීම (Default: true)
+// Inbox Auto AI Default එක True (On) කර තැබීම
 global.autoAiInbox = true;
 
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
-// Command Loader
+// 🟢 Command Loader
 const commands = new Map();
 const cmdDir = path.join(__dirname, 'commands');
 
@@ -160,7 +160,6 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // Spam වීම වැළැක්වීම සඳහා එක් වරක් පමණක් Connecting Message යැවීම
         if (!welcomedNumbers.has(phoneNumber)) {
           welcomedNumbers.add(phoneNumber);
           try {
@@ -212,38 +211,46 @@ async function initWhatsApp(phoneNumber) {
         return;
       }
 
-      // Bot විසින්ම යවන පණිවිඩ වලට Auto-Reply නොයැවීම
-      if (msg.key.fromMe) return;
+      // ─── 2. TEXT UNWRAPPER ───
+      const rawMsg = msg.message.ephemeralMessage?.message || 
+                     msg.message.viewOnceMessage?.message || 
+                     msg.message.viewOnceMessageV2?.message || 
+                     msg.message;
 
-      // ─── 2. TEXT EXTRACTION ───
       const text = (
-        msg.message.conversation ||
-        msg.message.extendedTextMessage?.text ||
-        msg.message.imageMessage?.caption ||
-        msg.message.videoMessage?.caption ||
+        rawMsg?.conversation ||
+        rawMsg?.extendedTextMessage?.text ||
+        rawMsg?.imageMessage?.caption ||
+        rawMsg?.videoMessage?.caption ||
         ''
       ).trim();
 
       if (!text) return;
 
       const prefix = '.';
+      const isCmd = text.startsWith(prefix);
 
-      // ─── 3. COMMAND SYSTEM (INBOX & GROUPS) ───
-      if (text.startsWith(prefix)) {
+      // ─── 3. COMMAND SYSTEM (ඔයාටත් අනිත් අයටත් වැඩ කරයි) ───
+      if (isCmd) {
         const args = text.slice(prefix.length).trim().split(/ +/);
         const commandName = args.shift().toLowerCase();
 
         if (commands.has(commandName)) {
           try {
+            console.log(`Executing command .${commandName} in ${chatJid}`);
             await commands.get(commandName).execute(sock, msg, args, chatJid);
           } catch (err) {
             console.error(`Error running .${commandName}:`, err);
+            await sock.sendMessage(chatJid, { text: `❌ Error: ${err.message}` }, { quoted: msg });
           }
           return;
         }
       }
 
-      // ─── 4. INBOX ONLY AUTO-AI SYSTEM ───
+      // ─── 4. INBOX AUTO-AI SYSTEM (Bot තමන්ටම AI Reply යැවීම නවත්වයි) ───
+      if (msg.key.fromMe) return;
+
+      // Group වල නිකන් කතා කරන ඒවට AI එක පනින්නේ නැත (Inbox වල පමණක් ක්‍රියාත්මක වේ)
       if (!isGroup && global.autoAiInbox) {
         try {
           await sock.sendPresenceUpdate('composing', chatJid);
@@ -303,7 +310,7 @@ app.get('/pair', async (req, res) => {
   }
 });
 
-// MongoDB Connection & Keep-Alive Ping
+// Database Connection & Keep-Alive Ping
 mongoose.connect(MONGODB_URI).then(async () => {
   console.log('🍃 MongoDB Connected!');
   app.listen(port, () => {
