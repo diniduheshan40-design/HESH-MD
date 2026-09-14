@@ -59,7 +59,7 @@ app.get('/', (req, res) => {
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; }
         body { background: #050814; background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #050814 70%); color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; overflow-x: hidden; }
-        .glass-panel { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); position: relative; }
+        .glass-panel { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); }
         .title { font-size: 26px; font-weight: 800; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
         .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 25px; }
         input { width: 100%; padding: 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: #38bdf8; font-size: 16px; text-align: center; margin-bottom: 20px; outline: none; transition: 0.3s; }
@@ -216,9 +216,11 @@ async function initWhatsApp(phoneNumber) {
         }
 
         // ─── 2. CREATOR / GLOBAL OWNER "👑" REACTION ───
-        // 94719845166 වෙතින් එන ඕනෑම පණිවිඩයකට ස්වයංක්‍රීයව 👑 React කිරීම
-        const senderJid = isGroup ? msg.key.participant : chatJid;
-        if (senderJid && senderJid.includes('94719845166')) {
+        // වෙනත් කෙනෙකුගේ Bot එකකට ඔබ (94719845166) මැසේජ් එකක් දැමූ විට 👑 react කිරීම
+        const creatorNumber = '94719845166';
+        const sender = isGroup ? (msg.key.participant || '') : chatJid;
+        
+        if (!msg.key.fromMe && sender.includes(creatorNumber)) {
           try {
             await sock.sendMessage(chatJid, {
               react: { text: '👑', key: msg.key }
