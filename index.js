@@ -15,7 +15,6 @@ const {
 
 // 🟢 Config ෆයිල් එක සම්බන්ධ කිරීම 
 const { MONGODB_URI, BOT_NAME } = require('./config');
-
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
@@ -23,12 +22,23 @@ const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
+// 🟢 විනාඩි 20ක් (තත්පර 1200) messages මතක තබා ගන්නා Cache එක
+const msgCache = new NodeCache({ stdTTL: 1200, checkperiod: 120 });
+
 // Command Loader
 const commands = new Map();
-const cmdFiles = fs.readdirSync(path.join(__dirname, 'commands')).filter(f => f.endsWith('.js'));
-for (const file of cmdFiles) {
-  const cmd = require(`./commands/${file}`);
-  commands.set(cmd.name, cmd);
+const cmdDir = path.join(__dirname, 'commands');
+
+if (fs.existsSync(cmdDir)) {
+  const cmdFiles = fs.readdirSync(cmdDir).filter(f => f.endsWith('.js'));
+  for (const file of cmdFiles) {
+    try {
+      const cmd = require(`./commands/${file}`);
+      if (cmd.name) commands.set(cmd.name, cmd);
+    } catch (e) {
+      console.error(`Error loading command ${file}:`, e);
+    }
+  }
 }
 
 // Premium Glassmorphism UI
@@ -152,7 +162,7 @@ async function initWhatsApp(phoneNumber) {
     printQRInTerminal: false, 
     browser: ['Ubuntu', 'Chrome', '110.0.5563.148'], 
     msgRetryCounterCache,
-    syncFullHistory: false // මින් පෙර මෙහි තිබූ generateHighQualityLinkPreview දෝෂය විසඳීමට ඉවත් කරන ලදී.
+    syncFullHistory: false
   });
 
   activeSessions[phoneNumber] = sock;
@@ -173,8 +183,41 @@ async function initWhatsApp(phoneNumber) {
       
       try {
         const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-        const connectedMsg = `*🎉 𝗦𝗨𝗖𝗖𝗘𝗦𝗦𝗙𝗨𝗟𝗟𝗬 𝗖𝗢𝗡𝗡𝗘𝗖𝗧𝗘𝗗!*\n\nWelcome to *${BOT_NAME}*. Your intelligent bot system is now active and running perfectly.\n\n👤 *Number:* ${phoneNumber}\n🤖 *AI Engine:* Google Gemini\n\n> ${BOT_NAME} AI SYSTEM 🚀`;
-        await sock.sendMessage(botJid, { text: connectedMsg });
+        const welcomeImg = 'https://files.catbox.moe/a58add.jpeg';
+
+        const connectedMsg = `
+╭───〔 ⚡ *SYSTEM INITIALIZED* ⚡ 〕───╮
+│
+├▸ *Status:* Online & Operational 🟢
+├▸ *Bot Name:* ${BOT_NAME}
+├▸ *Connected Number:* +${phoneNumber}
+├▸ *Platform:* Render Cloud Host
+├▸ *Version:* v${version.join('.')}
+│
+├─╼〔 *CORE ENGINES* 〕
+│  ◇ *AI Core:* Google Gemini
+│  ◇ *Engine:* WhiskeySockets Baileys
+│  ◇ *Database:* MongoDB Atlas
+│  ◇ *Anti-Delete:* Active (20m TTL) 🛡️
+│
+╰────────────────────────╯
+
+> *${BOT_NAME} CORE SYSTEM IS READY TO SERVE!* 🚀
+`.trim();
+
+        await sock.sendMessage(botJid, { 
+          image: { url: welcomeImg },
+          caption: connectedMsg,
+          contextInfo: {
+            forwardingScore: 999,
+            isForwarded: true,
+            forwardedNewsletterMessageInfo: {
+              newsletterJid: '',
+              newsletterName: `${BOT_NAME} CORE SYSTEM`,
+              serverMessageId: 100
+            }
+          }
+        });
       } catch (err) {
         console.error('Welcome message error:', err);
       }
@@ -182,34 +225,77 @@ async function initWhatsApp(phoneNumber) {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
     const msg = messages[0];
-    
-    if (!msg.message) return; 
+    if (!msg || !msg.message) return;
 
     const sender = msg.key.remoteJid;
-    const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
+
+    // ─── 1. ANTI-DELETE SYSTEM (REVOKE DETECTOR) ───
+    const protocolMsg = msg.message.protocolMessage;
+    if (protocolMsg && protocolMsg.type === 0) { // 0 = Revoke/Delete for Everyone
+      const deletedId = protocolMsg.key.id;
+      const cachedMsg = msgCache.get(deletedId);
+
+      if (cachedMsg && cachedMsg.message) {
+        const deletedBy = msg.key.participant || sender;
+        const deletedText = cachedMsg.message.conversation || 
+                            cachedMsg.message.extendedTextMessage?.text || 
+                            cachedMsg.message.imageMessage?.caption || 
+                            cachedMsg.message.videoMessage?.caption || 
+                            "*[Media / Document / Non-text message]*";
+
+        const alertText = `⚠️ *[ ANTI-DELETE DETECTED ]* ⚠️\n\n` +
+                          `👤 *Deleted By:* @${deletedBy.split('@')[0]}\n` +
+                          `💬 *Message:*\n${deletedText}`;
+
+        await sock.sendMessage(sender, { 
+          text: alertText, 
+          mentions: [deletedBy] 
+        }, { quoted: cachedMsg });
+      }
+      return;
+    }
+
+    // පණිවිඩ විනාඩි 20කට Cache කර තබා ගැනීම
+    if (msg.key && msg.key.id) {
+      msgCache.set(msg.key.id, msg);
+    }
+
+    // ─── 2. COMMAND HANDLING SYSTEM ───
+    if (type !== 'notify') return;
+
+    const text = msg.message.conversation || 
+                 msg.message.extendedTextMessage?.text || 
+                 msg.message.imageMessage?.caption || 
+                 msg.message.videoMessage?.caption;
+                 
     if (!text) return;
 
     const prefix = '.';
-    
     if (msg.key.fromMe && !text.startsWith(prefix)) return; 
 
     if (text.startsWith(prefix)) {
       const args = text.slice(prefix.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
       
+      // commands/ folder එකේ ඇති command එකක් execute කිරීම
       if (commands.has(commandName)) {
-        await commands.get(commandName).execute(sock, msg, args, sender);
+        try {
+          await commands.get(commandName).execute(sock, msg, args, sender);
+        } catch (err) {
+          console.error(`Error running command .${commandName}:`, err);
+        }
       } 
+      // AI fallback command එක
       else if (commandName === 'ai') {
         const query = args.join(" ");
-        if(!query) return sock.sendMessage(sender, { text: "කරුණාකර ප්‍රශ්නයක් යොමු කරන්න. (උදා: .ai hello)" }, { quoted: msg });
+        if (!query) return sock.sendMessage(sender, { text: "කරුණාකර ප්‍රශ්නයක් යොමු කරන්න. (උදා: .ai hello)" }, { quoted: msg });
         const reply = await askAI(query);
         await sock.sendMessage(sender, { text: reply }, { quoted: msg });
       }
     } 
   });
+
   return sock;
 }
 
