@@ -19,7 +19,7 @@ const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
-// Inbox Auto AI Default එක True (On) කර තැබීම
+// Inbox Auto AI Default = ON
 global.autoAiInbox = true;
 
 const app = express();
@@ -46,7 +46,7 @@ if (fs.existsSync(cmdDir)) {
   }
 }
 
-// Glassmorphism Portal UI
+// Glassmorphism UI Portal
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -59,11 +59,13 @@ app.get('/', (req, res) => {
       <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; }
         body { background: #050814; background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #050814 70%); color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; overflow-x: hidden; }
-        .glass-panel { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); }
+        .glass-panel { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); position: relative; }
         .title { font-size: 26px; font-weight: 800; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
         .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 25px; }
-        input { width: 100%; padding: 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: #38bdf8; font-size: 16px; text-align: center; margin-bottom: 20px; outline: none; }
+        input { width: 100%; padding: 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: #38bdf8; font-size: 16px; text-align: center; margin-bottom: 20px; outline: none; transition: 0.3s; }
+        input:focus { border-color: #38bdf8; box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); }
         button { width: 100%; padding: 16px; border-radius: 14px; border: none; background: linear-gradient(90deg, #38bdf8, #818cf8); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 12px; }
+        button:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(56, 189, 248, 0.4); }
         .btn-reset { background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.3); color: #f43f5e; }
         .code-display { font-family: 'JetBrains Mono', monospace; font-size: 32px; font-weight: 800; color: #38bdf8; letter-spacing: 6px; margin-top: 25px; display: none; }
       </style>
@@ -160,6 +162,7 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
+        // Spam Loop Fix: එකම වතාවක් පමණක් යවයි
         if (!welcomedNumbers.has(phoneNumber)) {
           welcomedNumbers.add(phoneNumber);
           try {
@@ -193,6 +196,7 @@ async function initWhatsApp(phoneNumber) {
       const msg = messages[0];
       if (!msg || !msg.message) return;
 
+      // target chat (Inbox එකක්ද Group එකක්ද යන්න)
       const chatJid = msg.key.remoteJid;
       const isGroup = chatJid.endsWith('@g.us');
 
@@ -211,10 +215,11 @@ async function initWhatsApp(phoneNumber) {
         return;
       }
 
-      // ─── 2. TEXT UNWRAPPER ───
+      // ─── 2. UNIVERSAL MESSAGE UNWRAPPER ───
       const rawMsg = msg.message.ephemeralMessage?.message || 
                      msg.message.viewOnceMessage?.message || 
                      msg.message.viewOnceMessageV2?.message || 
+                     msg.message.documentWithCaptionMessage?.message ||
                      msg.message;
 
       const text = (
@@ -230,27 +235,29 @@ async function initWhatsApp(phoneNumber) {
       const prefix = '.';
       const isCmd = text.startsWith(prefix);
 
-      // ─── 3. COMMAND SYSTEM (ඔයාටත් අනිත් අයටත් වැඩ කරයි) ───
+      // ─── 3. COMMAND SYSTEM (ඔයා වෙන කෙනෙක්ගේ චැට් එකක ඉඳන් ගැහුවත් 100% වැඩ කරයි) ───
       if (isCmd) {
         const args = text.slice(prefix.length).trim().split(/ +/);
         const commandName = args.shift().toLowerCase();
 
         if (commands.has(commandName)) {
           try {
-            console.log(`Executing command .${commandName} in ${chatJid}`);
+            console.log(`[CMD] Running .${commandName} in ${chatJid} by ${msg.key.fromMe ? 'Owner' : 'User'}`);
+            // chatJid එක 4 වෙනි parameter එක විදිහට pass කර අදාළ chat එකටම reply ලැබීමට සලස්වයි
             await commands.get(commandName).execute(sock, msg, args, chatJid);
           } catch (err) {
-            console.error(`Error running .${commandName}:`, err);
+            console.error(`Error executing .${commandName}:`, err);
             await sock.sendMessage(chatJid, { text: `❌ Error: ${err.message}` }, { quoted: msg });
           }
           return;
         }
       }
 
-      // ─── 4. INBOX AUTO-AI SYSTEM (Bot තමන්ටම AI Reply යැවීම නවත්වයි) ───
+      // ─── 4. INBOX AUTO-AI SYSTEM ───
+      // Bot තමන්ගේම පණිවිඩ වලට AI Reply යවාගෙන loop වීම වළක්වයි
       if (msg.key.fromMe) return;
 
-      // Group වල නිකන් කතා කරන ඒවට AI එක පනින්නේ නැත (Inbox වල පමණක් ක්‍රියාත්මක වේ)
+      // Group වල නිකන් කතා කරන ඒවට AI පනින්නේ නැත (Inbox වල පමණි)
       if (!isGroup && global.autoAiInbox) {
         try {
           await sock.sendPresenceUpdate('composing', chatJid);
@@ -310,17 +317,19 @@ app.get('/pair', async (req, res) => {
   }
 });
 
-// Database Connection & Keep-Alive Ping
+// Database Connection & Server Initialization
 mongoose.connect(MONGODB_URI).then(async () => {
   console.log('🍃 MongoDB Connected!');
   app.listen(port, () => {
-    console.log(`🚀 Server on port ${port}`);
+    console.log(`🚀 Server running on port ${port}`);
 
+    // Self-Ping Keep-Alive
     const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
     if (keepAliveUrl) {
       setInterval(async () => {
         try {
           await fetch(keepAliveUrl);
+          console.log('⚡ Keep-Alive Ping sent');
         } catch (e) {}
       }, 4 * 60 * 1000);
     }
