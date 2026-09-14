@@ -12,18 +12,12 @@ function formatUptime(seconds) {
 
 module.exports = {
     name: 'alive',
-    async execute(sock, msg, args, chatJid, safeReply) {
+    async execute(sock, msg, args, chatJid) {
         const targetChat = chatJid || msg.key.remoteJid;
         const pushname = msg.pushName || 'User';
 
         try {
-            // 1. Command එක ආපු ගමන් ⚡ React කිරීම
-            await sock.sendMessage(targetChat, { 
-                react: { 
-                    text: "⚡", 
-                    key: msg.key 
-                } 
-            });
+            await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } });
 
             const start = Date.now();
             const uptime = formatUptime(process.uptime());
@@ -31,54 +25,36 @@ module.exports = {
             const totalRam = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
             const latency = Date.now() - start;
 
-            const aliveMsg = `╭───❮ ❖ 𝗛 𝗘 𝗦 𝗛 𝗔 𝗡 - 𝗠 𝗗 ❖ ❯───╮
-│  ꜱ ɪ ᴍ ᴘ ʟ ᴇ  •  ꜰ ᴀ ꜱ ᴛ  •  ᴘ ᴏ ᴡ ᴇ ʀ ꜰ ᴜ ʟ
+            const aliveMsg = `╭───❮ *HESHAN-MD CORE* ❯───╮
 │
-│  👋 *Greetings,* ${pushname}!
-│  📡 *Core Status:* [ 🟢 𝗢𝗡𝗟𝗜𝗡𝗘 ]
+├◈ 👤 *User:* ${pushname}
+├◈ 🟢 *Status:* Online
+├◈ ⏱️ *Uptime:* ${uptime}
+├◈ ⚡ *Speed:* ${latency}ms
+├◈ 🧠 *RAM:* ${usedRam}MB / ${totalRam}GB
+├◈ 👑 *Owner:* Dinidu Heshan
 │
-│ ╭───❮ 📊 𝗦𝗬𝗦𝗧𝗘𝗠 𝗠𝗘𝗧𝗥𝗜𝗖𝗦 ❯───
-│ ├─◈ ⏱️ *Uptime*   : ${uptime}
-│ ├─◈ ⚡ *Latency*  : ${latency} ms
-│ ├─◈ 🧠 *RAM Load* : ${usedRam}MB / ${totalRam}GB
-│ ├─◈ 🗄️ *Platform* : Linux (Render)
-│ ╰─────────────────────────────
-│
-│ ╭───❮ 🤖 𝗕𝗢𝗧 𝗢𝗩𝗘𝗥𝗩𝗜𝗘𝗪 ❯─────
-│ ├─◈ 👑 *Dev*      : Dinidu Heshan
-│ ├─◈ 🏷️ *Version*  : v1.0.0
-│ ├─◈ 🛡️ *Prefix*   : [ . ]
-│ ├─◈ 🌐 *Mode*     : Public
-│ ╰─────────────────────────────
-│
-│ ╭───❮ ⚡ 𝗤𝗨𝗜𝗖𝗞 𝗔𝗖𝗧𝗜𝗢𝗡𝗦 ❯────
-│ │  ▸ *.menu*  — View Command Center
-│ │  ▸ *.ping*  — Test Connection Speed
-│ │  ▸ *.owner* — Contact Developer
-│ ╰─────────────────────────────
-│
-│  > 🔐 ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ
-╰───────────────────────────────╯`;
+╰──────────────────────────╯
 
-            // Image එක Buffer එකක් විදිහට load කර යැවීම (Failures වළක්වයි)
+╭───❮ *QUICK ACTIONS* ❯───╮
+│
+├◈ \`.menu\` — All Commands
+├◈ \`.ping\` — Speed Test
+├◈ \`.song\` — Audio Downloader
+│
+╰──────────────────────────╯
+> 🔐 *heshan ofc • all rights reserved*`;
+
             try {
                 const imgRes = await fetch('https://files.catbox.moe/a58add.jpeg');
                 const imgBuffer = await imgRes.buffer();
-
-                await sock.sendMessage(targetChat, {
-                    image: imgBuffer,
-                    caption: aliveMsg
-                }, { quoted: msg });
-
-            } catch (imgErr) {
-                // Image එක fail වුවහොත් ක්ෂණිකව Text එක පමණක් යවයි
+                await sock.sendMessage(targetChat, { image: imgBuffer, caption: aliveMsg }, { quoted: msg });
+            } catch (e) {
                 await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg });
             }
 
         } catch (err) {
-            console.error('Alive Command Error:', err);
-            // Fatal Error එකකදී chat එකට log එක යැවීම
-            await sock.sendMessage(targetChat, { text: `❌ Alive Error: ${err.message}` }, { quoted: msg });
+            console.error('Alive Error:', err);
         }
     }
 };
