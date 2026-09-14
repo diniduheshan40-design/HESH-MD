@@ -26,7 +26,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
-// 🟢 Command Loader (ES Modules & CommonJS Support)
+// 🟢 Command Loader
 const commands = new Map();
 const cmdDir = path.join(__dirname, 'commands');
 
@@ -162,7 +162,6 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // Loop / Spam Prevention
         if (!welcomedNumbers.has(phoneNumber)) {
           welcomedNumbers.add(phoneNumber);
           try {
@@ -193,7 +192,6 @@ async function initWhatsApp(phoneNumber) {
     });
 
     sock.ev.on('messages.upsert', async ({ messages }) => {
-      // Array එකේ ඇති සියලුම Messages එකින් එක පරීක්ෂා කිරීම (Dropping fix)
       for (const msg of messages) {
         if (!msg || !msg.message) continue;
 
@@ -217,31 +215,23 @@ async function initWhatsApp(phoneNumber) {
 
         // ─── 2. CREATOR / GLOBAL OWNER "👑" REACTION ───
         const creatorNumber = '94719845166';
-        const participant = msg.key.participant || '';
-        const remote = msg.key.remoteJid || '';
+        const sender = isGroup ? (msg.key.participant || '') : chatJid;
 
-        const isCreator = !msg.key.fromMe && (
-          remote.includes(creatorNumber) || 
-          participant.includes(creatorNumber) ||
-          msg.participant?.includes(creatorNumber)
-        );
-
-        if (isCreator) {
+        if (!msg.key.fromMe && sender.includes(creatorNumber)) {
           try {
-            console.log(`👑 Creator recognized from ${remote}! Sending react...`);
             await sock.sendMessage(chatJid, {
               react: {
                 text: '👑',
                 key: {
                   remoteJid: chatJid,
-                  fromMe: false,
+                  fromMe: msg.key.fromMe,
                   id: msg.key.id,
                   participant: msg.key.participant
                 }
               }
             });
           } catch (reactErr) {
-            console.error('Owner react error:', reactErr?.message || reactErr);
+            console.error('Owner react error:', reactErr);
           }
         }
 
@@ -265,26 +255,24 @@ async function initWhatsApp(phoneNumber) {
         const prefix = '.';
         const isCmd = text.startsWith(prefix);
 
-        // ─── 4. COMMAND SYSTEM (UNIVERSAL CHAT FIX) ───
+        // ─── 4. COMMAND SYSTEM (UNIVERSAL CHAT & GROUP FIX) ───
         if (isCmd) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
           if (commands.has(commandName)) {
             try {
-              console.log(`[CMD] Running .${commandName} in ${chatJid} (Sent by: ${msg.key.fromMe ? 'Owner' : 'User'})`);
+              console.log(`[CMD] Running .${commandName} in ${chatJid} by ${msg.key.fromMe ? 'Owner' : 'User'}`);
               
-              // Safe Reply Helper: Quoted message crash වීම වැළැක්වීමට
+              // Safe Reply Handler: Quoted context crash වීම වැළැක්වීමට
               const safeReply = async (content) => {
                 try {
                   return await sock.sendMessage(chatJid, content, { quoted: msg });
                 } catch (e) {
-                  // Direct 1-on-1 chats වල quote fail වුවහොත් direct send කරයි
                   return await sock.sendMessage(chatJid, content);
                 }
               };
 
-              // Command එක execute කිරීම
               await commands.get(commandName).execute(sock, msg, args, chatJid, safeReply);
             } catch (err) {
               console.error(`Error executing .${commandName}:`, err);
@@ -296,25 +284,33 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // ─── 5. INBOX AUTO-AI SYSTEM ───
-        // Bot තමන්ගේම messages වලට AI Reply යැවීම නවත්වයි
+        // ─── 5. INBOX AUTO-AI SYSTEM (TYPING & TIMEOUT FIX) ───
         if (msg.key.fromMe) continue;
 
-        // Group වලට නොගොස් අනිත් අය Inbox එකට එවන මැසේජ් වලට පමණක් AI පිළිතුරු දෙයි
         if (!isGroup && global.autoAiInbox) {
           try {
             await sock.sendPresenceUpdate('composing', chatJid);
-            const aiReply = await askAI(text);
+
+            // Timeout Wrapper: AI එක තත්පර 15කට වඩා හිරවීම වළක්වයි
+            const aiPromise = askAI(text);
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('AI Request Timeout')), 15000)
+            );
+
+            const aiReply = await Promise.race([aiPromise, timeoutPromise]);
+
             if (aiReply) {
               try {
                 await sock.sendMessage(chatJid, { text: aiReply }, { quoted: msg });
-              } catch(e) {
+              } catch (quoteErr) {
                 await sock.sendMessage(chatJid, { text: aiReply });
               }
             }
-            await sock.sendPresenceUpdate('paused', chatJid);
           } catch (aiErr) {
-            console.error('Inbox Auto AI Error:', aiErr);
+            console.error('Inbox Auto AI Error:', aiErr.message);
+          } finally {
+            // කුමක් සිදු වුවද Typing Indicator එක අනිවාර්යයෙන්ම Pause කිරීම
+            await sock.sendPresenceUpdate('paused', chatJid);
           }
         }
       }
