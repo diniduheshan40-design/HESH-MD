@@ -4,10 +4,11 @@ module.exports = {
   // Database URL
   MONGODB_URI: process.env.MONGODB_URI || "mongodb+srv://kethmi12345_db_user:nipun1234@cluster0.3fhoect.mongodb.net/?retryWrites=true&w=majority",
   
-  // AI API Keys
-  OPENROUTER_KEYS: [process.env.OPENROUTER_API_KEY],
+  // AI API Key (Single string එකක් විදිහට සහ array එකක් විදිහට දෙකටම support)
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || "",
+  OPENROUTER_KEYS: [process.env.OPENROUTER_API_KEY || ""],
   
-  // Default AI Model
+  // Default AI Model (Render එකෙන් කැමති model එකක් මාරු කරන්නත් පුළුවන්)
   AI_MODEL: process.env.AI_MODEL || "deepseek/deepseek-chat",
 
   // Bot Metadata
