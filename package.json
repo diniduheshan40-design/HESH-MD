@@ -15,8 +15,10 @@
     "@whiskeysockets/baileys": "^6.7.24",
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
+    "gifted-dls": "^1.1.8",
     "mongoose": "^9.10.0",
     "node-cache": "^5.1.2",
+    "node-fetch": "^2.7.0",
     "openai": "^7.15.0",
     "pino": "^10.3.1"
   }
