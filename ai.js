@@ -1,5 +1,5 @@
 const fetch = require('node-fetch');
-const { OPENROUTER_API_KEY } = require('./config');
+const { OPENROUTER_API_KEY, AI_MODEL } = require('./config');
 
 const chatHistory = new Map();
 
@@ -25,6 +25,8 @@ Rules:
 async function askAI(userText, senderJid = 'default_user') {
   try {
     const apiKey = process.env.OPENROUTER_API_KEY || OPENROUTER_API_KEY;
+    const selectedModel = process.env.AI_MODEL || AI_MODEL || 'deepseek/deepseek-chat';
+
     if (!apiKey) {
       console.warn('⚠️ OPENROUTER_API_KEY is not set.');
       return "අනේ මගේ API Key එක Render එකේ දාලා නෑ වගේ පැටියෝ... Environment variables check කරන්නකො! 🥺";
@@ -50,7 +52,7 @@ async function askAI(userText, senderJid = 'default_user') {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-3.1-8b-instruct:free',
+        model: selectedModel,
         messages: messages,
         temperature: 0.8,
         max_tokens: 300
