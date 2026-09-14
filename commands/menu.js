@@ -1,41 +1,40 @@
 module.exports = {
     name: 'menu',
-    async execute(sock, msg, args, sender) {
-        // Logo එකේ Direct Link එක (ඔයා කැමති එකකට මෙතනින් මාරු කරන්න)
+    async execute(sock, msg, args, chatJid) {
+        // Logo Direct URL
         const logoUrl = 'https://files.catbox.moe/a58add.jpeg';
 
-        // මෙනූ එකේ text එක
+        // මෙනූ Text එක (Formatting errors නිවැරදි කර ඇත)
         const menuText = `*🤖 HESHAN-MD BOT IS ONLINE*
 _________________________________________
 
-*╭─❭ 📥DOWNLOAD-CMD📥 ❭* 
+*╭─❭ 📥 DOWNLOAD-CMD 📥 ❭* 
 *├◈ .ғʙ*
 *├◈ .ᴠɪᴅᴇᴏ*
 *├◈ .sᴏɴɢ*
 *├◈ .ᴛɪᴋᴛᴏᴋ*
 *╰──────────────────❭*
+
 *╭──❭ 🔎 SEARCH-CMD 🔍 ❭* 
 *├◈ .ꜱʀᴇᴘᴏ*
 *├◈ .ɴᴘᴍ*
 *├◈ .ɪᴍɢɢ*
 *╰──────────────────❭*
+
 *╭──❭ 👨‍💻 USER-CMD 👨‍💻 ❭* 
 *├◈ .ᴏᴡɴᴇʀ*
 *├◈ .ᴘɪɴɢ*
 *├◈ .ꜱʏꜱᴛᴇᴍ*
 *├◈ .ᴀʟɪᴠᴇ*
-*├◈ .*ʀᴇᴘᴏʀᴛ*
+*├◈ .ʀᴇᴘᴏʀᴛ*
 *├◈ .ʙᴏᴏᴍ*
-*├◈ .ᴏᴡɴᴇʀ*
-*├◈ .ᴀʟɪᴠᴇ*
 *╰──────────────────❭*
+
 *╭──❭ 🔔 ADMIN CMD 🔔 ❭* 
 *├◈ .ᴍᴏᴅᴇ*
 *├◈ .ꜱᴛᴀᴛᴜꜱ*
 *├◈ .ꜱᴀᴠᴇ*
 *├◈ .ʙʟᴏᴄᴋ*
-*├◈ .*ʀᴇᴘᴏʀᴛ*
-*├◈ .ʙᴏᴏᴍ*
 *├◈ .ʀᴇꜱᴛᴀʀᴛ*
 *├◈ .ᴀɴᴛɪᴄᴀʟʟ*
 *├◈ .ꜱᴇᴍᴅ-ꜱᴛ*
@@ -43,21 +42,20 @@ _________________________________________
 
 *⫷⫷⫷ \`HESHAN MD BEST BOT\` ⫸⫸⫸*`;
 
-        // Newsletter / Channel forwarding style එකත් එක්ක Photo එක යැවීම
-        await sock.sendMessage(sender, {
-            image: { url: logoUrl },
-            caption: menuText,
-            contextInfo: {
-                quotedMessage: msg.message,
-                forwardingScore: 999,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: '',
-                    newsletterName: 'HESHAN MD FORWARD',
-                    serverMessageId: 143
+        try {
+            // chatJid වෙත කෙලින්ම යැවීම (වෙන අයගේ chat වලදීත් 100% වැඩ කරයි)
+            await sock.sendMessage(chatJid, {
+                image: { url: logoUrl },
+                caption: menuText,
+                contextInfo: {
+                    forwardingScore: 999,
+                    isForwarded: true
                 }
-            }
-        }, { quoted: msg });
+            }, { quoted: msg });
+        } catch (err) {
+            console.error('Error in menu command:', err);
+            // Image එක load වුණේ නැතහොත් Text එක පමණක් හෝ යවයි
+            await sock.sendMessage(chatJid, { text: menuText }, { quoted: msg });
+        }
     }
 };
-
