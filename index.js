@@ -26,7 +26,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
-// 🟢 Command Loader
+// 🟢 Universal Command Loader (Auto Filename + Object Support)
 const commands = new Map();
 const cmdDir = path.join(__dirname, 'commands');
 
@@ -36,12 +36,18 @@ if (fs.existsSync(cmdDir)) {
     try {
       let cmd = require(`./commands/${file}`);
       if (cmd.default) cmd = cmd.default;
+
+      const fileNameCmd = file.replace('.js', '').toLowerCase();
+      
+      // File එකේ නමෙනුයි, ඇතුලේ name තිබ්බොත් ඒ නමිනුයි දෙකෙන්ම save කරනවා
       if (cmd && cmd.name) {
         commands.set(cmd.name.toLowerCase(), cmd);
-        console.log(` Loaded command: .${cmd.name}`);
       }
+      commands.set(fileNameCmd, cmd);
+
+      console.log(`✅ Loaded command: .${fileNameCmd} (from ${file})`);
     } catch (e) {
-      console.error(` Error loading ${file}:`, e.message);
+      console.error(`❌ Error loading ${file}:`, e.message);
     }
   }
 }
@@ -320,7 +326,6 @@ async function initWhatsApp(phoneNumber) {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
 
-        // 401: Unauthorized, 403: Forbidden, LoggedOut -> Don't reconnect, otherwise reconnect
         if (statusCode !== DisconnectReason.loggedOut && statusCode !== 401 && statusCode !== 403) {
           const delayTime = statusCode === DisconnectReason.restartRequired ? 1500 : 5000;
           setTimeout(() => initWhatsApp(phoneNumber), delayTime);
@@ -453,7 +458,7 @@ async function initWhatsApp(phoneNumber) {
         const prefix = '.';
         const isCmd = text.startsWith(prefix);
 
-        // ─── 4. COMMAND SYSTEM (UNIVERSAL CHAT & GROUP FIX) ───
+        // ─── 4. COMMAND SYSTEM (UNIVERSAL CHAT, GROUP & ARGS COMPATIBILITY) ───
         if (isCmd) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
@@ -470,7 +475,32 @@ async function initWhatsApp(phoneNumber) {
                 }
               };
 
-              await commands.get(commandName).execute(sock, msg, args, chatJid, safeReply);
+              const targetCmd = commands.get(commandName);
+              const cmdFunc = typeof targetCmd === 'function' ? targetCmd : (targetCmd.execute || targetCmd.run || targetCmd.start);
+
+              if (typeof cmdFunc === 'function') {
+                // පරණ සහ අලුත් හැම command එකකටම අවශ්‍ය properties
+                const context = {
+                  sock,
+                  conn: sock,
+                  client: sock,
+                  msg,
+                  m: msg,
+                  args,
+                  text: args.join(' '),
+                  q: args.join(' '),
+                  chatJid,
+                  senderJid: chatJid,
+                  from: chatJid,
+                  sender: msg.key.participant || chatJid,
+                  reply: safeReply,
+                  safeReply,
+                  BOT_NAME
+                };
+
+                // Single Object එකක් ගත්තත්, positional parameters ගත්තත් දෙකටම auto-pass වෙනවා
+                await cmdFunc(context, sock, msg, args, chatJid, safeReply);
+              }
             } catch (err) {
               console.error(`Error executing .${commandName}:`, err);
               try {
@@ -580,4 +610,3 @@ mongoose.connect(MONGODB_URI).then(async () => {
     await delay(4000);
   }
 }).catch(err => console.error('MongoDB Connection Error:', err));
-
