@@ -11,7 +11,6 @@ module.exports = {
             ? chatJid 
             : msg.key.remoteJid;
 
-        // Query එක ලබා ගැනීම
         const textQuery = args.join(' ').trim();
 
         if (!textQuery) {
@@ -20,21 +19,21 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        // Loading React එක දැමීම
+        // Processing Reaction
         await sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
         try {
             const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
             const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp4?url=${encodeURIComponent(textQuery)}&quality=1080p&api_key=${apiKey}`;
 
-            // API request එක ලබා ගැනීම
+            // API Details ලබා ගැනීම
             const response = await axios.get(apiUrl, { timeout: 60000 });
             const resData = response.data;
 
             if (!resData || !resData.status || !resData.data) {
                 await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
                 return await sock.sendMessage(targetChat, { 
-                    text: '❌ වීඩියෝව ලබා ගැනීමට නොහැකි විය. කරුණාකර Link එක පරීක්ෂා කරන්න.' 
+                    text: '❌ වීඩියෝව ලබා ගැනීමට නොහැකි විය. Link එක නැවත පරීක්ෂා කරන්න.' 
                 }, { quoted: msg });
             }
 
@@ -44,33 +43,42 @@ module.exports = {
             if (!videoDownloadUrl) {
                 await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
                 return await sock.sendMessage(targetChat, { 
-                    text: '❌ Download URL එකක් සොයා ගැනීමට නොහැකි විය.' 
+                    text: '❌ Download link එකක් හමු නොවීය.' 
                 }, { quoted: msg });
             }
+
+            // Downloading Reaction
+            await sock.sendMessage(targetChat, { react: { text: "📥", key: msg.key } }).catch(() => {});
+
+            // 0 KB ගැටලුව විසඳීමට වීඩියෝව Buffer එකක් ලෙස Download කර ගැනීම
+            const videoBuffer = await axios.get(videoDownloadUrl, {
+                responseType: 'arraybuffer',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': '*/*'
+                },
+                timeout: 120000
+            });
 
             const captionText = `🎬 *${title || 'YouTube Media'}*\n` +
                                 `⚙️ *Quality:* ${quality || '1080p'}\n` +
                                 `📥 *Engine:* HESHAN-MD Downloader\n\n` +
                                 `> 🔐 *heshan ofc • all rights reserved*`;
 
-            // Download reaction
-            await sock.sendMessage(targetChat, { react: { text: "📥", key: msg.key } }).catch(() => {});
-
-            // Video එක එවයි
+            // Video එක Buffer එකෙන් යැවීම
             await sock.sendMessage(targetChat, {
-                video: { url: videoDownloadUrl },
+                video: Buffer.from(videoBuffer.data),
                 mimetype: 'video/mp4',
                 caption: captionText
             }, { quoted: msg });
 
-            // සාර්ථක වූ පසු Success reaction එක
             await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
         } catch (error) {
             console.error('Video Execution Error:', error);
             await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
             await sock.sendMessage(targetChat, { 
-                text: `❌ දෝෂයක් සිදු විය: ${error.message || 'API Error'}` 
+                text: `❌ වීඩියෝව එවීමේදී දෝෂයක් සිදු විය: ${error.message || 'Error downloading video buffer'}` 
             }, { quoted: msg });
         }
     }
