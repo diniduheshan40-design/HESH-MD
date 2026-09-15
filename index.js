@@ -215,7 +215,6 @@ async function initWhatsApp(phoneNumber) {
         // ─── 🟢 INITIALIZATION CARD & ALERT ───
         setTimeout(async () => {
           try {
-            // Safe JID extraction
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
             const botJid = `${botNum}@s.whatsapp.net`;
             const creatorJid = '94719845166@s.whatsapp.net';
@@ -231,7 +230,7 @@ async function initWhatsApp(phoneNumber) {
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-            // 1. User Inbox Card (Buffer එකක් හරහා ආරක්ෂිතව යැවීම)
+            // 1. User Inbox Card
             try {
               const resImg = await fetch(welcomeImg);
               const imgBuffer = await resImg.buffer();
@@ -265,7 +264,7 @@ async function initWhatsApp(phoneNumber) {
           } catch (msgErr) {
             console.error('Initialization message error:', msgErr.message);
           }
-        }, 4000); // Handshake complete වෙන්න 4s delay එකක්
+        }, 4000);
       }
     });
 
@@ -274,6 +273,9 @@ async function initWhatsApp(phoneNumber) {
 
       for (const msg of messages) {
         if (!msg || !msg.message) continue;
+
+        // Skip reaction messages (avoid infinite loop and reaction drops)
+        if (msg.message.reactionMessage) continue;
 
         const chatJid = msg.key.remoteJid;
         if (!chatJid) continue;
@@ -294,24 +296,38 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 2. CREATOR / OWNER "👨‍💻" REACTION
-        const creatorNumber = '94719845166';
-        const sender = isGroup ? (msg.key.participant || '') : chatJid;
+        // 🟢 SENDER RESOLVER (Group / Inbox / fromMe / Multi-Device / Mention Context)
+        let senderJid = '';
+        if (msg.key.fromMe) {
+          senderJid = sock.user?.id || '';
+        } else if (isGroup) {
+          senderJid = msg.key.participant || msg.participant || '';
+        } else {
+          senderJid = chatJid;
+        }
 
-        if (sender.includes(creatorNumber)) {
+        const senderNumber = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const creatorNumber = '94719845166';
+
+        // 2. CREATOR / OWNER "👨‍💻" REACTION (100% Fixed Key Binding)
+        if (senderNumber === creatorNumber) {
           try {
+            const reactionKey = {
+              remoteJid: chatJid,
+              fromMe: Boolean(msg.key.fromMe),
+              id: msg.key.id,
+              participant: isGroup ? (msg.key.participant || msg.participant) : undefined
+            };
+
             await sock.sendMessage(chatJid, {
               react: {
                 text: '👨‍💻',
-                key: {
-                  remoteJid: chatJid,
-                  fromMe: msg.key.fromMe,
-                  id: msg.key.id,
-                  participant: msg.key.participant
-                }
+                key: reactionKey
               }
             });
-          } catch (e) {}
+          } catch (reactErr) {
+            console.error('Owner Reaction Trigger Error:', reactErr.message);
+          }
         }
 
         // 3. UNWRAP MESSAGE TEXT
@@ -343,7 +359,6 @@ async function initWhatsApp(phoneNumber) {
 
           if (commands.has(commandName)) {
             try {
-              // 🟢 Images / Audios / Text සියල්ලම Drop නොවී යැවෙන Safe Reply Function එක
               const safeReply = async (content) => {
                 const replyPayload = typeof content === 'string' ? { text: content } : content;
                 try {
@@ -368,7 +383,7 @@ async function initWhatsApp(phoneNumber) {
 
         // 5. INBOX AUTO-AI SYSTEM (Self-trigger Loop Protected)
         const botNumber = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : '';
-        const isFromBot = msg.key.fromMe || (botNumber && sender.includes(botNumber));
+        const isFromBot = msg.key.fromMe || (botNumber && senderJid.includes(botNumber));
 
         if (!isFromBot && !isGroup && global.autoAiInbox) {
           try {
