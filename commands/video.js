@@ -1,64 +1,67 @@
+const { cmd } = require('../command');
 const axios = require('axios');
 
-// Command definition
-const videoCommand = {
-    pattern: 'video',
-    desc: 'Download YouTube video in MP4 format',
-    category: 'download',
-    use: '<YouTube URL>',
-    async execute(conn, mek, m, { args, q, reply }) {
-        try {
-            // Check if user provided a URL
-            if (!q) {
-                return reply('❌ කරුණාකර YouTube වීඩියෝ link එකක් ඇතුළත් කරන්න.\n*උදාහරණ:* `.video https://www.youtube.com/watch?v=...`');
+cmd({
+    pattern: "video",
+    desc: "Download YouTube video",
+    category: "download",
+    filename: __filename
+},
+async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
+    try {
+        if (!q) return reply("❌ කරුණාකර YouTube link එකක් හෝ වීඩියෝවේ නම ලබා දෙන්න.");
+
+        // 1. Loading React එක දමයි
+        await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
+
+        let videoUrl = q.trim();
+
+        // 2. Link එකක් නොවේ නම් නමෙන් search කර link එක ලබා ගැනීම
+        const isUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/.test(videoUrl);
+        if (!isUrl) {
+            const searchRes = await axios.get(`https://api.chamindu.site/api/v1/youtube/search?query=${encodeURIComponent(videoUrl)}&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`).catch(() => null);
+            if (searchRes && searchRes.data && searchRes.data.data && searchRes.data.data[0]) {
+                videoUrl = searchRes.data.data[0].url;
             }
-
-            // Basic YouTube link validation
-            const isYt = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/.test(q.trim());
-            if (!isYt) {
-                return reply('❌ කරුණාකර නිවැරදි YouTube URL එකක් ඇතුළත් කරන්න.');
-            }
-
-            reply('⏳ වීඩියෝව සකසමින් පවතී, කරුණාකර මොහොතක් රැඳී සිටින්න...');
-
-            const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
-            const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp4?url=${encodeURIComponent(q.trim())}&quality=1080p&api_key=${apiKey}`;
-
-            // Fetch data from API
-            const response = await axios.get(apiUrl);
-            const resData = response.data;
-
-            if (!resData || !resData.status || !resData.data) {
-                return reply('❌ වීඩියෝව ලබා ගැනීමට නොහැකි විය. Link එක පරීක්ෂා කර නැවත උත්සාහ කරන්න.');
-            }
-
-            const { title, direct_url, download_url, quality, thumbnail } = resData.data;
-            const videoUrl = direct_url || download_url;
-
-            if (!videoUrl) {
-                return reply('❌ Download link එකක් සොයා ගැනීමට නොහැකි විය.');
-            }
-
-            const captionText = `🎬 *${title || 'YouTube Media'}*\n` +
-                                `⚙️ *Quality:* ${quality || '1080p'}\n` +
-                                `📥 *Downloaded via Bot*`;
-
-            // Send video file
-            await conn.sendMessage(
-                mek.chat,
-                {
-                    video: { url: videoUrl },
-                    mimetype: 'video/mp4',
-                    caption: captionText
-                },
-                { quoted: mek }
-            );
-
-        } catch (error) {
-            console.error('Video command error:', error);
-            reply('❌ දෝෂයක් සිදු විය! API එකෙහි ගැටලුවක් හෝ සේවාදායකය කාර්යබහුල විය හැක.');
         }
-    }
-};
 
-module.exports = videoCommand;
+        const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
+        const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp4?url=${encodeURIComponent(videoUrl)}&quality=1080p&api_key=${apiKey}`;
+
+        // API Call
+        const response = await axios.get(apiUrl, { timeout: 60000 });
+        const resData = response.data;
+
+        if (!resData || !resData.status || !resData.data) {
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+            return reply("❌ වීඩියෝව ලබා ගැනීමට නොහැකි විය. වෙනත් link එකක් උත්සාහ කරන්න.");
+        }
+
+        const { title, direct_url, download_url, quality } = resData.data;
+        const dlUrl = direct_url || download_url;
+
+        if (!dlUrl) {
+            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+            return reply("❌ Download link එකක් හමු නොවීය.");
+        }
+
+        const caption = `🎬 *${title || 'YouTube Video'}*\n⚙️ *Quality:* ${quality || '1080p'}\n\n*Downloaded Successfully* ✅`;
+
+        // Success React
+        await conn.sendMessage(from, { react: { text: '📥', key: mek.key } });
+
+        // Video එක එවයි
+        await conn.sendMessage(from, {
+            video: { url: dlUrl },
+            mimetype: "video/mp4",
+            caption: caption
+        }, { quoted: mek });
+
+        await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+
+    } catch (e) {
+        console.error("VIDEO CMD ERROR:", e);
+        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
+        reply(`❌ Error: ${e.message || e}`);
+    }
+});
