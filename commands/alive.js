@@ -50,18 +50,25 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// Image එක Buffer කරගැනීම (Error free)
-const getBuffer = (url) => new Promise((resolve, reject) => {
-    https.get(url, (res) => {
-        const data = [];
-        res.on('data', chunk => data.push(chunk));
-        res.on('end', () => resolve(Buffer.concat(data)));
-        res.on('error', err => reject(err));
-    }).on('error', err => reject(err));
-});
+// 🛡️ Safe Image Fetcher with Custom User-Agent (Catbox Block වීම වැළැක්වීම)
+const fetchImageBuffer = (url) => {
+    return new Promise((resolve) => {
+        https.get(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+        }, (res) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                return fetchImageBuffer(res.headers.location).then(resolve);
+            }
+            const data = [];
+            res.on('data', chunk => data.push(chunk));
+            res.on('end', () => resolve(Buffer.concat(data)));
+            res.on('error', () => resolve(null));
+        }).on('error', () => resolve(null));
+    });
+};
 
-// Sub-commands trigger helper
-const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg) => {
+// Sub-command Execution
+const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg, safeReply) => {
     try {
         const cmdPath = path.join(__dirname, `${cmdName}.js`);
         if (fs.existsSync(cmdPath)) {
@@ -71,11 +78,11 @@ const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg) => {
             const args = fakeUserText.trim().split(/\s+/).slice(1);
 
             if (typeof cmdModule.execute === 'function') {
-                await cmdModule.execute(sock, replyMsg, args, remoteJid);
+                await cmdModule.execute(sock, replyMsg, args, remoteJid, safeReply);
             } else if (typeof cmdModule.run === 'function') {
-                await cmdModule.run({ sock, msg: replyMsg, args, from: remoteJid });
+                await cmdModule.run({ sock, msg: replyMsg, args, from: remoteJid, safeReply });
             } else if (typeof cmdModule === 'function') {
-                await cmdModule({ sock, msg: replyMsg, args, from: remoteJid });
+                await cmdModule({ sock, msg: replyMsg, args, from: remoteJid, safeReply });
             }
         }
     } catch (e) {
@@ -88,14 +95,14 @@ module.exports = {
     category: 'general',
     desc: 'Check bot operational status and info',
 
-    async execute(sock, msg, args, chatJid) {
+    async execute(sock, msg, args, chatJid, safeReply) {
         const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
             ? chatJid 
             : msg.key.remoteJid;
 
         const senderJid = msg.key.participant || targetChat;
 
-        // React
+        // 1. React
         sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
         let pushName = msg.pushName || "User";  
@@ -127,26 +134,28 @@ module.exports = {
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            // Buffer එකක් විදිහට download කිරීම
-            let imageBuffer;
-            try {
-                imageBuffer = await getBuffer(LOGO_URL);
-            } catch (e) {
-                console.error("Buffer error, fallback to URL:", e);
+            // Buffer එකක් විදිහට Image එක ගන්නවා
+            const imageBuffer = await fetchImageBuffer(LOGO_URL);
+
+            let sentMsg;
+            if (imageBuffer && imageBuffer.length > 1000) {
+                // Image එක තිබේ නම් Image එකෙන් යවනවා
+                sentMsg = await sock.sendMessage(targetChat, {
+                    image: imageBuffer,
+                    caption: aliveMsg
+                }, { quoted: msg });
+            } else {
+                // Image එක fail වුණොත් fallback URL මඟින්
+                sentMsg = await sock.sendMessage(targetChat, {
+                    image: { url: LOGO_URL },
+                    caption: aliveMsg
+                }, { quoted: msg });
             }
 
-            // Image එක යැවීම (image payload එක Buffer එකක් විදිහට)
-            const sentMsg = await sock.sendMessage(targetChat, {
-                image: imageBuffer ? imageBuffer : { url: LOGO_URL },
-                caption: aliveMsg
-            }, { quoted: msg });
-
             const stanzaId = sentMsg?.key?.id;
-            if (!stanzaId) return;
-
             const usedOptions = new Set();
 
-            // Reply listener (1, 2, 3)
+            // 🟢 Reply Handler
             const replyListener = async (m) => {  
                 try {  
                     const replyMsg = m.messages?.[0];  
@@ -156,11 +165,13 @@ module.exports = {
                     if (msgContent.ephemeralMessage) msgContent = msgContent.ephemeralMessage.message;
                     if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
 
+                    // Stanza ID Check
                     const msgContext = msgContent?.extendedTextMessage?.contextInfo ||
                                        msgContent?.imageMessage?.contextInfo ||
                                        msgContent?.videoMessage?.contextInfo;
 
-                    if (msgContext?.stanzaId !== stanzaId) return;  
+                    // Quoted message එක මේ alive message එකම විය යුතුයි
+                    if (stanzaId && msgContext?.stanzaId !== stanzaId) return;  
 
                     let replyText = msgContent.conversation || 
                                     msgContent.extendedTextMessage?.text || 
@@ -176,11 +187,11 @@ module.exports = {
 
                         if (replyText === "1") {  
                             await sock.sendMessage(replyChat, { react: { text: '📜', key: replyMsg.key } }).catch(() => {});  
-                            await triggerCommand('menu', `${currentPrefix}menu`, sock, replyMsg);
+                            await triggerCommand('menu', `${currentPrefix}menu`, sock, replyMsg, safeReply);
 
                         } else if (replyText === "2") {  
                             await sock.sendMessage(replyChat, { react: { text: '⚡', key: replyMsg.key } }).catch(() => {});
-                            await triggerCommand('ping', `${currentPrefix}ping`, sock, replyMsg);
+                            await triggerCommand('ping', `${currentPrefix}ping`, sock, replyMsg, safeReply);
 
                         } else if (replyText === "3") {  
                             await sock.sendMessage(replyChat, { react: { text: '👑', key: replyMsg.key } }).catch(() => {});
@@ -200,7 +211,7 @@ module.exports = {
 
             sock.ev.on('messages.upsert', replyListener);  
 
-            // තත්පර 60 කින් listener අයින් කිරීම
+            // තත්පර 60 කින් Listener ඉවත් කිරීම
             setTimeout(() => {  
                 sock.ev.off('messages.upsert', replyListener);  
             }, 60000);  
