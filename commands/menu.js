@@ -3,102 +3,166 @@ const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 
-// .setlogo මඟින් save වන local logo path එක
 const LOCAL_LOGO = path.join(process.cwd(), 'logo.jpg');
-const FALLBACK_LOGO_URL = 'https://files.catbox.moe/a58add.jpeg';
+const FALLBACK_LOGO_URL = 'https://files.catbox.moe/gs150o.jpg';
+
+function formatUptime(seconds) {
+    seconds = Math.floor(Number(seconds) || 0);
+    const d = Math.floor(seconds / (3600 * 24));
+    const h = Math.floor((seconds % (3600 * 24)) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
+}
 
 module.exports = {
   name: 'menu',
   category: 'general',
-  desc: 'Display all bot command menus',
-  async execute(sock, msg, args, chatJid, safeReply) {
+  desc: 'Interactive categorized command menu',
+
+  async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
       ? chatJid 
       : msg.key.remoteJid;
 
-    const menuText = `╭───❮ ❖ 𝗛 𝗘 𝗦 𝗛 𝗔 𝗡 - 𝗠 𝗗 ❖ ❯───╮
-│  ꜱ ɪ ᴍ ᴘ ʟ ᴇ  •  ꜰ ᴀ ꜱ ᴛ  •  ᴘ ᴏ ᴡ ᴇ ʀ ꜰ ᴜ ʟ
-│  
-│  👋 *Hello! Welcome to Command Menu*
-│
-│ ╭───❮ 📥 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗-𝗖𝗠𝗗 ❯───
-│ ├─◈ .fb
-│ ├─◈ .video
-│ ├─◈ .song
-│ ├─◈ .tiktok
-│ ╰─────────────────────────────
-│
-│ ╭───❮ 🔎 𝗦𝗘𝗔𝗥𝗖𝗛-𝗖𝗠𝗗 ❯──────
-│ ├─◈ .srepo
-│ ├─◈ .npm
-│ ├─◈ .imgg
-│ ╰─────────────────────────────
-│
-│ ╭───❮ 👨‍💻 𝗨𝗦𝗘𝗥-𝗖𝗠𝗗 ❯────────
-│ ├─◈ .owner
-│ ├─◈ .ping
-│ ├─◈ .system
-│ ├─◈ .alive
-│ ├─◈ .report
-│ ├─◈ .boom
-│ ╰─────────────────────────────
-│
-│ ╭───❮ 🔔 𝗔𝗗𝗠𝗜𝗡-𝗖𝗠𝗗 ❯───────
-│ ├─◈ .mode
-│ ├─◈ .status
-│ ├─◈ .save
-│ ├─◈ .block
-│ ├─◈ .restart
-│ ├─◈ .anticall
-│ ├─◈ .send-st
-│ ╰─────────────────────────────
-│
-│  > 🔐 ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ
-╰───────────────────────────────╯`;
+    let pushName = msg.pushName || "User";
+    let firstName = pushName.split(/[\s_+-]+/)[0] || "User";
+    if (firstName.length > 15) firstName = firstName.substring(0, 15);
+
+    const uptime = formatUptime(process.uptime());
+
+    // Main Interactive Navigation Menu
+    const mainText = `┏━━━❮ ⚡ *𝐇𝐄𝐒𝐇𝐀𝐍 - 𝐌𝐃* ⚡ ❯━━━┓
+┃
+┣━━『 👤 *USER PROFILE* 』
+┃ ◈ *User*    : *${firstName}*
+┃ ◈ *Prefix*  : *. [Dot]*
+┃ ◈ *Runtime* : *${uptime}*
+┃ ◈ *Status*  : *Active 🟢*
+┃
+┣━━『 📑 *SELECT CATEGORY* 』
+┃
+┃ ➊ 📥 *DOWNLOAD MENU*
+┃ ➋ 🛠️ *TOOLS & UTILITY*
+┃ ➌ 👥 *GROUP & FUN MENU*
+┃ ➍ ⚡ *SYSTEM & OWNER*
+┃
+┗━━━━━━━━━━━━━━━━━━━━━┛
+*👉 Select a category by replying with (1, 2, 3, or 4)*
+> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
 
     try {
-      // 1. Safe React
-      sock.sendMessage(targetChat, {
-        react: { text: "📜", key: msg.key }
-      }).catch(() => {});
+      await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
-      // 2. Image Selection (Local Custom Logo -> Fallback URL Buffer)
+      // Image Buffer
       let imgData = null;
-
       if (fs.existsSync(LOCAL_LOGO)) {
-        // .setlogo මඟින් save කළ image එක තිබේ නම් direct buffer එකක් ලෙස ගනියි
         imgData = fs.readFileSync(LOCAL_LOGO);
       } else {
         try {
           const res = await fetch(FALLBACK_LOGO_URL, { timeout: 8000 });
-          if (res.ok) {
-            imgData = await res.buffer();
-          } else {
-            imgData = { url: FALLBACK_LOGO_URL };
-          }
+          imgData = res.ok ? await res.buffer() : { url: FALLBACK_LOGO_URL };
         } catch (e) {
           imgData = { url: FALLBACK_LOGO_URL };
         }
       }
 
-      // 3. Send Message with Image
-      await sock.sendMessage(targetChat, {
+      const sentMsg = await sock.sendMessage(targetChat, {
         image: imgData,
-        caption: menuText,
-        contextInfo: {
-          forwardingScore: 999,
-          isForwarded: true
-        }
+        caption: mainText
       }, { quoted: msg });
+
+      const stanzaId = sentMsg?.key?.id;
+      const usedOptions = new Set();
+
+      // Sub-menu definitions
+      const subMenus = {
+        "1": `┏━━━❮ 📥 *DOWNLOAD MENU* ❯━━━┓
+┃
+┃ ◈ \`.song\`   ⌁ _<music mp3>_
+┃ ◈ \`.video\`  ⌁ _<youtube mp4>_
+┃ ◈ \`.fb\`     ⌁ _<facebook video>_
+┃ ◈ \`.tiktok\` ⌁ _<tiktok video>_
+┃ ◈ \`.insta\`  ⌁ _<instagram post>_
+┃ ◈ \`.apk\`    ⌁ _<android app>_
+┃
+┗━━━━━━━━━━━━━━━━━━━━━┛
+> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
+
+        "2": `┏━━━❮ 🛠️ *TOOLS & UTILITY* ❯━━━┓
+┃
+┃ ◈ \`.pt\`      ⌁ _<photo to sticker/tool>_
+┃ ◈ \`.tourl\`   ⌁ _<media to link>_
+┃ ◈ \`.getdp\`   ⌁ _<get profile picture>_
+┃ ◈ \`.vv\`      ⌁ _<view once reveal>_
+┃
+┗━━━━━━━━━━━━━━━━━━━━━┛
+> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
+
+        "3": `┏━━━❮ 👥 *GROUP & FUN* ❯━━━┓
+┃
+┃ ◈ \`.tagall\`  ⌁ _<mention all members>_
+┃ ◈ \`.hack\`    ⌁ _<prank hack UI>_
+┃
+┗━━━━━━━━━━━━━━━━━━━━━┛
+> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
+
+        "4": `┏━━━❮ ⚡ *SYSTEM & OWNER* ❯━━━┓
+┃
+┃ ◈ \`.ping\`    ⌁ _<response speed>_
+┃ ◈ \`.alive\`   ⌁ _<bot online status>_
+┃ ◈ \`.restart\` ⌁ _<clean ram & reboot>_
+┃ ◈ \`.setlogo\` ⌁ _<update bot banner>_
+┃
+┗━━━━━━━━━━━━━━━━━━━━━┛
+> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
+      };
+
+      // 1, 2, 3, 4 Reply Listener
+      const replyListener = async (m) => {
+        try {
+          const replyMsg = m.messages?.[0];
+          if (!replyMsg || !replyMsg.message) return;
+
+          let msgContent = replyMsg.message;
+          if (msgContent.ephemeralMessage) msgContent = msgContent.ephemeralMessage.message;
+          if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
+
+          const msgContext = msgContent?.extendedTextMessage?.contextInfo;
+          if (stanzaId && msgContext?.stanzaId !== stanzaId) return;
+
+          const replyText = (
+            msgContent.conversation || 
+            msgContent.extendedTextMessage?.text || 
+            ""
+          ).trim();
+
+          if (["1", "2", "3", "4"].includes(replyText)) {
+            if (usedOptions.has(replyText)) return;
+            usedOptions.add(replyText);
+
+            const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
+            await sock.sendMessage(targetChat, { react: { text: emojis[replyText], key: replyMsg.key } }).catch(() => {});
+
+            await sock.sendMessage(targetChat, { 
+              text: subMenus[replyText] 
+            }, { quoted: replyMsg });
+          }
+        } catch (e) {
+          console.error("Menu Listener Error:", e.message);
+        }
+      };
+
+      sock.ev.on('messages.upsert', replyListener);
+
+      // Listener expires after 90 seconds
+      setTimeout(() => {
+        sock.ev.off('messages.upsert', replyListener);
+      }, 90000);
 
     } catch (err) {
       console.error('Error in menu command:', err.message);
-      // Fallback: send text only if image strictly fails
-      try {
-        await sock.sendMessage(targetChat, { text: menuText }, { quoted: msg });
-      } catch (fallbackErr) {
-        console.error('Fallback send error:', fallbackErr.message);
-      }
+      await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg }).catch(() => {});
     }
   }
 };
