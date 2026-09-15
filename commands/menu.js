@@ -1,7 +1,7 @@
 // commands/menu.js
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
+const axios = require('axios');
 
 const LOCAL_LOGO = path.join(process.cwd(), 'logo.jpg');
 const FALLBACK_LOGO_URL = 'https://files.catbox.moe/gs150o.jpg';
@@ -31,7 +31,6 @@ module.exports = {
 
     const uptime = formatUptime(process.uptime());
 
-    // Main Interactive Navigation Menu
     const mainText = `┏━━━❮ ⚡ *𝐇𝐄𝐒𝐇𝐀𝐍 - 𝐌𝐃* ⚡ ❯━━━┓
 ┃
 ┣━━『 👤 *USER PROFILE* 』
@@ -54,23 +53,40 @@ module.exports = {
     try {
       await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
-      // Image Buffer
-      let imgData = null;
+      // 🟢 1. Bulletproof Image Buffer Loader (Zero Dropping)
+      let imgBuffer = null;
       if (fs.existsSync(LOCAL_LOGO)) {
-        imgData = fs.readFileSync(LOCAL_LOGO);
+        imgBuffer = fs.readFileSync(LOCAL_LOGO);
       } else {
         try {
-          const res = await fetch(FALLBACK_LOGO_URL, { timeout: 8000 });
-          imgData = res.ok ? await res.buffer() : { url: FALLBACK_LOGO_URL };
+          const res = await axios.get(FALLBACK_LOGO_URL, { 
+            responseType: 'arraybuffer',
+            timeout: 10000 
+          });
+          imgBuffer = Buffer.from(res.data, 'binary');
         } catch (e) {
-          imgData = { url: FALLBACK_LOGO_URL };
+          // Backup logo url fetch
+          const res2 = await axios.get('https://files.catbox.moe/a58add.jpeg', {
+            responseType: 'arraybuffer',
+            timeout: 10000
+          }).catch(() => null);
+          if (res2) imgBuffer = Buffer.from(res2.data, 'binary');
         }
       }
 
-      const sentMsg = await sock.sendMessage(targetChat, {
-        image: imgData,
-        caption: mainText
-      }, { quoted: msg });
+      // 🟢 2. Send Message with Image Buffer
+      let sentMsg = null;
+      if (imgBuffer) {
+        sentMsg = await sock.sendMessage(targetChat, {
+          image: imgBuffer,
+          caption: mainText
+        }, { quoted: msg });
+      } else {
+        sentMsg = await sock.sendMessage(targetChat, {
+          image: { url: FALLBACK_LOGO_URL },
+          caption: mainText
+        }, { quoted: msg });
+      }
 
       const stanzaId = sentMsg?.key?.id;
       const usedOptions = new Set();
@@ -155,7 +171,6 @@ module.exports = {
 
       sock.ev.on('messages.upsert', replyListener);
 
-      // Listener expires after 90 seconds
       setTimeout(() => {
         sock.ev.off('messages.upsert', replyListener);
       }, 90000);
@@ -166,3 +181,4 @@ module.exports = {
     }
   }
 };
+
