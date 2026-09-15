@@ -1,8 +1,10 @@
+const fetch = require('node-fetch');
+
 module.exports = {
   name: 'menu',
   category: 'general',
   desc: 'Display all bot command menus',
-  async execute(sock, msg, args, chatJid) {
+  async execute(sock, msg, args, chatJid, safeReply) {
     const targetChat = chatJid || msg.key.remoteJid;
     const logoUrl = 'https://files.catbox.moe/a58add.jpeg';
 
@@ -57,9 +59,18 @@ module.exports = {
         });
       } catch (e) {}
 
-      // 2. Send Image with Context Info
+      // 2. Fetch image buffer (100% Reliable Delivery)
+      let imgData = { url: logoUrl };
+      try {
+        const res = await fetch(logoUrl, { timeout: 8000 });
+        if (res.ok) {
+          imgData = await res.buffer();
+        }
+      } catch (e) {}
+
+      // 3. Send Image with Context Info
       await sock.sendMessage(targetChat, {
-        image: { url: logoUrl },
+        image: imgData,
         caption: menuText,
         contextInfo: {
           forwardingScore: 999,
@@ -69,7 +80,7 @@ module.exports = {
 
     } catch (err) {
       console.error('Error in menu command:', err.message);
-      // Fallback: send text only if image fails
+      // Fallback: send text only if image strictly fails
       try {
         await sock.sendMessage(targetChat, { text: menuText }, { quoted: msg });
       } catch (fallbackErr) {
