@@ -16,7 +16,7 @@ module.exports = {
 
     if (!query) {
       return await sock.sendMessage(targetChat, { 
-        text: "❗ *කරුණාකර සිංදුවේ නම ලබාදෙන්න!*\n*උදාහරණ:* `.song Faded`\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
+        text: "❗ *Please provide a song name or link!*\n*Example:* `.song Faded`\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
       }, { quoted: msg });
     }
 
@@ -26,9 +26,9 @@ module.exports = {
       // 1. Instant 🎵 Reaction
       await sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
 
-      // 2. Sending Status Alert Message
+      // 2. Short English Alert (පසුව delete වේ)
       statusMsg = await sock.sendMessage(targetChat, {
-        text: "⏳ *සින්දුව සකසමින් පවතී, කරුණාකර මොහොතක් රැඳී සිටින්න...*\n\n> ⚡ ʜᴇꜱʜᴀɴ-ᴍᴅ ᴜʟᴛʀᴀ ᴇɴɢɪɴᴇ ⚡"
+        text: "⚡ *Downloading your song, please wait...*"
       }, { quoted: msg });
 
       let videoUrl = query;
@@ -44,14 +44,14 @@ module.exports = {
       if (!isYtUrl) {
         if (!yts) {
           if (statusMsg) await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
-          return await sock.sendMessage(targetChat, { text: "❌ yt-search module එක සොයාගත නොහැකි විය." }, { quoted: msg });
+          return await sock.sendMessage(targetChat, { text: "❌ yt-search module not found." }, { quoted: msg });
         }
         
         const searchResults = await yts(query);
         if (!searchResults?.videos?.length) {
           if (statusMsg) await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
           await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
-          return await sock.sendMessage(targetChat, { text: "❌ සිංදුව හමු නොවීය! නම නිවැරදිදැයි බලන්න." }, { quoted: msg });
+          return await sock.sendMessage(targetChat, { text: "❌ Song not found! Please check the title." }, { quoted: msg });
         }
 
         const video = searchResults.videos[0];
@@ -84,15 +84,15 @@ module.exports = {
       }
 
       if (!downloadUrl) {
-        throw new Error('බාගත කිරීමේ සබැඳිය ලබා ගැනීමට නොහැකි විය.');
+        throw new Error('Failed to retrieve download link.');
       }
 
-      // 5. Delete Status Message
+      // 5. Delete Alert Message
       if (statusMsg) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // 6. Information Card (YouTube Link සඟවා ඇත)
+      // 6. Clean Card Design (Thumbnail Card එක විතරක් Quoted කර යවයි)
       const cleanTitle = finalTitle.replace(/[\\/:"*?<>|]/g, '').trim();
       const songCard = `╭───❮ 🎵 *H E S H A N - M D* ❯───╮
 │
@@ -110,22 +110,12 @@ module.exports = {
         caption: songCard
       }, { quoted: msg });
 
-      // 7. Send MP3 Audio
+      // 7. Send Pure Audio (කිසිම Quoted Box එකක් හෝ Link එකක් නොමැතිව තනි Audio එකක් පමණක් යවයි)
       await sock.sendMessage(targetChat, {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
-        fileName: `${cleanTitle}.mp3`,
-        contextInfo: {
-          externalAdReply: {
-            title: cleanTitle.slice(0, 32),
-            body: `${author} • ${duration}`,
-            thumbnailUrl: thumbnail,
-            sourceUrl: 'https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V',
-            mediaType: 1,
-            renderLargerThumbnail: true
-          }
-        }
-      }, { quoted: msg });
+        fileName: `${cleanTitle}.mp3`
+      });
 
       await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
@@ -135,7 +125,7 @@ module.exports = {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
       await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
-      await sock.sendMessage(targetChat, { text: `❌ දෝෂයක්: ${err.message}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` }, { quoted: msg });
+      await sock.sendMessage(targetChat, { text: `❌ Error: ${err.message}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` }, { quoted: msg });
     }
   }
 };
