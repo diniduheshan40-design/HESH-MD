@@ -1,67 +1,77 @@
-const { cmd } = require('../command');
+// commands/video.js
 const axios = require('axios');
 
-cmd({
-    pattern: "video",
-    desc: "Download YouTube video",
-    category: "download",
-    filename: __filename
-},
-async (conn, mek, m, { from, quoted, body, isCmd, command, args, q, isGroup, sender, senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, groupMetadata, groupName, participants, groupAdmins, isBotAdmins, isAdmins, reply }) => {
-    try {
-        if (!q) return reply("❌ කරුණාකර YouTube link එකක් හෝ වීඩියෝවේ නම ලබා දෙන්න.");
+module.exports = {
+    name: 'video',
+    category: 'download',
+    desc: 'Download YouTube video in MP4 format',
 
-        // 1. Loading React එක දමයි
-        await conn.sendMessage(from, { react: { text: '⏳', key: mek.key } });
+    async execute(sock, msg, args, chatJid) {
+        const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
+            ? chatJid 
+            : msg.key.remoteJid;
 
-        let videoUrl = q.trim();
+        // Query එක ලබා ගැනීම
+        const textQuery = args.join(' ').trim();
 
-        // 2. Link එකක් නොවේ නම් නමෙන් search කර link එක ලබා ගැනීම
-        const isUrl = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/.test(videoUrl);
-        if (!isUrl) {
-            const searchRes = await axios.get(`https://api.chamindu.site/api/v1/youtube/search?query=${encodeURIComponent(videoUrl)}&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`).catch(() => null);
-            if (searchRes && searchRes.data && searchRes.data.data && searchRes.data.data[0]) {
-                videoUrl = searchRes.data.data[0].url;
+        if (!textQuery) {
+            return await sock.sendMessage(targetChat, { 
+                text: '❌ කරුණාකර YouTube link එකක් ඇතුළත් කරන්න.\n\n*උදාහරණ:* `.video https://www.youtube.com/watch?v=...`' 
+            }, { quoted: msg });
+        }
+
+        // Loading React එක දැමීම
+        await sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
+
+        try {
+            const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
+            const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp4?url=${encodeURIComponent(textQuery)}&quality=1080p&api_key=${apiKey}`;
+
+            // API request එක ලබා ගැනීම
+            const response = await axios.get(apiUrl, { timeout: 60000 });
+            const resData = response.data;
+
+            if (!resData || !resData.status || !resData.data) {
+                await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+                return await sock.sendMessage(targetChat, { 
+                    text: '❌ වීඩියෝව ලබා ගැනීමට නොහැකි විය. කරුණාකර Link එක පරීක්ෂා කරන්න.' 
+                }, { quoted: msg });
             }
+
+            const { title, direct_url, download_url, quality } = resData.data;
+            const videoDownloadUrl = direct_url || download_url;
+
+            if (!videoDownloadUrl) {
+                await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+                return await sock.sendMessage(targetChat, { 
+                    text: '❌ Download URL එකක් සොයා ගැනීමට නොහැකි විය.' 
+                }, { quoted: msg });
+            }
+
+            const captionText = `🎬 *${title || 'YouTube Media'}*\n` +
+                                `⚙️ *Quality:* ${quality || '1080p'}\n` +
+                                `📥 *Engine:* HESHAN-MD Downloader\n\n` +
+                                `> 🔐 *heshan ofc • all rights reserved*`;
+
+            // Download reaction
+            await sock.sendMessage(targetChat, { react: { text: "📥", key: msg.key } }).catch(() => {});
+
+            // Video එක එවයි
+            await sock.sendMessage(targetChat, {
+                video: { url: videoDownloadUrl },
+                mimetype: 'video/mp4',
+                caption: captionText
+            }, { quoted: msg });
+
+            // සාර්ථක වූ පසු Success reaction එක
+            await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
+
+        } catch (error) {
+            console.error('Video Execution Error:', error);
+            await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+            await sock.sendMessage(targetChat, { 
+                text: `❌ දෝෂයක් සිදු විය: ${error.message || 'API Error'}` 
+            }, { quoted: msg });
         }
-
-        const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
-        const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp4?url=${encodeURIComponent(videoUrl)}&quality=1080p&api_key=${apiKey}`;
-
-        // API Call
-        const response = await axios.get(apiUrl, { timeout: 60000 });
-        const resData = response.data;
-
-        if (!resData || !resData.status || !resData.data) {
-            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
-            return reply("❌ වීඩියෝව ලබා ගැනීමට නොහැකි විය. වෙනත් link එකක් උත්සාහ කරන්න.");
-        }
-
-        const { title, direct_url, download_url, quality } = resData.data;
-        const dlUrl = direct_url || download_url;
-
-        if (!dlUrl) {
-            await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
-            return reply("❌ Download link එකක් හමු නොවීය.");
-        }
-
-        const caption = `🎬 *${title || 'YouTube Video'}*\n⚙️ *Quality:* ${quality || '1080p'}\n\n*Downloaded Successfully* ✅`;
-
-        // Success React
-        await conn.sendMessage(from, { react: { text: '📥', key: mek.key } });
-
-        // Video එක එවයි
-        await conn.sendMessage(from, {
-            video: { url: dlUrl },
-            mimetype: "video/mp4",
-            caption: caption
-        }, { quoted: mek });
-
-        await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
-
-    } catch (e) {
-        console.error("VIDEO CMD ERROR:", e);
-        await conn.sendMessage(from, { react: { text: '❌', key: mek.key } });
-        reply(`❌ Error: ${e.message || e}`);
     }
-});
+};
