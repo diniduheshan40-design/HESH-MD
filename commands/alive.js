@@ -1,9 +1,9 @@
 // commands/alive.js
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 
 const LOGO_URL = "https://files.catbox.moe/a58add.jpeg";
-const CACHED_CHANNEL_JID = "120363413193872888@newsletter";
 
 function getEmojiTime(jid) {
     let tz = 'Asia/Colombo'; 
@@ -50,6 +50,16 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
+// Image එක Buffer කරගැනීම (Error free)
+const getBuffer = (url) => new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+        const data = [];
+        res.on('data', chunk => data.push(chunk));
+        res.on('end', () => resolve(Buffer.concat(data)));
+        res.on('error', err => reject(err));
+    }).on('error', err => reject(err));
+});
+
 // Sub-commands trigger helper
 const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg) => {
     try {
@@ -79,14 +89,13 @@ module.exports = {
     desc: 'Check bot operational status and info',
 
     async execute(sock, msg, args, chatJid) {
-        // Chat JID එක නිවැරදිව ලබා ගැනීම
         const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
             ? chatJid 
             : msg.key.remoteJid;
 
         const senderJid = msg.key.participant || targetChat;
 
-        // Reaction එක දැමීම
+        // React
         sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
         let pushName = msg.pushName || "User";  
@@ -118,19 +127,18 @@ module.exports = {
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            // කෙළින්ම Photo එක සහ Caption එක එකවර යැවීම
+            // Buffer එකක් විදිහට download කිරීම
+            let imageBuffer;
+            try {
+                imageBuffer = await getBuffer(LOGO_URL);
+            } catch (e) {
+                console.error("Buffer error, fallback to URL:", e);
+            }
+
+            // Image එක යැවීම (image payload එක Buffer එකක් විදිහට)
             const sentMsg = await sock.sendMessage(targetChat, {
-                image: { url: LOGO_URL },
-                caption: aliveMsg,
-                contextInfo: {
-                    forwardingScore: 999,
-                    isForwarded: true,
-                    forwardedNewsletterMessageInfo: {
-                        newsletterJid: CACHED_CHANNEL_JID,
-                        newsletterName: "HESHAN MD SYSTEM 👾",
-                        serverMessageId: 100
-                    }
-                }
+                image: imageBuffer ? imageBuffer : { url: LOGO_URL },
+                caption: aliveMsg
             }, { quoted: msg });
 
             const stanzaId = sentMsg?.key?.id;
@@ -138,7 +146,7 @@ module.exports = {
 
             const usedOptions = new Set();
 
-            // Reply listener එක (1, 2, 3 සඳහා)
+            // Reply listener (1, 2, 3)
             const replyListener = async (m) => {  
                 try {  
                     const replyMsg = m.messages?.[0];  
@@ -192,14 +200,13 @@ module.exports = {
 
             sock.ev.on('messages.upsert', replyListener);  
 
-            // තත්පර 60 කින් listener ඉවත් කිරීම
+            // තත්පර 60 කින් listener අයින් කිරීම
             setTimeout(() => {  
                 sock.ev.off('messages.upsert', replyListener);  
             }, 60000);  
 
         } catch (err) {
             console.error("Alive Execution Error:", err);
-            // Image එක යැවීමට බැරි වුවහොත් text එක පමණක් යැවීම
             await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg }).catch(() => {});
         }
     }
