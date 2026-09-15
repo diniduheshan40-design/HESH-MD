@@ -7,15 +7,19 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.9",
+    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys",
+    "axios": "^1.7.2",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "gifted-dls": "^1.1.8",
-    "mongoose": "^8.3.4",
+    "mongoose": "^8.4.0",
     "node-cache": "^5.1.2",
     "node-fetch": "^2.7.0",
-    "openai": "^4.40.0",
+    "openai": "^4.47.1",
     "pino": "^8.20.0",
     "yt-search": "^2.12.1"
+  },
+  "engines": {
+    "node": ">=18.x"
   }
 }
