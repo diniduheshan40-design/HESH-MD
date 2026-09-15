@@ -1,63 +1,100 @@
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
 module.exports = {
-    name: "autostatus",
-    category: "tools",
-    desc: "Auto send status to inbox on specific emoji reaction",
-    async run({ conn, m }) {
-        try {
-            // Trigger වන Emoji List එක
-            const allowedEmojis = ['😁', '🙂', '🥰', '❤️', '😂'];
+  name: "autostatus",
+  category: "tools",
+  desc: "Send status to inbox on specific emoji reaction or reply",
 
-            // මැසේජ් එකේ තියෙන්නේ අපේ ඉමෝජි එකක්ද සහ ඒක Reply එකක්ද කියා බැලීම
-            let text = m.text ? m.text.trim() : '';
-            if (!allowedEmojis.includes(text)) return;
+  async execute(sock, msg, args, chatJid, safeReply) {
+    try {
+      const allowedEmojis = ['😁', '🙂', '🥰', '❤️', '😂'];
 
-            // Quoted මැසේජ් එකක් තියෙනවද සහ ඒක Status එකක්ද බැලීම
-            if (!m.quoted) return;
-            
-            // Status එකක් හඳුනාගන්නේ broadcast JID එකෙන් ('status@broadcast')
-            let isStatus = m.quoted.chat === 'status@broadcast';
-            if (!isStatus) return;
+      // Message text ලබාගැනීම
+      const rawMsg = msg.message?.extendedTextMessage?.text || 
+                     msg.message?.conversation || 
+                     args.join(' ').trim();
 
-            let quotedMsg = m.quoted.message;
-            let type = Object.keys(quotedMsg)[0];
+      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+      const quotedMsg = contextInfo?.quotedMessage;
 
-            // Image හෝ Video නම් Download කිරීම
-            if (type === 'imageMessage' || type === 'videoMessage') {
-                let mediaType = type === 'imageMessage' ? 'image' : 'video';
-                let stream = await downloadContentFromMessage(quotedMsg[type], mediaType);
-                let buffer = Buffer.from([]);
-                
-                for await (const chunk of stream) {
-                    buffer = Buffer.concat([buffer, chunk]);
-                }
+      // Status එකක්ද කියා තහවුරු කිරීම
+      const remoteJid = contextInfo?.remoteJid || '';
+      const isStatus = remoteJid === 'status@broadcast';
 
-                let caption = quotedMsg[type].caption || "";
-                let senderNumber = m.quoted.sender.split('@')[0];
+      if (!quotedMsg || !isStatus) {
+        return await safeReply({
+          text: "⚠️ කරුණාකර Status එකකට Reply කර අදාළ Emoji එකක් හෝ `.autostatus` යොදන්න!"
+        });
+      }
 
-                // බොට් භාවිතා කරන පුද්ගලයාගේ Inbox (DM) එකට Media එක යැවීම
-                let targetChat = m.sender; // කමාන්ඩ් එක දැමූ කෙනාගේ inbox එකට
+      // Deep unwrap to extract media
+      let qm = quotedMsg;
+      while (
+        qm?.viewOnceMessage?.message ||
+        qm?.viewOnceMessageV2?.message ||
+        qm?.viewOnceMessageV2Extension?.message ||
+        qm?.ephemeralMessage?.message
+      ) {
+        qm = qm.viewOnceMessage?.message ||
+             qm.viewOnceMessageV2?.message ||
+             qm.viewOnceMessageV2Extension?.message ||
+             qm.ephemeralMessage?.message;
+      }
 
-                if (type === 'imageMessage') {
-                    await conn.sendMessage(targetChat, {
-                        image: buffer,
-                        caption: `📥 *Status Downloaded!*\n👤 *From:* +${senderNumber}\n${caption ? `📝 *Caption:* ${caption}` : ''}`
-                    });
-                } else {
-                    await conn.sendMessage(targetChat, {
-                        video: buffer,
-                        caption: `📥 *Status Downloaded!*\n👤 *From:* +${senderNumber}\n${caption ? `📝 *Caption:* ${caption}` : ''}`
-                    });
-                }
+      let mediaType = null;
+      let mediaMsg = null;
 
-                // සාර්ථක වූ බවට reaction එකක් දැමීම
-                await m.react('✅');
-            }
+      if (qm?.imageMessage) {
+        mediaType = 'image';
+        mediaMsg = qm.imageMessage;
+      } else if (qm?.videoMessage) {
+        mediaType = 'video';
+        mediaMsg = qm.videoMessage;
+      }
 
-        } catch (err) {
-            console.error("AutoStatus Error:", err);
-        }
+      if (!mediaMsg || !mediaType) {
+        return await safeReply({ text: "❌ Status එකේ Photo හෝ Video එකක් හමු නොවුණි!" });
+      }
+
+      try {
+        await sock.sendMessage(chatJid, { react: { text: '⏳', key: msg.key } });
+      } catch (e) {}
+
+      // Fast streaming buffer
+      const stream = await downloadContentFromMessage(mediaMsg, mediaType);
+      const chunks = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+      const buffer = Buffer.concat(chunks);
+
+      const senderParticipant = contextInfo?.participant || '';
+      const senderNumber = senderParticipant ? senderParticipant.split('@')[0] : 'Unknown';
+      const caption = mediaMsg.caption ? `\n📝 *Caption:* ${mediaMsg.caption}` : '';
+
+      const sendPayload = {
+        caption: `*📥 STATUS DOWNLOADED*\n👤 *From:* +${senderNumber}${caption}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`
+      };
+
+      if (mediaType === 'image') {
+        sendPayload.image = buffer;
+      } else {
+        sendPayload.video = buffer;
+        sendPayload.mimetype = 'video/mp4';
+      }
+
+      // යවන්නාගේ Inbox එකට යැවීම
+      await sock.sendMessage(chatJid, sendPayload, { quoted: msg });
+      try {
+        await sock.sendMessage(chatJid, { react: { text: '✅', key: msg.key } });
+      } catch (e) {}
+
+    } catch (err) {
+      console.error("AutoStatus Error:", err.message);
+      try {
+        await sock.sendMessage(chatJid, { react: { text: '❌', key: msg.key } });
+      } catch (e) {}
+      await safeReply({ text: "❌ Status එක ලබා ගැනීමේදී දෝෂයක් ඇති විය!" });
     }
+  }
 };
-
