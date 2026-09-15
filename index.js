@@ -22,7 +22,7 @@ const { askAI } = require('./ai');
 // Inbox Auto AI Default = ON
 global.autoAiInbox = true;
 
-// 🟢 Global Owner Configuration & Active Bots Store
+// 🟢 Global Owner & Sessions Store
 global.OWNER_NUMBERS = ['94719845166'];
 global.activeSessions = {};
 
@@ -30,7 +30,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
-// 🟢 1. Command Loader
+// 🟢 1. Command Loader with Alias Support
 const commands = new Map();
 const cmdDir = path.join(__dirname, 'commands');
 
@@ -46,6 +46,18 @@ if (fs.existsSync(cmdDir)) {
         commands.set(cmd.name.toLowerCase(), cmd);
       }
       commands.set(cmdName, cmd);
+
+      // Register Aliases (e.g., .tt -> .tiktok)
+      if (cmd && cmd.alias) {
+        if (Array.isArray(cmd.alias)) {
+          for (const al of cmd.alias) {
+            commands.set(al.toLowerCase(), cmd);
+          }
+        } else if (typeof cmd.alias === 'string') {
+          commands.set(cmd.alias.toLowerCase(), cmd);
+        }
+      }
+
       console.log(`✅ Loaded command: .${cmdName}`);
     } catch (e) {
       console.error(`❌ Error loading ${file}:`, e.message);
@@ -53,7 +65,7 @@ if (fs.existsSync(cmdDir)) {
   }
 }
 
-// 🟢 2. Red & Black Cyber-Glassmorphism Portal UI
+// 🟢 2. Web Portal UI
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -203,7 +215,7 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // ─── 🟢 AUTO FOLLOW CHANNEL ───
+        // ─── Auto Follow Channel ───
         try {
           const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
           if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
@@ -212,7 +224,7 @@ async function initWhatsApp(phoneNumber) {
           }
         } catch (chErr) {}
 
-        // ─── 🟢 INITIALIZATION CARD & ALERT ───
+        // ─── Initialization Card ───
         setTimeout(async () => {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
@@ -230,7 +242,6 @@ async function initWhatsApp(phoneNumber) {
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-            // 1. User Inbox Card
             try {
               const resImg = await fetch(welcomeImg);
               const imgBuffer = await resImg.buffer();
@@ -247,7 +258,6 @@ async function initWhatsApp(phoneNumber) {
               });
             }
 
-            // 2. Creator Alert
             if (!botNum.includes('94719845166')) {
               const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
 ────────────────────────────
@@ -260,7 +270,7 @@ async function initWhatsApp(phoneNumber) {
               await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
             }
 
-            console.log(`📬 Connect message successfully sent to: +${botNum}`);
+            console.log(`📬 Connect message sent: +${botNum}`);
           } catch (msgErr) {
             console.error('Initialization message error:', msgErr.message);
           }
@@ -279,7 +289,7 @@ async function initWhatsApp(phoneNumber) {
         if (!chatJid) continue;
         const isGroup = chatJid.endsWith('@g.us');
 
-        // 1. AUTO STATUS SEEN & "💐" REACTION
+        // 1. Auto Status Seen & "💐" Reaction
         if (chatJid === 'status@broadcast') {
           try {
             await sock.readMessages([msg.key]);
@@ -294,40 +304,16 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 🟢 2. BULLETPROOF OWNER DETECTOR & "👨‍💻" AUTO REACT
-        const CREATOR_NUM = '+15947733680169';
-
-        // Direct, participant, and context JIDs
+        // 2. Sender Resolver
         const rawSender = msg.key.fromMe 
           ? (sock.user?.id || '') 
           : (isGroup ? (msg.key.participant || msg.participant || '') : chatJid);
 
-        const contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
-
         const cleanSenderNum = rawSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-        const cleanContextNum = contextSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const isOwner = global.OWNER_NUMBERS.includes(cleanSenderNum) || (msg.key.fromMe && global.OWNER_NUMBERS.includes(myBotNum));
 
-        // Check if message belongs to Owner
-        const isOwner = cleanSenderNum.includes(CREATOR_NUM) || 
-                        cleanContextNum.includes(CREATOR_NUM) || 
-                        (msg.key.fromMe && myBotNum.includes(CREATOR_NUM));
-
-        // Auto Dev React
-        if (isOwner) {
-          try {
-            await sock.sendMessage(chatJid, {
-              react: {
-                text: '👨‍💻',
-                key: msg.key
-              }
-            });
-          } catch (err) {
-            console.error('Owner React Error:', err.message);
-          }
-        }
-
-        // 3. UNWRAP MESSAGE TEXT
+        // 3. Unwrap Message Text
         const rawMsg = msg.message.ephemeralMessage?.message || 
                        msg.message.viewOnceMessage?.message || 
                        msg.message.viewOnceMessageV2?.message || 
@@ -349,12 +335,12 @@ async function initWhatsApp(phoneNumber) {
         const prefix = '.';
         const isCmd = text.startsWith(prefix);
 
-        // 4. COMMAND SYSTEM
+        // 4. Command Execution
         if (isCmd) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
-          // Built-in .ai switch
+          // Built-in .ai control
           if (commandName === 'ai') {
             if (!isOwner) {
               await sock.sendMessage(chatJid, { text: "⛔ Access Denied! Only the bot owner can change AI settings." }, { quoted: msg });
@@ -397,10 +383,10 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 5. INBOX AUTO-AI SYSTEM (Protected from Owner messages & Self triggers)
+        // 5. Inbox Auto-AI System
         const isFromBot = msg.key.fromMe || (myBotNum && cleanSenderNum.includes(myBotNum));
 
-        if (!isFromBot && !isOwner && !isGroup && global.autoAiInbox) {
+        if (!isFromBot && !isGroup && global.autoAiInbox) {
           try {
             await sock.sendPresenceUpdate('composing', chatJid);
             const aiPromise = askAI(text);
