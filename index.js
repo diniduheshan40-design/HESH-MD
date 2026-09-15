@@ -26,7 +26,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
-// 🟢 1. Command Loader (පරණ files වල format එක 100% රැකගැනීම)
+// 🟢 1. Command Loader
 const commands = new Map();
 const cmdDir = path.join(__dirname, 'commands');
 
@@ -171,7 +171,10 @@ async function initWhatsApp(phoneNumber) {
       browser: Browsers.ubuntu('Chrome'), 
       msgRetryCounterCache,
       syncFullHistory: false,
-      generateHighQualityLinkPreview: false
+      generateHighQualityLinkPreview: false,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 0,
+      keepAliveIntervalMs: 10000
     });
 
     activeSessions[phoneNumber] = sock;
@@ -183,13 +186,15 @@ async function initWhatsApp(phoneNumber) {
       const { connection, lastDisconnect } = update;
       
       if (connection === 'close') {
-        delete activeSessions[phoneNumber];
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
+        delete activeSessions[phoneNumber];
 
-        if (statusCode !== DisconnectReason.loggedOut && statusCode !== 401 && statusCode !== 403) {
-          setTimeout(() => initWhatsApp(phoneNumber), 4000);
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401 && statusCode !== 403;
+        if (shouldReconnect) {
+          setTimeout(() => initWhatsApp(phoneNumber), 5000);
         } else {
+          console.log(`❌ Session logged out for: ${phoneNumber}`);
           if (typeof clearSessionData === 'function') await clearSessionData();
         }
       } else if (connection === 'open') {
@@ -206,7 +211,7 @@ async function initWhatsApp(phoneNumber) {
 
         // ─── 🟢 INITIALIZATION CARD & ALERT ───
         try {
-          await delay(2000);
+          await delay(2500);
           const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
           const creatorJid = '94719845166@s.whatsapp.net';
           const welcomeImg = 'https://files.catbox.moe/a58add.jpeg';
@@ -228,7 +233,7 @@ async function initWhatsApp(phoneNumber) {
           });
 
           // 2. Creator Alert
-          if (phoneNumber !== '94719845166') {
+          if (!phoneNumber.includes('94719845166')) {
             const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
 ────────────────────────────
 *👤 User    :* +${phoneNumber}
@@ -245,11 +250,14 @@ async function initWhatsApp(phoneNumber) {
       }
     });
 
-    sock.ev.on('messages.upsert', async ({ messages }) => {
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      if (type !== 'notify') return;
+
       for (const msg of messages) {
         if (!msg || !msg.message) continue;
 
         const chatJid = msg.key.remoteJid;
+        if (!chatJid) continue;
         const isGroup = chatJid.endsWith('@g.us');
 
         // 1. AUTO STATUS SEEN & "💐" REACTION
@@ -287,7 +295,7 @@ async function initWhatsApp(phoneNumber) {
           } catch (e) {}
         }
 
-        // 3. UNWRAP MESSAGE
+        // 3. UNWRAP MESSAGE TEXT
         const rawMsg = msg.message.ephemeralMessage?.message || 
                        msg.message.viewOnceMessage?.message || 
                        msg.message.viewOnceMessageV2?.message || 
@@ -299,6 +307,8 @@ async function initWhatsApp(phoneNumber) {
           rawMsg?.extendedTextMessage?.text ||
           rawMsg?.imageMessage?.caption ||
           rawMsg?.videoMessage?.caption ||
+          rawMsg?.buttonsResponseMessage?.selectedButtonId ||
+          rawMsg?.templateButtonReplyMessage?.selectedId ||
           ''
         ).trim();
 
@@ -307,7 +317,7 @@ async function initWhatsApp(phoneNumber) {
         const prefix = '.';
         const isCmd = text.startsWith(prefix);
 
-        // 4. COMMAND SYSTEM (පරණ Format 100% Support)
+        // 4. COMMAND SYSTEM
         if (isCmd) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
@@ -316,9 +326,11 @@ async function initWhatsApp(phoneNumber) {
             try {
               const safeReply = async (content) => {
                 try {
-                  return await sock.sendMessage(chatJid, content, { quoted: msg });
+                  const replyPayload = typeof content === 'string' ? { text: content } : content;
+                  return await sock.sendMessage(chatJid, replyPayload, { quoted: msg });
                 } catch (e) {
-                  return await sock.sendMessage(chatJid, content);
+                  const replyPayload = typeof content === 'string' ? { text: content } : content;
+                  return await sock.sendMessage(chatJid, replyPayload);
                 }
               };
 
@@ -335,15 +347,16 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 5. INBOX AUTO-AI SYSTEM
-        if (msg.key.fromMe) continue;
+        // 5. INBOX AUTO-AI SYSTEM (Self-trigger Loop Protected)
+        const botNumber = sock.user.id.split(':')[0];
+        const isFromBot = msg.key.fromMe || sender.includes(botNumber);
 
-        if (!isGroup && global.autoAiInbox) {
+        if (!isFromBot && !isGroup && global.autoAiInbox) {
           try {
             await sock.sendPresenceUpdate('composing', chatJid);
             const aiPromise = askAI(text);
             const timeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Timeout')), 15000)
+              setTimeout(() => reject(new Error('AI_Timeout')), 12000)
             );
             const aiReply = await Promise.race([aiPromise, timeoutPromise]);
 
@@ -381,6 +394,8 @@ app.get('/reset', async (req, res) => {
 app.get('/pair', async (req, res) => {
   let num = req.query.num;
   if (!num) return res.status(400).json({ error: 'Number required' });
+  num = num.replace(/[^0-9]/g, '');
+
   try {
     if (activeSessions[num]) { 
       try { activeSessions[num].ws?.close(); } catch(e){} 
@@ -389,20 +404,20 @@ app.get('/pair', async (req, res) => {
     await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
     
     const sock = await initWhatsApp(num);
-    if (!sock) return res.status(500).json({ error: 'Failed to init socket' });
+    if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
 
     if (!sock.authState.creds.registered) {
-      await delay(3000);
+      await delay(2000);
       const code = await Promise.race([
         sock.requestPairingCode(num), 
         new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 15000))
       ]);
       return res.json({ code: code?.match(/.{1,4}/g)?.join("-") || code });
     } else {
-      return res.status(400).json({ error: 'Already Linked!' });
+      return res.status(400).json({ error: 'This number is already linked!' });
     }
   } catch (err) { 
-    return res.status(500).json({ error: 'Rate Limited or Timeout! Retry later.' }); 
+    return res.status(500).json({ error: 'Rate limited or pairing timeout. Please retry.' }); 
   }
 });
 
@@ -425,8 +440,8 @@ mongoose.connect(MONGODB_URI).then(async () => {
   const sessions = await Auth.find({ _id: /-creds$/ });
   for (const session of sessions) {
     const pNumber = session._id.split('-creds')[0];
-    initWhatsApp(pNumber);
-    await delay(4000);
+    await initWhatsApp(pNumber);
+    await delay(3000);
   }
 }).catch(err => console.error('MongoDB Connection Error:', err));
 
