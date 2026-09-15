@@ -1,3 +1,4 @@
+// commands/tiktok.js
 const axios = require('axios');
 
 module.exports = {
@@ -6,26 +7,40 @@ module.exports = {
   category: 'download',
   desc: 'Download TikTok video without watermark',
   async execute(sock, msg, args, chatJid, safeReply) {
-    const DEFAULT_FOOTER = '\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡';
+    const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
+      ? chatJid 
+      : msg.key.remoteJid;
+
     const url = args[0]?.trim();
 
     if (!url || (!url.includes('tiktok.com') && !url.includes('tiktok.com/'))) {
-      const helpText = `*❪ ERROR ❫*\n\n⚠️ *කරුණාකර TikTok වීඩියෝ link එකක් ලබා දෙන්න!*\n\n📥 *Example:*\n• .tiktok https://vm.tiktok.com/xxxx/\n• .tt https://vt.tiktok.com/xxxx/${DEFAULT_FOOTER}`;
-      return await (safeReply ? safeReply({ text: helpText }) : sock.sendMessage(chatJid, { text: helpText }, { quoted: msg }));
+      const helpText = `┏━━━❮ ⚠️ *TIKTOK DOWNLOADER* ❯━━━┓
+┃
+┃ ◈ *Usage*   : \`.tiktok <link>\` or \`.tt <link>\`
+┃ ◈ *Example* : \`.tt https://vt.tiktok.com/xxxx/\`
+┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
+      return await sock.sendMessage(targetChat, { text: helpText }, { quoted: msg });
     }
 
-    // 🟢 ඔබේ API විස්තර
     const API_BASE = "https://api.chamindu.site";
     const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
+    let statusMsg = null;
 
     try {
-      await sock.sendMessage(chatJid, { react: { text: '⏳', key: msg.key } });
+      // 1. React & Instant Short Alert
+      await sock.sendMessage(targetChat, { react: { text: '🎵', key: msg.key } }).catch(() => {});
+
+      statusMsg = await sock.sendMessage(targetChat, {
+        text: "⚡ *Downloading TikTok video, please wait...*"
+      }, { quoted: msg });
 
       let videoUrl = null;
       let title = 'TikTok Video';
       let author = 'Creator';
 
-      // 1. Primary Engine: ඔයාගේ Custom Chamindu API එක
+      // 2. Primary Engine (Chamindu API)
       try {
         const res = await axios.get(`${API_BASE}/api/v1/download/tiktok?url=${encodeURIComponent(url)}&api_key=${API_KEY}`, { timeout: 15000 });
         const data = res.data?.data;
@@ -38,7 +53,7 @@ module.exports = {
         console.warn('Chamindu API failed, switching to backup engine...');
       }
 
-      // 2. Fallback Engine: ඔයාගේ API එකේ අවුලක් වුණොත් විතරක් run වෙන Backup එක (TikWM)
+      // 3. Fallback Engine (TikWM)
       if (!videoUrl) {
         try {
           const resFallback = await axios.get(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`, { timeout: 15000 });
@@ -51,27 +66,47 @@ module.exports = {
         } catch (e) {}
       }
 
-      if (!videoUrl) {
-        try { await sock.sendMessage(chatJid, { react: { text: '❌', key: msg.key } }); } catch (e) {}
-        const notFoundText = `❌ *වීඩියෝව ලබා ගැනීමට නොහැකි විය. Link එක නිවැරදිදැයි බලන්න!*${DEFAULT_FOOTER}`;
-        return await (safeReply ? safeReply({ text: notFoundText }) : sock.sendMessage(chatJid, { text: notFoundText }, { quoted: msg }));
+      // Delete status message before sending final media
+      if (statusMsg) {
+        await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      const caption = `*🎵 𝗧𝗜𝗞𝗧𝗢𝗞 𝗛𝗗 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 🎵*\n\n📝 *Title:* ${title}\n👤 *Author:* ${author}${DEFAULT_FOOTER}`;
+      if (!videoUrl) {
+        await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+        return await sock.sendMessage(targetChat, { 
+          text: `❌ *Could not fetch video. Please check the URL!* \n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` 
+        }, { quoted: msg });
+      }
 
-      await sock.sendMessage(chatJid, {
+      // 4. Compact Cyber Box Caption
+      const cleanTitle = title.replace(/[\\/:"*?<>|]/g, '').trim();
+      const caption = `┏━━━❮ 🎬 *TIKTOK HD* ❯━━━┓
+┃
+┃ 📌 *Title*  : ${cleanTitle.slice(0, 36)}
+┃ 👤 *Author* : ${author}
+┃ 🚀 *Engine* : Fast No-Watermark
+┃
+┗━━━━━━━━━━━━━━━━━━━━━━━┛
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
+
+      // 5. Send Video Directly via URL
+      await sock.sendMessage(targetChat, {
         video: { url: videoUrl },
         caption: caption,
         mimetype: 'video/mp4'
       }, { quoted: msg });
 
-      try { await sock.sendMessage(chatJid, { react: { text: '✅', key: msg.key } }); } catch (e) {}
+      await sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
     } catch (err) {
       console.error('TikTok DL Error:', err.message);
-      try { await sock.sendMessage(chatJid, { react: { text: '❌', key: msg.key } }); } catch (e) {}
-      const errText = `❌ *TikTok Download Error:* ${err.message}${DEFAULT_FOOTER}`;
-      return await (safeReply ? safeReply({ text: errText }) : sock.sendMessage(chatJid, { text: errText }, { quoted: msg }));
+      if (statusMsg) {
+        await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+      }
+      await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+      await sock.sendMessage(targetChat, { 
+        text: `❌ *TikTok Download Error:* ${err.message}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` 
+      }, { quoted: msg });
     }
   }
 };
