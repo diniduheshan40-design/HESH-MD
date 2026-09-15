@@ -1,12 +1,9 @@
 // commands/alive.js
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const fetch = require('node-fetch');
 
-// Channel Forward Context
-const CACHED_CHANNEL_JID = "120363413193872888@newsletter";
 const LOGO_URL = "https://files.catbox.moe/a58add.jpeg";
+const CACHED_CHANNEL_JID = "120363413193872888@newsletter";
 
 function getEmojiTime(jid) {
     let tz = 'Asia/Colombo'; 
@@ -54,7 +51,7 @@ function formatUptime(seconds) {
 }
 
 // Sub-commands trigger helper
-const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg, safeReply) => {
+const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg) => {
     try {
         const cmdPath = path.join(__dirname, `${cmdName}.js`);
         if (fs.existsSync(cmdPath)) {
@@ -64,7 +61,7 @@ const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg, safeReply) 
             const args = fakeUserText.trim().split(/\s+/).slice(1);
 
             if (typeof cmdModule.execute === 'function') {
-                await cmdModule.execute(sock, replyMsg, args, remoteJid, safeReply);
+                await cmdModule.execute(sock, replyMsg, args, remoteJid);
             } else if (typeof cmdModule.run === 'function') {
                 await cmdModule.run({ sock, msg: replyMsg, args, from: remoteJid });
             } else if (typeof cmdModule === 'function') {
@@ -79,12 +76,19 @@ const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg, safeReply) 
 module.exports = {
     name: 'alive',
     category: 'general',
-    desc: 'Check bot operational status and quick menu',
+    desc: 'Check bot operational status and info',
 
-    async execute(sock, msg, args, chatJid, safeReply) {
-        const targetChat = chatJid || msg.key.remoteJid;
+    async execute(sock, msg, args, chatJid) {
+        // Chat JID එක නිවැරදිව ලබා ගැනීම
+        const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
+            ? chatJid 
+            : msg.key.remoteJid;
+
         const senderJid = msg.key.participant || targetChat;
-        
+
+        // Reaction එක දැමීම
+        sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
+
         let pushName = msg.pushName || "User";  
         let firstName = pushName.split(/[\s_+-]+/)[0] || "User"; 
         if (firstName.length > 15) firstName = firstName.substring(0, 15);  
@@ -92,10 +96,6 @@ module.exports = {
         const rawText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
         const currentPrefix = (rawText && /^[.#/!]/.test(rawText.charAt(0))) ? rawText.charAt(0) : '.';
 
-        // 1. Reaction එක ලබා දීම
-        sock.sendMessage(targetChat, { react: { text: '⚡', key: msg.key } }).catch(() => {});
-
-        // 2. විස්තර සකස් කිරීම
         const uptime = formatUptime(process.uptime());
         const emojiTime = getEmojiTime(senderJid);
 
@@ -117,41 +117,32 @@ module.exports = {
 *╚════════════៚*
 > 🔐 *heshan ofc • all rights reserved*`;
 
-        const channelContext = {
-            forwardingScore: 1, 
-            isForwarded: true,
-            forwardedNewsletterMessageInfo: { 
-                newsletterJid: CACHED_CHANNEL_JID, 
-                newsletterName: "HESHAN MD SYSTEM 👾", 
-                serverMessageId: 100 
-            }
-        };
-
         try {
-            // 3. Image එක Buffer එකක් ලෙස download කර යැවීම (Download error වුවහොත් Direct URL එකෙන් යවයි)
-            let imagePayload = { url: LOGO_URL };
-            try {
-                const imgRes = await fetch(LOGO_URL);
-                if (imgRes.ok) {
-                    const imgBuffer = await imgRes.buffer();
-                    imagePayload = imgBuffer;
-                }
-            } catch (e) {}
-
+            // කෙළින්ම Photo එක සහ Caption එක එකවර යැවීම
             const sentMsg = await sock.sendMessage(targetChat, {
-                image: imagePayload,
+                image: { url: LOGO_URL },
                 caption: aliveMsg,
-                contextInfo: channelContext
+                contextInfo: {
+                    forwardingScore: 999,
+                    isForwarded: true,
+                    forwardedNewsletterMessageInfo: {
+                        newsletterJid: CACHED_CHANNEL_JID,
+                        newsletterName: "HESHAN MD SYSTEM 👾",
+                        serverMessageId: 100
+                    }
+                }
             }, { quoted: msg });
 
-            const stanzaId = sentMsg.key.id;
+            const stanzaId = sentMsg?.key?.id;
+            if (!stanzaId) return;
+
             const usedOptions = new Set();
 
-            // 4. Interactive Reply Listener (1, 2, 3 සඳහා)
+            // Reply listener එක (1, 2, 3 සඳහා)
             const replyListener = async (m) => {  
                 try {  
-                    const replyMsg = m.messages[0];  
-                    if (!replyMsg.message) return; 
+                    const replyMsg = m.messages?.[0];  
+                    if (!replyMsg || !replyMsg.message) return; 
 
                     let msgContent = replyMsg.message;
                     if (msgContent.ephemeralMessage) msgContent = msgContent.ephemeralMessage.message;
@@ -177,11 +168,11 @@ module.exports = {
 
                         if (replyText === "1") {  
                             await sock.sendMessage(replyChat, { react: { text: '📜', key: replyMsg.key } }).catch(() => {});  
-                            await triggerCommand('menu', `${currentPrefix}menu`, sock, replyMsg, safeReply);
+                            await triggerCommand('menu', `${currentPrefix}menu`, sock, replyMsg);
 
                         } else if (replyText === "2") {  
                             await sock.sendMessage(replyChat, { react: { text: '⚡', key: replyMsg.key } }).catch(() => {});
-                            await triggerCommand('ping', `${currentPrefix}ping`, sock, replyMsg, safeReply);
+                            await triggerCommand('ping', `${currentPrefix}ping`, sock, replyMsg);
 
                         } else if (replyText === "3") {  
                             await sock.sendMessage(replyChat, { react: { text: '👑', key: replyMsg.key } }).catch(() => {});
@@ -191,10 +182,7 @@ module.exports = {
                                                  `*• Contact:* wa.me/94770000000\n\n` +
                                                  `> 🔐 *heshan ofc • all rights reserved*`;
                             
-                            await sock.sendMessage(replyChat, { 
-                                text: ownerDetails, 
-                                contextInfo: channelContext 
-                            }, { quoted: replyMsg });
+                            await sock.sendMessage(replyChat, { text: ownerDetails }, { quoted: replyMsg });
                         }  
                     }
                 } catch (error) {  
@@ -204,16 +192,15 @@ module.exports = {
 
             sock.ev.on('messages.upsert', replyListener);  
 
-            // තත්පර 60 කට පසු listener එක ඉවත් කිරීම
+            // තත්පර 60 කින් listener ඉවත් කිරීම
             setTimeout(() => {  
                 sock.ev.off('messages.upsert', replyListener);  
             }, 60000);  
 
         } catch (err) {
-            console.error("Alive Error:", err);
-            if (safeReply) {
-                await safeReply(targetChat, '❌ Alive command error.');
-            }
+            console.error("Alive Execution Error:", err);
+            // Image එක යැවීමට බැරි වුවහොත් text එක පමණක් යැවීම
+            await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg }).catch(() => {});
         }
     }
 };
