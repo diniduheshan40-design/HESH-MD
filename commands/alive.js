@@ -1,4 +1,5 @@
 const os = require('os');
+const fetch = require('node-fetch');
 
 function formatUptime(seconds) {
     seconds = Math.floor(Number(seconds) || 0);
@@ -13,12 +14,13 @@ module.exports = {
     name: 'alive',
     category: 'general',
     desc: 'Check bot operational status and info',
-    async execute(sock, msg, args, chatJid) {
+    async execute(sock, msg, args, chatJid, safeReply) {
         const targetChat = chatJid || msg.key.remoteJid;
         const pushname = msg.pushName || 'User';
+        const logoUrl = 'https://files.catbox.moe/a58add.jpeg';
 
         try {
-            // 1. Initial reaction
+            // 1. Safe React
             try {
                 await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } });
             } catch (e) {}
@@ -49,12 +51,19 @@ module.exports = {
 ╰──────────────────────────╯
 > 🔐 *heshan ofc • all rights reserved*`;
 
-            const imgUrl = 'https://files.catbox.moe/a58add.jpeg';
+            // 2. Fetch image buffer safely
+            let imgData = { url: logoUrl };
+            try {
+              const res = await fetch(logoUrl, { timeout: 8000 });
+              if (res.ok) {
+                imgData = await res.buffer();
+              }
+            } catch (e) {}
 
-            // 2. Direct URL send (Buffer delay නැති නිසා ක්ෂණිකව send වේ)
+            // 3. Send image
             try {
                 await sock.sendMessage(targetChat, { 
-                    image: { url: imgUrl }, 
+                    image: imgData, 
                     caption: aliveMsg 
                 }, { quoted: msg });
             } catch (imgErr) {
