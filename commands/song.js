@@ -1,85 +1,85 @@
-const fetch = require('node-fetch');
+const axios = require('axios');
 let yts;
 try {
-    yts = require('yt-search');
+  yts = require('yt-search');
 } catch (e) {
-    yts = null;
+  yts = null;
 }
 
 module.exports = {
-    name: 'song',
-    async execute(sock, msg, args, chatJid) {
-        const targetChat = chatJid || msg.key.remoteJid;
-        const query = args.join(' ').trim();
+  name: 'song',
+  category: 'download',
+  desc: 'Download YouTube song in MP3',
+  async execute(sock, msg, args, chatJid, safeReply) {
+    const targetChat = chatJid || msg.key.remoteJid;
+    const query = args.join(' ').trim();
 
-        if (!query) {
-            return await sock.sendMessage(targetChat, { 
-                text: "❗ *කරුණාකර සිංදුවේ නම හෝ Link එකක් ලබාදෙන්න!*\n*උදාහරණ:* `.song Faded`" 
-            }, { quoted: msg });
+    if (!query) {
+      return await sock.sendMessage(targetChat, { 
+        text: "❗ *කරුණාකර සිංදුවේ නම හෝ Link එකක් ලබාදෙන්න!*\n*උදාහරණ:* `.song Faded`\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
+      }, { quoted: msg });
+    }
+
+    try {
+      await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } });
+
+      let videoUrl = query;
+      let videoTitle = query;
+      let duration = 'N/A';
+      let author = 'YouTube Music';
+      let thumbnail = 'https://files.catbox.moe/a58add.jpeg';
+      let views = 'N/A';
+
+      // 1. YouTube Search
+      const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
+
+      if (!isYtUrl) {
+        if (!yts) {
+          return await sock.sendMessage(targetChat, { text: "❌ yt-search module එක සොයාගත නොහැකි විය." }, { quoted: msg });
+        }
+        
+        const searchResults = await yts(query);
+        if (!searchResults?.videos?.length) {
+          await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } });
+          return await sock.sendMessage(targetChat, { text: "❌ සිංදුව හමු නොවීය! නම නිවැරදිදැයි බලන්න." }, { quoted: msg });
         }
 
+        const video = searchResults.videos[0];
+        videoUrl = video.url;
+        videoTitle = video.title;
+        duration = video.timestamp || 'N/A';
+        author = video.author?.name || author;
+        thumbnail = video.thumbnail || thumbnail;
+        views = video.views ? Number(video.views).toLocaleString() : 'N/A';
+      }
+
+      // 2. Fetch MP3 Download Link (ඔබේ Chamindu API එක Primary ලෙස)
+      let downloadUrl = null;
+      let finalTitle = videoTitle;
+
+      try {
+        const chamaRes = await axios.get(`https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=128kbps&api_key=chama_api_b764539713b0514de0dbb60f401cd69e`, { timeout: 15000 });
+        downloadUrl = chamaRes.data?.data?.download_url || chamaRes.data?.data?.direct_url;
+        if (chamaRes.data?.data?.title) finalTitle = chamaRes.data.data.title;
+      } catch (e1) {
+        console.warn('Primary Chamindu API failed, trying backup...');
+      }
+
+      // Fast Backup API
+      if (!downloadUrl) {
         try {
-            await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } });
+          const backupRes = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
+          downloadUrl = backupRes.data?.result?.download_url;
+          if (backupRes.data?.result?.title) finalTitle = backupRes.data.result.title;
+        } catch (e2) {}
+      }
 
-            let videoUrl = query;
-            let videoTitle = query;
-            let duration = 'N/A';
-            let author = 'HESHAN-MD';
-            let thumbnail = 'https://files.catbox.moe/a58add.jpeg';
-            let views = 'N/A';
+      if (!downloadUrl) {
+        throw new Error('බාගත කිරීමේ සබැඳිය ලබා ගැනීමට නොහැකි විය.');
+      }
 
-            // YouTube Search & Details Extraction
-            if (!query.startsWith('http://') && !query.startsWith('https://')) {
-                if (!yts) return await sock.sendMessage(targetChat, { text: "❌ yt-search library එක සොයාගත නොහැකි විය." }, { quoted: msg });
-                
-                const searchResults = await yts(query);
-                if (!searchResults?.videos?.length) {
-                    await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } });
-                    return await sock.sendMessage(targetChat, { text: "❌ සිංදුව හමු නොවීය!" }, { quoted: msg });
-                }
-
-                const video = searchResults.videos[0];
-                videoUrl = video.url;
-                videoTitle = video.title;
-                duration = video.timestamp || 'N/A';
-                author = video.author?.name || author;
-                thumbnail = video.thumbnail || thumbnail;
-                views = video.views ? Number(video.views).toLocaleString() : 'N/A';
-            }
-
-            // 1. Audio Stream Link ලබා ගැනීම (Multi-API Fast Fallback)
-            let downloadUrl = null;
-            let finalTitle = videoTitle;
-
-            const apis = [
-                `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=128kbps&api_key=chama_api_b764539713b0514de0dbb60f401cd69e`,
-                `https://api.vreden.web.id/api/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-                `https://widipe.com/download/ytdl?url=${encodeURIComponent(videoUrl)}`
-            ];
-
-            for (const endpoint of apis) {
-                try {
-                    const res = await fetch(endpoint, { timeout: 8000 });
-                    const data = await res.json();
-                    
-                    downloadUrl = data?.data?.download_url || 
-                                  data?.data?.direct_url || 
-                                  data?.result?.download?.url || 
-                                  data?.result?.mp3;
-
-                    if (downloadUrl) {
-                        finalTitle = data?.data?.title || data?.result?.title || videoTitle;
-                        break;
-                    }
-                } catch (e) {
-                    continue;
-                }
-            }
-
-            if (!downloadUrl) throw new Error('බාගත කිරීමේ සබැඳිය ලබා ගැනීමට නොහැකි විය.');
-
-            // 2. Info UI Card (Thumbnail එක සමඟ විස්තර පෙන්වීම)
-            const songCard = `╭───❮ 🎵 *H E S H A N - M D* ❯───╮
+      // 3. Information Card (ක්ෂණිකව යැවීම)
+      const songCard = `╭───❮ 🎵 *H E S H A N - M D* ❯───╮
 │
 │ 📌 *Title:* ${finalTitle.slice(0, 40)}
 │ 👤 *Artist:* ${author}
@@ -87,41 +87,38 @@ module.exports = {
 │ 👁️ *Views:* ${views}
 │ 🔗 *Source:* YouTube Engine
 │
-│ > ⚡ _Downloading audio file..._
 ╰───────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-            await sock.sendMessage(targetChat, {
-                image: { url: thumbnail },
-                caption: songCard
-            }, { quoted: msg });
+      await sock.sendMessage(targetChat, {
+        image: { url: thumbnail },
+        caption: songCard
+      }, { quoted: msg });
 
-            // 3. Audio එක Background එකෙන් Buffer කර වඩාත් වේගයෙන් යැවීම
-            const audioStream = await fetch(downloadUrl);
-            const audioBuffer = await audioStream.buffer();
-
-            await sock.sendMessage(targetChat, {
-                audio: audioBuffer,
-                mimetype: 'audio/mpeg',
-                fileName: `${finalTitle.replace(/[\\/:"*?<>|]/g, '')}.mp3`,
-                contextInfo: {
-                    externalAdReply: {
-                        title: finalTitle.slice(0, 32),
-                        body: `${author} • ${duration}`,
-                        thumbnailUrl: thumbnail,
-                        sourceUrl: videoUrl,
-                        mediaType: 2,
-                        renderLargerThumbnail: true
-                    }
-                }
-            }, { quoted: msg });
-
-            await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } });
-
-        } catch (err) {
-            console.error('Song Error:', err);
-            await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } });
-            await sock.sendMessage(targetChat, { text: `❌ දෝෂයක්: ${err.message}` }, { quoted: msg });
+      // 4. Send Audio directly via URL (RAM Buffer එකක් නැති නිසා 100% smooth & fast)
+      await sock.sendMessage(targetChat, {
+        audio: { url: downloadUrl },
+        mimetype: 'audio/mpeg',
+        fileName: `${finalTitle.replace(/[\\/:"*?<>|]/g, '')}.mp3`,
+        contextInfo: {
+          externalAdReply: {
+            title: finalTitle.slice(0, 32),
+            body: `${author} • ${duration}`,
+            thumbnailUrl: thumbnail,
+            sourceUrl: videoUrl,
+            mediaType: 2,
+            renderLargerThumbnail: true
+          }
         }
+      }, { quoted: msg });
+
+      await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } });
+
+    } catch (err) {
+      console.error('Song Error:', err.message);
+      try { await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }); } catch (e) {}
+      await sock.sendMessage(targetChat, { text: `❌ දෝෂයක්: ${err.message}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` }, { quoted: msg });
     }
+  }
 };
+
