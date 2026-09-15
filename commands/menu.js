@@ -1,14 +1,12 @@
 module.exports = {
-    name: 'menu',
-    async execute(sock, msg, args, chatJid) {
-        // chatJid එක තහවුරු කර ගැනීම
-        const targetChat = chatJid || msg.key.remoteJid;
+  name: 'menu',
+  category: 'general',
+  desc: 'Display all bot command menus',
+  async execute(sock, msg, args, chatJid) {
+    const targetChat = chatJid || msg.key.remoteJid;
+    const logoUrl = 'https://files.catbox.moe/a58add.jpeg';
 
-        // Logo Direct URL
-        const logoUrl = 'https://files.catbox.moe/a58add.jpeg';
-
-        // මෙනූ Text එක try එකෙන් පිටත declare කර ඇත (ReferenceError වැළැක්වීමට)
-        const menuText = `╭───❮ ❖ 𝗛 𝗘 𝗦 𝗛 𝗔 𝗡 - 𝗠 𝗗 ❖ ❯───╮
+    const menuText = `╭───❮ ❖ 𝗛 𝗘 𝗦 𝗛 𝗔 𝗡 - 𝗠 𝗗 ❖ ❯───╮
 │  ꜱ ɪ ᴍ ᴘ ʟ ᴇ  •  ꜰ ᴀ ꜱ ᴛ  •  ᴘ ᴏ ᴡ ᴇ ʀ ꜰ ᴜ ʟ
 │  
 │  👋 *Hello! Welcome to Command Menu*
@@ -48,33 +46,35 @@ module.exports = {
 │  > 🔐 ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ
 ╰───────────────────────────────╯`;
 
-        try {
-            // 1. Command එක ආපු ගමන් 📜 React කරනවා
-            await sock.sendMessage(targetChat, {
-                react: {
-                    text: "📜",
-                    key: msg.key
-                }
-            });
+    try {
+      // 1. Safe React
+      try {
+        await sock.sendMessage(targetChat, {
+          react: {
+            text: "📜",
+            key: msg.key
+          }
+        });
+      } catch (e) {}
 
-            // 2. Image එක සහිතව යැවීම
-            await sock.sendMessage(targetChat, {
-                image: { url: logoUrl },
-                caption: menuText,
-                contextInfo: {
-                    forwardingScore: 999,
-                    isForwarded: true
-                }
-            }, { quoted: msg });
-
-        } catch (err) {
-            console.error('Error in menu command:', err);
-            // Image fail වුණොත් Text එක පමණක් යවයි
-            try {
-                await sock.sendMessage(targetChat, { text: menuText }, { quoted: msg });
-            } catch (fallbackErr) {
-                console.error('Fallback send error:', fallbackErr);
-            }
+      // 2. Send Image with Context Info
+      await sock.sendMessage(targetChat, {
+        image: { url: logoUrl },
+        caption: menuText,
+        contextInfo: {
+          forwardingScore: 999,
+          isForwarded: true
         }
+      }, { quoted: msg });
+
+    } catch (err) {
+      console.error('Error in menu command:', err.message);
+      // Fallback: send text only if image fails
+      try {
+        await sock.sendMessage(targetChat, { text: menuText }, { quoted: msg });
+      } catch (fallbackErr) {
+        console.error('Fallback send error:', fallbackErr.message);
+      }
     }
+  }
 };
