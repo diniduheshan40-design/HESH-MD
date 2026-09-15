@@ -14,7 +14,7 @@ module.exports = {
 
         if (!query) {
             return await sock.sendMessage(targetChat, { 
-                text: "❗ *කරුණාකර සිංදුවේ නම හෝ Link එකක් දෙන්න!*\n*උදාහරණ:* `.song Faded`" 
+                text: "❗ *කරුණාකර සිංදුවේ නම හෝ Link එකක් ලබාදෙන්න!*\n*උදාහරණ:* `.song Faded`" 
             }, { quoted: msg });
         }
 
@@ -25,56 +25,93 @@ module.exports = {
             let videoTitle = query;
             let duration = 'N/A';
             let author = 'HESHAN-MD';
+            let thumbnail = 'https://files.catbox.moe/a58add.jpeg';
+            let views = 'N/A';
 
-            // YouTube Search
+            // YouTube Search & Details Extraction
             if (!query.startsWith('http://') && !query.startsWith('https://')) {
-                if (!yts) return await sock.sendMessage(targetChat, { text: "❌ yt-search library එක නැත." }, { quoted: msg });
+                if (!yts) return await sock.sendMessage(targetChat, { text: "❌ yt-search library එක සොයාගත නොහැකි විය." }, { quoted: msg });
+                
                 const searchResults = await yts(query);
                 if (!searchResults?.videos?.length) {
+                    await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } });
                     return await sock.sendMessage(targetChat, { text: "❌ සිංදුව හමු නොවීය!" }, { quoted: msg });
                 }
+
                 const video = searchResults.videos[0];
                 videoUrl = video.url;
                 videoTitle = video.title;
                 duration = video.timestamp || 'N/A';
                 author = video.author?.name || author;
+                thumbnail = video.thumbnail || thumbnail;
+                views = video.views ? Number(video.views).toLocaleString() : 'N/A';
             }
 
-            // 128kbps මඟින් size එක 70% කින් අඩු කර Speed එක 3x වැඩි කරයි
-            const apiKey = 'chama_api_b764539713b0514de0dbb60f401cd69e';
-            const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=128kbps&api_key=${apiKey}`;
-
-            let downloadUrl;
+            // 1. Audio Stream Link ලබා ගැනීම (Multi-API Fast Fallback)
+            let downloadUrl = null;
             let finalTitle = videoTitle;
 
-            try {
-                const res = await fetch(apiUrl);
-                const json = await res.json();
-                if (json?.status && (json.data?.download_url || json.data?.direct_url)) {
-                    downloadUrl = json.data.download_url || json.data.direct_url;
-                    finalTitle = json.data.title || videoTitle;
+            const apis = [
+                `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=128kbps&api_key=chama_api_b764539713b0514de0dbb60f401cd69e`,
+                `https://api.vreden.web.id/api/ytmp3?url=${encodeURIComponent(videoUrl)}`,
+                `https://widipe.com/download/ytdl?url=${encodeURIComponent(videoUrl)}`
+            ];
+
+            for (const endpoint of apis) {
+                try {
+                    const res = await fetch(endpoint, { timeout: 8000 });
+                    const data = await res.json();
+                    
+                    downloadUrl = data?.data?.download_url || 
+                                  data?.data?.direct_url || 
+                                  data?.result?.download?.url || 
+                                  data?.result?.mp3;
+
+                    if (downloadUrl) {
+                        finalTitle = data?.data?.title || data?.result?.title || videoTitle;
+                        break;
+                    }
+                } catch (e) {
+                    continue;
                 }
-            } catch (e) {
-                // Main API එක slow/down නම් Fast Backup API එකක්
-                const backup = await fetch(`https://api.vreden.web.id/api/ytmp3?url=${encodeURIComponent(videoUrl)}`);
-                const bJson = await backup.json();
-                downloadUrl = bJson?.result?.download?.url;
             }
 
-            if (!downloadUrl) throw new Error('බාගත කිරීමේ Link එක ලබාගත නොහැකි විය.');
+            if (!downloadUrl) throw new Error('බාගත කිරීමේ සබැඳිය ලබා ගැනීමට නොහැකි විය.');
 
-            // Image කාඩ් යැවීම නවතා Audio එක කෙලින්ම යැවීම (Speed උපරිම වේ)
+            // 2. Info UI Card (Thumbnail එක සමඟ විස්තර පෙන්වීම)
+            const songCard = `╭───❮ 🎵 *H E S H A N - M D* ❯───╮
+│
+│ 📌 *Title:* ${finalTitle.slice(0, 40)}
+│ 👤 *Artist:* ${author}
+│ ⏱️ *Duration:* ${duration}
+│ 👁️ *Views:* ${views}
+│ 🔗 *Source:* YouTube Engine
+│
+│ > ⚡ _Downloading audio file..._
+╰───────────────────────────────╯
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
+
             await sock.sendMessage(targetChat, {
-                audio: { url: downloadUrl },
+                image: { url: thumbnail },
+                caption: songCard
+            }, { quoted: msg });
+
+            // 3. Audio එක Background එකෙන් Buffer කර වඩාත් වේගයෙන් යැවීම
+            const audioStream = await fetch(downloadUrl);
+            const audioBuffer = await audioStream.buffer();
+
+            await sock.sendMessage(targetChat, {
+                audio: audioBuffer,
                 mimetype: 'audio/mpeg',
-                fileName: `${finalTitle}.mp3`,
+                fileName: `${finalTitle.replace(/[\\/:"*?<>|]/g, '')}.mp3`,
                 contextInfo: {
                     externalAdReply: {
-                        title: finalTitle.slice(0, 30),
+                        title: finalTitle.slice(0, 32),
                         body: `${author} • ${duration}`,
-                        mediaType: 1,
-                        renderLargerThumbnail: false,
-                        sourceUrl: videoUrl
+                        thumbnailUrl: thumbnail,
+                        sourceUrl: videoUrl,
+                        mediaType: 2,
+                        renderLargerThumbnail: true
                     }
                 }
             }, { quoted: msg });
@@ -83,6 +120,7 @@ module.exports = {
 
         } catch (err) {
             console.error('Song Error:', err);
+            await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } });
             await sock.sendMessage(targetChat, { text: `❌ දෝෂයක්: ${err.message}` }, { quoted: msg });
         }
     }
