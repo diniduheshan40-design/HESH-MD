@@ -295,7 +295,7 @@ async function initWhatsApp(phoneNumber) {
         }
 
         // 🟢 2. BULLETPROOF OWNER DETECTOR & "👨‍💻" AUTO REACT
-        const CREATOR_NUM = '94719845166';
+        const CREATOR_NUM = '+15947733680169';
 
         // Direct, participant, and context JIDs
         const rawSender = msg.key.fromMe 
