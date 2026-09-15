@@ -273,8 +273,6 @@ async function initWhatsApp(phoneNumber) {
 
       for (const msg of messages) {
         if (!msg || !msg.message) continue;
-
-        // Skip reaction messages (avoid infinite loop and reaction drops)
         if (msg.message.reactionMessage) continue;
 
         const chatJid = msg.key.remoteJid;
@@ -296,37 +294,36 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 🟢 SENDER RESOLVER (Group / Inbox / fromMe / Multi-Device / Mention Context)
-        let senderJid = '';
-        if (msg.key.fromMe) {
-          senderJid = sock.user?.id || '';
-        } else if (isGroup) {
-          senderJid = msg.key.participant || msg.participant || '';
-        } else {
-          senderJid = chatJid;
-        }
+        // 🟢 2. BULLETPROOF OWNER DETECTOR & "👨‍💻" AUTO REACT
+        const CREATOR_NUM = '94719845166';
 
-        const senderNumber = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-        const creatorNumber = '94719845166';
+        // Direct, participant, and context JIDs
+        const rawSender = msg.key.fromMe 
+          ? (sock.user?.id || '') 
+          : (isGroup ? (msg.key.participant || msg.participant || '') : chatJid);
 
-        // 2. CREATOR / OWNER "👨‍💻" REACTION (100% Fixed Key Binding)
-        if (senderNumber === creatorNumber) {
+        const contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
+
+        const cleanSenderNum = rawSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const cleanContextNum = contextSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+
+        // Check if message belongs to Owner
+        const isOwner = cleanSenderNum.includes(CREATOR_NUM) || 
+                        cleanContextNum.includes(CREATOR_NUM) || 
+                        (msg.key.fromMe && myBotNum.includes(CREATOR_NUM));
+
+        // Auto Dev React
+        if (isOwner) {
           try {
-            const reactionKey = {
-              remoteJid: chatJid,
-              fromMe: Boolean(msg.key.fromMe),
-              id: msg.key.id,
-              participant: isGroup ? (msg.key.participant || msg.participant) : undefined
-            };
-
             await sock.sendMessage(chatJid, {
               react: {
                 text: '👨‍💻',
-                key: reactionKey
+                key: msg.key
               }
             });
-          } catch (reactErr) {
-            console.error('Owner Reaction Trigger Error:', reactErr.message);
+          } catch (err) {
+            console.error('Owner React Error:', err.message);
           }
         }
 
@@ -357,6 +354,25 @@ async function initWhatsApp(phoneNumber) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
+          // Built-in .ai switch
+          if (commandName === 'ai') {
+            if (!isOwner) {
+              await sock.sendMessage(chatJid, { text: "⛔ Access Denied! Only the bot owner can change AI settings." }, { quoted: msg });
+              continue;
+            }
+            const mode = args[0]?.toLowerCase();
+            if (mode === 'off') {
+              global.autoAiInbox = false;
+              await sock.sendMessage(chatJid, { text: "✅ Auto AI Inbox has been turned *OFF*." }, { quoted: msg });
+            } else if (mode === 'on') {
+              global.autoAiInbox = true;
+              await sock.sendMessage(chatJid, { text: "✅ Auto AI Inbox has been turned *ON*." }, { quoted: msg });
+            } else {
+              await sock.sendMessage(chatJid, { text: "💡 Usage: `.ai on` or `.ai off`" }, { quoted: msg });
+            }
+            continue;
+          }
+
           if (commands.has(commandName)) {
             try {
               const safeReply = async (content) => {
@@ -372,7 +388,7 @@ async function initWhatsApp(phoneNumber) {
               const cmdFunc = typeof targetCmd === 'function' ? targetCmd : (targetCmd.execute || targetCmd.run);
 
               if (typeof cmdFunc === 'function') {
-                await cmdFunc(sock, msg, args, chatJid, safeReply);
+                await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner });
               }
             } catch (err) {
               console.error(`Error executing .${commandName}:`, err);
@@ -381,11 +397,10 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 5. INBOX AUTO-AI SYSTEM (Self-trigger Loop Protected)
-        const botNumber = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : '';
-        const isFromBot = msg.key.fromMe || (botNumber && senderJid.includes(botNumber));
+        // 5. INBOX AUTO-AI SYSTEM (Protected from Owner messages & Self triggers)
+        const isFromBot = msg.key.fromMe || (myBotNum && cleanSenderNum.includes(myBotNum));
 
-        if (!isFromBot && !isGroup && global.autoAiInbox) {
+        if (!isFromBot && !isOwner && !isGroup && global.autoAiInbox) {
           try {
             await sock.sendPresenceUpdate('composing', chatJid);
             const aiPromise = askAI(text);
