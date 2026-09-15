@@ -1,61 +1,60 @@
 module.exports = {
-    name: 'ping',
-    async execute(sock, msg, args, targetChat) {
-        const chatJid = targetChat || msg.key.remoteJid;
-        const start = Date.now();
+  name: 'ping',
+  category: 'general',
+  desc: 'Check bot response speed',
+  async execute(sock, msg, args, chatJid, safeReply) {
+    const targetChat = chatJid || msg.key.remoteJid;
+    const start = Date.now();
 
-        try {
-            // 1. Command එක ආපු ගමන් ⚡ React කරනවා
-            await sock.sendMessage(chatJid, {
-                react: {
-                    text: "⚡",
-                    key: msg.key
-                }
-            });
+    try {
+      // 1. Command එක ආපු ගමන් ⚡ React කරනවා
+      try {
+        await sock.sendMessage(targetChat, {
+          react: {
+            text: "⚡",
+            key: msg.key
+          }
+        });
+      } catch (e) {}
 
-            // 2. Testing පණිවිඩය යවනවා
-            const sentMsg = await sock.sendMessage(chatJid, { 
-                text: "*Testing... ⚡*" 
-            }, { quoted: msg });
+      // 2. Testing පණිවිඩය යවනවා
+      const sentMsg = await sock.sendMessage(targetChat, { 
+        text: "*Testing... ⚡*" 
+      }, { quoted: msg });
 
-            // Latency ගණනය කිරීම
-            const latency = Date.now() - start;
+      // Latency ගණනය කිරීම
+      const latency = Date.now() - start;
 
-            // 3. කලින් දාපු ⚡ reaction එක අයින් කරනවා (Remove reaction)
-            try {
-                await sock.sendMessage(chatJid, {
-                    react: {
-                        text: "",
-                        key: msg.key
-                    }
-                });
-            } catch (rErr) {
-                // Reaction remove එක fail වුණත් bot එක හිර නොවී ඉදිරියට යයි
-            }
-
-            // 4. Message එක Edit කර latency එක පෙන්වීම
-            try {
-                await sock.sendMessage(chatJid, {
-                    text: `*speed ${latency}ms 📍*`,
-                    edit: sentMsg.key
-                });
-            } catch (editErr) {
-                // Edit fail වුවහොත් fallback එකක් ලෙස අලුත් msg එකක් යවයි
-                await sock.sendMessage(chatJid, {
-                    text: `*speed ${latency}ms 📍*`
-                }, { quoted: msg });
-            }
-
-            // 5. වැඩේ සාර්ථකව අවසන් වූ පසු ✅ React කරනවා
-            await sock.sendMessage(chatJid, {
-                react: {
-                    text: "✅",
-                    key: msg.key
-                }
-            });
-
-        } catch (err) {
-            console.error('Ping Command Error:', err);
+      // 3. Message එක Edit කර latency එක පෙන්වීම
+      try {
+        if (sentMsg?.key) {
+          await sock.sendMessage(targetChat, {
+            text: `*speed ${latency}ms 📍*`,
+            edit: sentMsg.key
+          });
+        } else {
+          await sock.sendMessage(targetChat, {
+            text: `*speed ${latency}ms 📍*`
+          }, { quoted: msg });
         }
+      } catch (editErr) {
+        await sock.sendMessage(targetChat, {
+          text: `*speed ${latency}ms 📍*`
+        }, { quoted: msg });
+      }
+
+      // 4. වැඩේ සාර්ථකව අවසන් වූ පසු ✅ React කරනවා
+      try {
+        await sock.sendMessage(targetChat, {
+          react: {
+            text: "✅",
+            key: msg.key
+          }
+        });
+      } catch (e) {}
+
+    } catch (err) {
+      console.error('Ping Command Error:', err.message);
     }
+  }
 };
