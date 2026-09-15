@@ -1,118 +1,84 @@
+// commands/apk.js
 const axios = require('axios');
 
 module.exports = {
     name: 'apk',
-    alias: ['liteapks', 'modapk'],
+    alias: ['an1', 'apkdl'],
+    category: 'download',
+    desc: 'Download APK files from AN1',
+
     async execute(sock, msg, args, chatJid) {
         const DEFAULT_FOOTER = '\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡';
+        const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
+            ? chatJid 
+            : msg.key.remoteJid;
 
-        if (!args.length) {
-            return await sock.sendMessage(chatJid, {
-                text: `*❪ ERROR ❫*\n\n⚠️ *Invalid Usage!*\n\n📱 *Example:*\n• .apk spotify\n• .liteapks capcut\n\n📝 _Please provide the App or Game name!_${DEFAULT_FOOTER}`
+        const url = args[0];
+
+        if (!url || !url.includes('an1.com')) {
+            return await sock.sendMessage(targetChat, { 
+                text: `*❪ ERROR ❫*\n\n⚠️ *කරුණාකර නිවැරදි AN1 Link එකක් ඇතුළත් කරන්න!*\n\n📦 *Example:*\n• .apk https://an1.com/936-djay-2.html${DEFAULT_FOOTER}` 
             }, { quoted: msg });
         }
 
-        const query = args.join(' ').trim();
-        const API_BASE = "https://api.chamindu.site";
         const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
-        const DEFAULT_IMAGE = "https://api.chamindu.site/logo.png";
+        const apiUrl = `https://api.chamindu.site/api/v1/apk/an1/infodl?q=${encodeURIComponent(url.trim())}&api_key=${API_KEY}`;
 
         try {
-            await sock.sendMessage(chatJid, { react: { text: '⏳', key: msg.key } });
+            await sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
 
-            const res = await axios.get(`${API_BASE}/api/v1/apps/liteapks/search?q=${encodeURIComponent(query)}&api_key=${API_KEY}`, { timeout: 20000 });
-            const results = res.data?.data || [];
+            const res = await axios.get(apiUrl, { timeout: 30000 });
+            const data = res.data?.data;
 
-            if (!results.length) {
-                await sock.sendMessage(chatJid, { react: { text: '❌', key: msg.key } });
-                return await sock.sendMessage(chatJid, {
-                    text: `*❪ NO RESULTS ❫*\n\n😞 *No MOD APKs Found for:* _${query}_${DEFAULT_FOOTER}`
+            if (!data || !Array.isArray(data.downloads) || data.downloads.length === 0) {
+                await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+                return await sock.sendMessage(targetChat, { 
+                    text: `❌ *APK තොරතුරු ලබා ගැනීමට නොහැකි විය. Link එක නිවැරදි දැයි පරීක්ෂා කරන්න!*${DEFAULT_FOOTER}` 
                 }, { quoted: msg });
             }
 
-            let listText = `*❪ LITEAPKS MOD SEARCH ❫*\n\n🎯 *Query:* _${query}_\n📊 *Total:* _${results.length} Apps_\n\n*👇 SELECT A NUMBER 👇*\n\n`;
-            results.slice(0, 15).forEach((item, index) => {
-                const num = (index + 1) < 10 ? `0${index + 1}` : `${index + 1}`;
-                listText += `*${num}* ➜ 📱 _${(item.title || 'App').substring(0, 32)}_ (${item.version || 'Latest'})\n`;
-            });
-            listText += `\n📌 _Reply to this message with the number to get APK links!_${DEFAULT_FOOTER}`;
+            // 1. .apk direct link එක සොයාගැනීම
+            const apkItem = data.downloads.find(d => d.direct_link && d.direct_link.endsWith('.apk')) || data.downloads[0];
 
-            const sentMsg = await sock.sendMessage(chatJid, { text: listText }, { quoted: msg });
-            const messageID = sentMsg.key.id;
+            if (!apkItem || !apkItem.direct_link) {
+                await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+                return await sock.sendMessage(targetChat, { 
+                    text: `❌ *Download කරගත හැකි APK Link එකක් හමු නොවීය!*${DEFAULT_FOOTER}` 
+                }, { quoted: msg });
+            }
 
-            await sock.sendMessage(chatJid, { react: { text: '🔢', key: msg.key } });
+            const title = data.title || "Android App";
+            const fileName = apkItem.direct_link.split('/').pop() || `${title.replace(/\s+/g, '_')}.apk`;
 
-            // Reply එක අල්ලා ගැනීම සඳහා listener එකක් සැකසීම
-            const handleSelection = async ({ messages: replyMessages }) => {
-                const replyMek = replyMessages[0];
-                if (!replyMek?.message) return;
+            // 2. Info Card එක Image එක සමඟ මුලින් යැවීම
+            const infoText = `*📦 𝗔𝗣𝗞 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗𝗘𝗥 📦*\n\n` +
+                             `📌 *Name:* ${title}\n` +
+                             `📁 *File:* ${apkItem.name || fileName}\n` +
+                             `🔗 *Size:* ${apkItem.name.match(/\d+(\.\d+)?\s*(Mb|MB|Gb|GB|Kb|KB)/i)?.[0] || 'Unknown'}\n\n` +
+                             `⏳ *Sending APK file, please wait...*${DEFAULT_FOOTER}`;
 
-                const replyText = replyMek.message.conversation || replyMek.message.extendedTextMessage?.text || '';
-                const replyToId = replyMek.message.extendedTextMessage?.contextInfo?.stanzaId;
+            if (data.image) {
+                await sock.sendMessage(targetChat, {
+                    image: { url: data.image },
+                    caption: infoText
+                }, { quoted: msg }).catch(() => {});
+            }
 
-                if (replyToId === messageID && chatJid === replyMek.key.remoteJid) {
-                    const choice = parseInt(replyText.trim()) - 1;
+            // 3. Document එකක් ලෙස APK එක යැවීම
+            await sock.sendMessage(targetChat, {
+                document: { url: apkItem.direct_link },
+                fileName: fileName,
+                mimetype: 'application/vnd.android.package-archive',
+                caption: `✅ *Download Completed:* ${title}${DEFAULT_FOOTER}`
+            }, { quoted: msg });
 
-                    if (isNaN(choice) || choice < 0 || choice >= Math.min(results.length, 15)) {
-                        await sock.sendMessage(chatJid, { 
-                            text: `⚠️ *Invalid choice! Please select a number between 01 and ${Math.min(results.length, 15)}*` 
-                        }, { quoted: replyMek });
-                        return;
-                    }
-
-                    // Listener එක ඉවත් කිරීම
-                    sock.ev.off('messages.upsert', handleSelection);
-                    clearTimeout(timeoutId);
-
-                    const selectedApp = results[choice];
-                    await sock.sendMessage(chatJid, { react: { text: '⏳', key: replyMek.key } });
-
-                    try {
-                        const infoRes = await axios.get(`${API_BASE}/api/v1/apps/liteapks/info?url=${encodeURIComponent(selectedApp.link)}&api_key=${API_KEY}`, { timeout: 20000 });
-                        const appData = infoRes.data?.data || {};
-                        const downloads = appData.downloads || appData.download_links || [];
-
-                        let appText = `*❪ LITEAPKS MOD DETAILS ❫*\n\n📱 *App:* ${appData.title || selectedApp.title}\n🔖 *Version:* ${appData.version || 'Latest'}\n\n*📥 DOWNLOAD LINKS:*\n`;
-
-                        if (downloads.length > 0) {
-                            downloads.slice(0, 5).forEach((dl, idx) => {
-                                appText += `\n*${idx + 1}. ${dl.name || 'MOD APK'}*\n🔗 ${dl.url || dl.link}\n`;
-                            });
-                        } else {
-                            appText += `\n⚠️ *Download page:* ${selectedApp.link}\n`;
-                        }
-
-                        appText += DEFAULT_FOOTER;
-
-                        await sock.sendMessage(chatJid, {
-                            image: { url: appData.image || selectedApp.image || DEFAULT_IMAGE },
-                            caption: appText
-                        }, { quoted: replyMek });
-
-                        await sock.sendMessage(chatJid, { react: { text: '✅', key: replyMek.key } });
-
-                    } catch (infoErr) {
-                        console.error('LiteAPKs Info Error:', infoErr.message);
-                        await sock.sendMessage(chatJid, { react: { text: '❌', key: replyMek.key } });
-                        await sock.sendMessage(chatJid, { 
-                            text: `❌ *LiteAPKs Info Error:* ${infoErr.message}${DEFAULT_FOOTER}` 
-                        }, { quoted: replyMek });
-                    }
-                }
-            };
-
-            sock.ev.on('messages.upsert', handleSelection);
-
-            // තත්පර 60කින් listener එක ඉබේම අක්‍රිය වීම (Memory leak වැළැක්වීමට)
-            const timeoutId = setTimeout(() => {
-                sock.ev.off('messages.upsert', handleSelection);
-            }, 60000);
+            await sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
         } catch (err) {
-            console.error('LiteAPKs Search Error:', err.message);
-            await sock.sendMessage(chatJid, { react: { text: '❌', key: msg.key } });
-            await sock.sendMessage(chatJid, { 
-                text: `❌ *LiteAPKs Error:* ${err.message}${DEFAULT_FOOTER}` 
+            console.error('APK DL Error:', err.message);
+            await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+            await sock.sendMessage(targetChat, { 
+                text: `❌ *APK Download Error:* ${err.message}${DEFAULT_FOOTER}` 
             }, { quoted: msg });
         }
     }
