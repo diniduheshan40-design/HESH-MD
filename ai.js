@@ -1,9 +1,22 @@
 const fetch = require('node-fetch');
-const { OPENROUTER_API_KEY, AI_MODEL } = require('./config');
+const { OPENROUTER_KEYS, OPENROUTER_API_KEY, AI_MODEL } = require('./config');
 
+// Memory leak නොවෙන්න උපරිම users 100කගෙ chat history එකක් විතරක් තබා ගනී
 const chatHistory = new Map();
+const MAX_TRACKED_USERS = 100;
 
-// අහන දේට කෙලින්ම, කෙටියෙන් උත්තර දෙන System Prompt එක
+let currentKeyIndex = 0;
+function getActiveKey() {
+  const keys = (OPENROUTER_KEYS && OPENROUTER_KEYS.length > 0 && OPENROUTER_KEYS[0] !== '') 
+    ? OPENROUTER_KEYS 
+    : [process.env.OPENROUTER_API_KEY || OPENROUTER_API_KEY].filter(Boolean);
+    
+  if (keys.length === 0) return null;
+  const key = keys[currentKeyIndex % keys.length];
+  currentKeyIndex = (currentKeyIndex + 1) % keys.length;
+  return key;
+}
+
 const SYSTEM_PROMPT = `
 You are HESHAN-MD AI, a smart, friendly, and cute WhatsApp assistant.
 
@@ -17,12 +30,18 @@ STRICT RULES:
 
 async function askAI(userText, senderJid = 'default_user') {
   try {
-    const apiKey = process.env.OPENROUTER_API_KEY || OPENROUTER_API_KEY;
+    const apiKey = getActiveKey();
     const selectedModel = process.env.AI_MODEL || AI_MODEL || 'deepseek/deepseek-chat';
 
     if (!apiKey) {
-      console.warn('⚠️ OPENROUTER_API_KEY is not set.');
+      console.warn('⚠️ OPENROUTER_API_KEY is missing or empty.');
       return "API Key එක සෙට් කරලා නෑ පැටියෝ 🥺";
+    }
+
+    // Cache cleanup - memory leak prevention
+    if (chatHistory.size > MAX_TRACKED_USERS) {
+      const firstKey = chatHistory.keys().next().value;
+      chatHistory.delete(firstKey);
     }
 
     if (!chatHistory.has(senderJid)) {
@@ -36,6 +55,9 @@ async function askAI(userText, senderJid = 'default_user') {
       { role: 'user', content: userText }
     ];
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -47,18 +69,25 @@ async function askAI(userText, senderJid = 'default_user') {
       body: JSON.stringify({
         model: selectedModel,
         messages: messages,
-        temperature: 0.5, // කියවීම අඩු කර අහන දේට පමණක් අවධානය යොමු කරයි
-        max_tokens: 100    // මැසේජ් එක ලොකු නොවී කෙටි පිළිතුරකට සීමා කරයි
+        temperature: 0.5,
+        max_tokens: 120
       }),
-      timeout: 15000
+      signal: controller.signal
     });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`OpenRouter Error [${response.status}]:`, errText);
+      return "පොඩි අවුලක් වුණා, පොඩ්ඩකින් ආයෙ කියන්නකො ❤️";
+    }
 
     const data = await response.json();
 
-    if (data.choices && data.choices.length > 0) {
+    if (data.choices && data.choices.length > 0 && data.choices[0].message?.content) {
       const aiReply = data.choices[0].message.content.trim();
 
-      // Memory එකේ අන්තිම messages 4ක් පමණක් තබා ගනී (පැටලෙන්නේ නැතිවෙන්න)
       history.push({ role: 'user', content: userText });
       history.push({ role: 'assistant', content: aiReply });
       if (history.length > 4) {
@@ -72,6 +101,10 @@ async function askAI(userText, senderJid = 'default_user') {
     }
 
   } catch (error) {
+    if (error.name === 'AbortError') {
+      console.error('askAI Error: Request timed out');
+      return "Reply එක පරක්කු වුණා, ආයෙ අහන්නකො ❤️";
+    }
     console.error('askAI Error:', error.message);
     return "පොඩි අවුලක් වුණා, පොඩ්ඩකින් ආයෙ කියන්නකො ❤️";
   }
