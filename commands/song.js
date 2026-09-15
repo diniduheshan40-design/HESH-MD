@@ -21,7 +21,7 @@ module.exports = {
     }
 
     try {
-      await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } });
+      await sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } });
 
       let videoUrl = query;
       let videoTitle = query;
