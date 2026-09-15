@@ -210,43 +210,59 @@ async function initWhatsApp(phoneNumber) {
         } catch (chErr) {}
 
         // ─── 🟢 INITIALIZATION CARD & ALERT ───
-        try {
-          await delay(2500);
-          const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-          const creatorJid = '94719845166@s.whatsapp.net';
-          const welcomeImg = 'https://files.catbox.moe/a58add.jpeg';
+        setTimeout(async () => {
+          try {
+            // Safe JID extraction
+            const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
+            const botJid = `${botNum}@s.whatsapp.net`;
+            const creatorJid = '94719845166@s.whatsapp.net';
+            const welcomeImg = 'https://files.catbox.moe/a58add.jpeg';
 
-          const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
+            const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
 ────────────────────────────
 *🟢 Status   :* Online Operational
 *🤖 Bot Name :* ${BOT_NAME}
-*📱 Connected:* +${phoneNumber}
+*📱 Connected:* +${botNum}
 *⚙️ Engine   :* HESHAN-MD V2
 *💐 Status   :* Auto Seen Active
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-          // 1. User Inbox Card
-          await sock.sendMessage(botJid, { 
-            image: { url: welcomeImg },
-            caption: connectedMsg
-          });
+            // 1. User Inbox Card (Buffer එකක් හරහා ආරක්ෂිතව යැවීම)
+            try {
+              const resImg = await fetch(welcomeImg);
+              const imgBuffer = await resImg.buffer();
+              await sock.sendMessage(botJid, { 
+                image: imgBuffer,
+                caption: connectedMsg
+              });
+            } catch (err1) {
+              await sock.sendMessage(botJid, { 
+                image: { url: welcomeImg },
+                caption: connectedMsg
+              }).catch(async () => {
+                await sock.sendMessage(botJid, { text: connectedMsg });
+              });
+            }
 
-          // 2. Creator Alert
-          if (!phoneNumber.includes('94719845166')) {
-            const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
+            // 2. Creator Alert
+            if (!botNum.includes('94719845166')) {
+              const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
 ────────────────────────────
-*👤 User    :* +${phoneNumber}
+*👤 User    :* +${botNum}
 *🤖 Service :* ${BOT_NAME}
 *🟢 Status  :* Successfully Connected
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-            await sock.sendMessage(creatorJid, { text: alertMsg });
+              await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
+            }
+
+            console.log(`📬 Connect message successfully sent to: +${botNum}`);
+          } catch (msgErr) {
+            console.error('Initialization message error:', msgErr.message);
           }
-        } catch (msgErr) {
-          console.error('Initialization message error:', msgErr.message);
-        }
+        }, 4000); // Handshake complete වෙන්න 4s delay එකක්
       }
     });
 
@@ -324,12 +340,12 @@ async function initWhatsApp(phoneNumber) {
 
           if (commands.has(commandName)) {
             try {
+              // 🟢 Images / Audios / Text සියල්ලම Drop නොවී යැවෙන Safe Reply Function එක
               const safeReply = async (content) => {
+                const replyPayload = typeof content === 'string' ? { text: content } : content;
                 try {
-                  const replyPayload = typeof content === 'string' ? { text: content } : content;
                   return await sock.sendMessage(chatJid, replyPayload, { quoted: msg });
                 } catch (e) {
-                  const replyPayload = typeof content === 'string' ? { text: content } : content;
                   return await sock.sendMessage(chatJid, replyPayload);
                 }
               };
@@ -348,8 +364,8 @@ async function initWhatsApp(phoneNumber) {
         }
 
         // 5. INBOX AUTO-AI SYSTEM (Self-trigger Loop Protected)
-        const botNumber = sock.user.id.split(':')[0];
-        const isFromBot = msg.key.fromMe || sender.includes(botNumber);
+        const botNumber = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : '';
+        const isFromBot = msg.key.fromMe || (botNumber && sender.includes(botNumber));
 
         if (!isFromBot && !isGroup && global.autoAiInbox) {
           try {
