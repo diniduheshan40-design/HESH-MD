@@ -16,12 +16,20 @@ module.exports = {
 
     if (!query) {
       return await sock.sendMessage(targetChat, { 
-        text: "❗ *කරුණාකර සිංදුවේ නම හෝ Link එකක් ලබාදෙන්න!*\n*උදාහරණ:* `.song Faded`\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
+        text: "❗ *කරුණාකර සිංදුවේ නම ලබාදෙන්න!*\n*උදාහරණ:* `.song Faded`\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
       }, { quoted: msg });
     }
 
+    let statusMsg = null;
+
     try {
-      await sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } });
+      // 1. Instant 🎵 Reaction
+      await sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
+
+      // 2. Sending Status Alert Message
+      statusMsg = await sock.sendMessage(targetChat, {
+        text: "⏳ *සින්දුව සකසමින් පවතී, කරුණාකර මොහොතක් රැඳී සිටින්න...*\n\n> ⚡ ʜᴇꜱʜᴀɴ-ᴍᴅ ᴜʟᴛʀᴀ ᴇɴɢɪɴᴇ ⚡"
+      }, { quoted: msg });
 
       let videoUrl = query;
       let videoTitle = query;
@@ -30,17 +38,19 @@ module.exports = {
       let thumbnail = 'https://files.catbox.moe/a58add.jpeg';
       let views = 'N/A';
 
-      // 1. YouTube Search
+      // 3. Search Engine
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
       if (!isYtUrl) {
         if (!yts) {
+          if (statusMsg) await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
           return await sock.sendMessage(targetChat, { text: "❌ yt-search module එක සොයාගත නොහැකි විය." }, { quoted: msg });
         }
         
         const searchResults = await yts(query);
         if (!searchResults?.videos?.length) {
-          await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } });
+          if (statusMsg) await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+          await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
           return await sock.sendMessage(targetChat, { text: "❌ සිංදුව හමු නොවීය! නම නිවැරදිදැයි බලන්න." }, { quoted: msg });
         }
 
@@ -53,7 +63,7 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : 'N/A';
       }
 
-      // 2. Fetch MP3 Download Link (ඔබේ Chamindu API එක Primary ලෙස)
+      // 4. Fetch MP3 Direct Link
       let downloadUrl = null;
       let finalTitle = videoTitle;
 
@@ -65,7 +75,6 @@ module.exports = {
         console.warn('Primary Chamindu API failed, trying backup...');
       }
 
-      // Fast Backup API
       if (!downloadUrl) {
         try {
           const backupRes = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
@@ -78,14 +87,20 @@ module.exports = {
         throw new Error('බාගත කිරීමේ සබැඳිය ලබා ගැනීමට නොහැකි විය.');
       }
 
-      // 3. Information Card (ක්ෂණිකව යැවීම)
+      // 5. Delete Status Message
+      if (statusMsg) {
+        await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+      }
+
+      // 6. Information Card (YouTube Link සඟවා ඇත)
+      const cleanTitle = finalTitle.replace(/[\\/:"*?<>|]/g, '').trim();
       const songCard = `╭───❮ 🎵 *H E S H A N - M D* ❯───╮
 │
-│ 📌 *Title:* ${finalTitle.slice(0, 40)}
+│ 📌 *Title:* ${cleanTitle.slice(0, 38)}
 │ 👤 *Artist:* ${author}
 │ ⏱️ *Duration:* ${duration}
 │ 👁️ *Views:* ${views}
-│ 🔗 *Source:* YouTube Engine
+│ 🚀 *Engine:* High-Speed Audio
 │
 ╰───────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
@@ -95,28 +110,31 @@ module.exports = {
         caption: songCard
       }, { quoted: msg });
 
-      // 4. Send Audio directly via URL (RAM Buffer එකක් නැති නිසා 100% smooth & fast)
+      // 7. Send MP3 Audio
       await sock.sendMessage(targetChat, {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
-        fileName: `${finalTitle.replace(/[\\/:"*?<>|]/g, '')}.mp3`,
+        fileName: `${cleanTitle}.mp3`,
         contextInfo: {
           externalAdReply: {
-            title: finalTitle.slice(0, 32),
+            title: cleanTitle.slice(0, 32),
             body: `${author} • ${duration}`,
             thumbnailUrl: thumbnail,
-            sourceUrl: videoUrl,
-            mediaType: 2,
+            sourceUrl: 'https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V',
+            mediaType: 1,
             renderLargerThumbnail: true
           }
         }
       }, { quoted: msg });
 
-      await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } });
+      await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
       console.error('Song Error:', err.message);
-      try { await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }); } catch (e) {}
+      if (statusMsg) {
+        await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+      }
+      await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       await sock.sendMessage(targetChat, { text: `❌ දෝෂයක්: ${err.message}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` }, { quoted: msg });
     }
   }
