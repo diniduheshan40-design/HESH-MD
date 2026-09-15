@@ -1,9 +1,8 @@
 // commands/alive.js
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 
-const LOGO_URL = "https://files.catbox.moe/a58add.jpeg";
+const LOCAL_LOGO = path.join(process.cwd(), 'logo.jpg');
 
 function getEmojiTime(jid) {
     let tz = 'Asia/Colombo'; 
@@ -50,25 +49,8 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// 🛡️ Safe Image Fetcher with Custom User-Agent (Catbox Block වීම වැළැක්වීම)
-const fetchImageBuffer = (url) => {
-    return new Promise((resolve) => {
-        https.get(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        }, (res) => {
-            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                return fetchImageBuffer(res.headers.location).then(resolve);
-            }
-            const data = [];
-            res.on('data', chunk => data.push(chunk));
-            res.on('end', () => resolve(Buffer.concat(data)));
-            res.on('error', () => resolve(null));
-        }).on('error', () => resolve(null));
-    });
-};
-
-// Sub-command Execution
-const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg, safeReply) => {
+// Sub-command trigger
+const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg) => {
     try {
         const cmdPath = path.join(__dirname, `${cmdName}.js`);
         if (fs.existsSync(cmdPath)) {
@@ -78,11 +60,11 @@ const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg, safeReply) 
             const args = fakeUserText.trim().split(/\s+/).slice(1);
 
             if (typeof cmdModule.execute === 'function') {
-                await cmdModule.execute(sock, replyMsg, args, remoteJid, safeReply);
+                await cmdModule.execute(sock, replyMsg, args, remoteJid);
             } else if (typeof cmdModule.run === 'function') {
-                await cmdModule.run({ sock, msg: replyMsg, args, from: remoteJid, safeReply });
+                await cmdModule.run({ sock, msg: replyMsg, args, from: remoteJid });
             } else if (typeof cmdModule === 'function') {
-                await cmdModule({ sock, msg: replyMsg, args, from: remoteJid, safeReply });
+                await cmdModule({ sock, msg: replyMsg, args, from: remoteJid });
             }
         }
     } catch (e) {
@@ -95,14 +77,14 @@ module.exports = {
     category: 'general',
     desc: 'Check bot operational status and info',
 
-    async execute(sock, msg, args, chatJid, safeReply) {
+    async execute(sock, msg, args, chatJid) {
         const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
             ? chatJid 
             : msg.key.remoteJid;
 
         const senderJid = msg.key.participant || targetChat;
 
-        // 1. React
+        // Reaction
         sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
         let pushName = msg.pushName || "User";  
@@ -134,28 +116,26 @@ module.exports = {
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            // Buffer එකක් විදිහට Image එක ගන්නවා
-            const imageBuffer = await fetchImageBuffer(LOGO_URL);
-
             let sentMsg;
-            if (imageBuffer && imageBuffer.length > 1000) {
-                // Image එක තිබේ නම් Image එකෙන් යවනවා
+
+            // Save කරපු logo එක තියෙනවාදැයි බැලීම
+            if (fs.existsSync(LOCAL_LOGO)) {
+                const imageBuffer = fs.readFileSync(LOCAL_LOGO);
                 sentMsg = await sock.sendMessage(targetChat, {
                     image: imageBuffer,
                     caption: aliveMsg
                 }, { quoted: msg });
             } else {
-                // Image එක fail වුණොත් fallback URL මඟින්
+                // තවම Logo එකක් set කර නැත්නම් Text එක පමණක් යවයි
                 sentMsg = await sock.sendMessage(targetChat, {
-                    image: { url: LOGO_URL },
-                    caption: aliveMsg
+                    text: aliveMsg
                 }, { quoted: msg });
             }
 
             const stanzaId = sentMsg?.key?.id;
             const usedOptions = new Set();
 
-            // 🟢 Reply Handler
+            // Reply listener එක (1, 2, 3)
             const replyListener = async (m) => {  
                 try {  
                     const replyMsg = m.messages?.[0];  
@@ -165,12 +145,10 @@ module.exports = {
                     if (msgContent.ephemeralMessage) msgContent = msgContent.ephemeralMessage.message;
                     if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
 
-                    // Stanza ID Check
                     const msgContext = msgContent?.extendedTextMessage?.contextInfo ||
                                        msgContent?.imageMessage?.contextInfo ||
                                        msgContent?.videoMessage?.contextInfo;
 
-                    // Quoted message එක මේ alive message එකම විය යුතුයි
                     if (stanzaId && msgContext?.stanzaId !== stanzaId) return;  
 
                     let replyText = msgContent.conversation || 
@@ -187,11 +165,11 @@ module.exports = {
 
                         if (replyText === "1") {  
                             await sock.sendMessage(replyChat, { react: { text: '📜', key: replyMsg.key } }).catch(() => {});  
-                            await triggerCommand('menu', `${currentPrefix}menu`, sock, replyMsg, safeReply);
+                            await triggerCommand('menu', `${currentPrefix}menu`, sock, replyMsg);
 
                         } else if (replyText === "2") {  
                             await sock.sendMessage(replyChat, { react: { text: '⚡', key: replyMsg.key } }).catch(() => {});
-                            await triggerCommand('ping', `${currentPrefix}ping`, sock, replyMsg, safeReply);
+                            await triggerCommand('ping', `${currentPrefix}ping`, sock, replyMsg);
 
                         } else if (replyText === "3") {  
                             await sock.sendMessage(replyChat, { react: { text: '👑', key: replyMsg.key } }).catch(() => {});
@@ -211,7 +189,6 @@ module.exports = {
 
             sock.ev.on('messages.upsert', replyListener);  
 
-            // තත්පර 60 කින් Listener ඉවත් කිරීම
             setTimeout(() => {  
                 sock.ev.off('messages.upsert', replyListener);  
             }, 60000);  
