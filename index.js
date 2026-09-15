@@ -22,6 +22,10 @@ const { askAI } = require('./ai');
 // Inbox Auto AI Default = ON
 global.autoAiInbox = true;
 
+// 🟢 Global Owner Configuration & Active Bots Store
+global.OWNER_NUMBERS = ['94719845166'];
+global.activeSessions = {};
+
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
@@ -144,11 +148,10 @@ app.get('/', (req, res) => {
   `);
 });
 
-let activeSessions = {};
 let isStarting = {};
 
 async function initWhatsApp(phoneNumber) {
-  if (activeSessions[phoneNumber]) return activeSessions[phoneNumber];
+  if (global.activeSessions[phoneNumber]) return global.activeSessions[phoneNumber];
   if (isStarting[phoneNumber]) return;
   isStarting[phoneNumber] = true;
 
@@ -177,7 +180,7 @@ async function initWhatsApp(phoneNumber) {
       keepAliveIntervalMs: 10000
     });
 
-    activeSessions[phoneNumber] = sock;
+    global.activeSessions[phoneNumber] = sock;
     delete isStarting[phoneNumber];
 
     sock.ev.on('creds.update', saveCreds);
@@ -188,7 +191,7 @@ async function initWhatsApp(phoneNumber) {
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
-        delete activeSessions[phoneNumber];
+        delete global.activeSessions[phoneNumber];
 
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401 && statusCode !== 403;
         if (shouldReconnect) {
@@ -291,15 +294,15 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 2. CREATOR / OWNER "👑" REACTION
+        // 2. CREATOR / OWNER "👨‍💻" REACTION
         const creatorNumber = '94719845166';
         const sender = isGroup ? (msg.key.participant || '') : chatJid;
 
-        if (!msg.key.fromMe && sender.includes(creatorNumber)) {
+        if (sender.includes(creatorNumber)) {
           try {
             await sock.sendMessage(chatJid, {
               react: {
-                text: '👑',
+                text: '👨‍💻',
                 key: {
                   remoteJid: chatJid,
                   fromMe: msg.key.fromMe,
@@ -402,7 +405,7 @@ app.get('/reset', async (req, res) => {
   try {
     await Auth.deleteMany({});
     if (mongoose.connection.db) await mongoose.connection.db.collection('auths').deleteMany({});
-    activeSessions = {};
+    global.activeSessions = {};
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false }); }
 });
@@ -413,9 +416,9 @@ app.get('/pair', async (req, res) => {
   num = num.replace(/[^0-9]/g, '');
 
   try {
-    if (activeSessions[num]) { 
-      try { activeSessions[num].ws?.close(); } catch(e){} 
-      delete activeSessions[num]; 
+    if (global.activeSessions[num]) { 
+      try { global.activeSessions[num].ws?.close(); } catch(e){} 
+      delete global.activeSessions[num]; 
     }
     await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
     
