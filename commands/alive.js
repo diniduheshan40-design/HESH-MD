@@ -1,5 +1,4 @@
 const os = require('os');
-const fetch = require('node-fetch');
 
 function formatUptime(seconds) {
     seconds = Math.floor(Number(seconds) || 0);
@@ -12,12 +11,17 @@ function formatUptime(seconds) {
 
 module.exports = {
     name: 'alive',
+    category: 'general',
+    desc: 'Check bot operational status and info',
     async execute(sock, msg, args, chatJid) {
         const targetChat = chatJid || msg.key.remoteJid;
         const pushname = msg.pushName || 'User';
 
         try {
-            await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } });
+            // 1. Initial reaction
+            try {
+                await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } });
+            } catch (e) {}
 
             const start = Date.now();
             const uptime = formatUptime(process.uptime());
@@ -45,16 +49,20 @@ module.exports = {
 ╰──────────────────────────╯
 > 🔐 *heshan ofc • all rights reserved*`;
 
+            const imgUrl = 'https://files.catbox.moe/a58add.jpeg';
+
+            // 2. Direct URL send (Buffer delay නැති නිසා ක්ෂණිකව send වේ)
             try {
-                const imgRes = await fetch('https://files.catbox.moe/a58add.jpeg');
-                const imgBuffer = await imgRes.buffer();
-                await sock.sendMessage(targetChat, { image: imgBuffer, caption: aliveMsg }, { quoted: msg });
-            } catch (e) {
+                await sock.sendMessage(targetChat, { 
+                    image: { url: imgUrl }, 
+                    caption: aliveMsg 
+                }, { quoted: msg });
+            } catch (imgErr) {
                 await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg });
             }
 
         } catch (err) {
-            console.error('Alive Error:', err);
+            console.error('Alive Error:', err.message);
         }
     }
 };
