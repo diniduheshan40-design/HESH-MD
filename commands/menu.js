@@ -1,12 +1,20 @@
+// commands/menu.js
+const fs = require('fs');
+const path = require('path');
 const fetch = require('node-fetch');
+
+// .setlogo මඟින් save වන local logo path එක
+const LOCAL_LOGO = path.join(process.cwd(), 'logo.jpg');
+const FALLBACK_LOGO_URL = 'https://files.catbox.moe/a58add.jpeg';
 
 module.exports = {
   name: 'menu',
   category: 'general',
   desc: 'Display all bot command menus',
   async execute(sock, msg, args, chatJid, safeReply) {
-    const targetChat = chatJid || msg.key.remoteJid;
-    const logoUrl = 'https://files.catbox.moe/a58add.jpeg';
+    const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
+      ? chatJid 
+      : msg.key.remoteJid;
 
     const menuText = `╭───❮ ❖ 𝗛 𝗘 𝗦 𝗛 𝗔 𝗡 - 𝗠 𝗗 ❖ ❯───╮
 │  ꜱ ɪ ᴍ ᴘ ʟ ᴇ  •  ꜰ ᴀ ꜱ ᴛ  •  ᴘ ᴏ ᴡ ᴇ ʀ ꜰ ᴜ ʟ
@@ -50,25 +58,30 @@ module.exports = {
 
     try {
       // 1. Safe React
-      try {
-        await sock.sendMessage(targetChat, {
-          react: {
-            text: "📜",
-            key: msg.key
+      sock.sendMessage(targetChat, {
+        react: { text: "📜", key: msg.key }
+      }).catch(() => {});
+
+      // 2. Image Selection (Local Custom Logo -> Fallback URL Buffer)
+      let imgData = null;
+
+      if (fs.existsSync(LOCAL_LOGO)) {
+        // .setlogo මඟින් save කළ image එක තිබේ නම් direct buffer එකක් ලෙස ගනියි
+        imgData = fs.readFileSync(LOCAL_LOGO);
+      } else {
+        try {
+          const res = await fetch(FALLBACK_LOGO_URL, { timeout: 8000 });
+          if (res.ok) {
+            imgData = await res.buffer();
+          } else {
+            imgData = { url: FALLBACK_LOGO_URL };
           }
-        });
-      } catch (e) {}
-
-      // 2. Fetch image buffer (100% Reliable Delivery)
-      let imgData = { url: logoUrl };
-      try {
-        const res = await fetch(logoUrl, { timeout: 8000 });
-        if (res.ok) {
-          imgData = await res.buffer();
+        } catch (e) {
+          imgData = { url: FALLBACK_LOGO_URL };
         }
-      } catch (e) {}
+      }
 
-      // 3. Send Image with Context Info
+      // 3. Send Message with Image
       await sock.sendMessage(targetChat, {
         image: imgData,
         caption: menuText,
