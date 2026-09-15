@@ -1,38 +1,56 @@
+// creact.js
 module.exports = {
     name: "creact",
     category: "tools",
-    desc: "React randomly to channel posts",
+    desc: "Multi-bot channel react",
     async run({ conn, m, args }) {
         try {
-            if (!m.quoted) {
-                return await m.reply("කරුණාකර අදාළ channel post එකට reply කර ඉමෝජි ලබා දෙන්න!\nඋදා: `.creact 🩷💜❤️🖤🤍💘`");
+            // 1. Post Link එක හෝ Quoted Message එකෙන් විස්තර ගැනීම
+            let channelJid;
+            let messageId;
+            let emojisString;
+
+            // Link එකක් මඟින් දෙනවා නම්: .creact https://whatsapp.com/channel/xxx/123 🩷💜❤️🖤🤍
+            if (args[0] && args[0].includes('whatsapp.com/channel')) {
+                let linkParts = args[0].split('/');
+                messageId = linkParts[linkParts.length - 1];
+                emojisString = args.slice(1).join("");
+                
+                // Link එකෙන් Newsletter JID එක Resolve කරගැනීම
+                let inviteCode = linkParts[4];
+                let metadata = await conn.newsletterMetadata("invite", inviteCode).catch(() => null);
+                if (!metadata) return;
+                channelJid = metadata.id;
+            } 
+            // Quoted Post එකක් නම්: .creact 🩷💜❤️🖤🤍
+            else if (m.quoted) {
+                channelJid = m.quoted.chat;
+                messageId = m.quoted.id;
+                emojisString = args.join("");
+            } else {
+                return await m.reply("කරුණාකර Channel Link එක සහ Emojis ලබා දෙන්න!\nඋදා: `.creact <link> 🩷💜❤️🖤🤍`");
             }
 
-            let emojisString = args.join("");
-            let emojiArray = Array.from(emojisString);
+            let emojiArray = Array.from(emojisString.trim());
+            if (emojiArray.length === 0) return;
 
-            if (emojiArray.length === 0) {
-                return await m.reply("කරුණාකර emoji කිහිපයක් ලබා දෙන්න!");
-            }
-
-            // අහඹු ලෙස එකක් තෝරා ගැනීම
+            // හැම බොට්ම අහඹු ලෙස එකිනෙකට වෙනස් emoji එකක් තෝරාගනියි
             let randomEmoji = emojiArray[Math.floor(Math.random() * emojiArray.length)];
 
-            await conn.sendMessage(m.quoted.chat, {
+            // Reaction එක යැවීම
+            await conn.sendMessage(channelJid, {
                 react: {
                     text: randomEmoji,
                     key: {
-                        remoteJid: m.quoted.chat,
-                        id: m.quoted.id,
+                        remoteJid: channelJid,
+                        id: messageId,
                         fromMe: false
                     }
                 }
             });
 
-            await m.reply(`සාර්ථකයි! Reaction එක: ${randomEmoji}`);
         } catch (err) {
-            console.error(err);
-            await m.reply("Reaction එක දැමීමට නොහැකි විය!");
+            console.error("React Error:", err);
         }
     }
 };
