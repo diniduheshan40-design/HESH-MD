@@ -46,7 +46,7 @@ if (fs.existsSync(cmdDir)) {
   }
 }
 
-// Glassmorphism Portal UI
+// Red & Black Cyber-Glassmorphism Portal UI
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -55,29 +55,181 @@ app.get('/', (req, res) => {
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <title>${BOT_NAME} • PORTAL</title>
-      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;800&family=JetBrains+Mono:wght@800&display=swap" rel="stylesheet">
+      <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Poppins:wght@400;600;700&family=JetBrains+Mono:wght@800&display=swap" rel="stylesheet">
       <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Poppins', sans-serif; }
-        body { background: #050814; background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #050814 70%); color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; overflow-x: hidden; }
-        .glass-panel { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5); }
-        .title { font-size: 26px; font-weight: 800; background: linear-gradient(90deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
-        .subtitle { font-size: 13px; color: #94a3b8; margin-bottom: 25px; }
-        input { width: 100%; padding: 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: #38bdf8; font-size: 16px; text-align: center; margin-bottom: 20px; outline: none; transition: 0.3s; }
-        input:focus { border-color: #38bdf8; box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); }
-        button { width: 100%; padding: 16px; border-radius: 14px; border: none; background: linear-gradient(90deg, #38bdf8, #818cf8); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 12px; }
-        button:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(56, 189, 248, 0.4); }
-        .btn-reset { background: rgba(244, 63, 94, 0.1); border: 1px solid rgba(244, 63, 94, 0.3); color: #f43f5e; }
-        .code-display { font-family: 'JetBrains Mono', monospace; font-size: 32px; font-weight: 800; color: #38bdf8; letter-spacing: 6px; margin-top: 25px; display: none; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+          background: #080204; 
+          background-image: 
+            radial-gradient(circle at 50% 0%, rgba(225, 29, 72, 0.22) 0%, transparent 60%),
+            radial-gradient(circle at 10% 90%, rgba(159, 18, 57, 0.15) 0%, transparent 50%),
+            linear-gradient(180deg, #050102 0%, #0d0407 100%);
+          color: #f1f5f9; 
+          font-family: 'Poppins', sans-serif;
+          display: flex; 
+          align-items: center; 
+          justify-content: center; 
+          min-height: 100vh; 
+          padding: 20px; 
+          overflow-x: hidden; 
+        }
+        .portal-wrapper {
+          position: relative;
+          width: 100%;
+          max-width: 440px;
+        }
+        .portal-wrapper::before {
+          content: '';
+          position: absolute;
+          inset: -2px;
+          border-radius: 26px;
+          background: linear-gradient(135deg, rgba(239, 68, 68, 0.6), transparent 50%, rgba(185, 28, 28, 0.4));
+          z-index: 0;
+          filter: blur(12px);
+          opacity: 0.7;
+        }
+        .glass-panel { 
+          position: relative;
+          z-index: 1;
+          background: rgba(15, 5, 8, 0.75); 
+          backdrop-filter: blur(20px); 
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid rgba(239, 68, 68, 0.25); 
+          border-radius: 24px; 
+          padding: 42px 32px; 
+          width: 100%; 
+          text-align: center; 
+          box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(225, 29, 72, 0.08); 
+        }
+        .badge {
+          display: inline-block;
+          font-family: 'Orbitron', sans-serif;
+          font-size: 10px;
+          letter-spacing: 2.5px;
+          text-transform: uppercase;
+          color: #f43f5e;
+          background: rgba(225, 29, 72, 0.12);
+          border: 1px solid rgba(225, 29, 72, 0.3);
+          padding: 5px 14px;
+          border-radius: 50px;
+          margin-bottom: 16px;
+        }
+        .title { 
+          font-family: 'Orbitron', sans-serif;
+          font-size: 26px; 
+          font-weight: 900; 
+          letter-spacing: 1px;
+          background: linear-gradient(135deg, #ffffff 10%, #fca5a5 50%, #e11d48 100%); 
+          -webkit-background-clip: text; 
+          -webkit-text-fill-color: transparent; 
+          margin-bottom: 8px; 
+          text-shadow: 0 0 30px rgba(225, 29, 72, 0.4);
+        }
+        .subtitle { 
+          font-size: 13px; 
+          color: #a1a1aa; 
+          margin-bottom: 28px; 
+        }
+        .input-group {
+          position: relative;
+          margin-bottom: 20px;
+        }
+        input { 
+          width: 100%; 
+          padding: 16px 18px; 
+          border-radius: 14px; 
+          border: 1px solid rgba(225, 29, 72, 0.25); 
+          background: rgba(20, 5, 10, 0.7); 
+          color: #ff4d6d; 
+          font-size: 16px; 
+          font-weight: 600;
+          text-align: center; 
+          outline: none; 
+          transition: all 0.3s ease; 
+        }
+        input::placeholder {
+          color: #71717a;
+          font-weight: 400;
+        }
+        input:focus { 
+          border-color: #ef4444; 
+          background: rgba(30, 8, 14, 0.85);
+          box-shadow: 0 0 20px rgba(239, 68, 68, 0.35); 
+        }
+        button { 
+          width: 100%; 
+          padding: 16px; 
+          border-radius: 14px; 
+          border: none; 
+          background: linear-gradient(135deg, #b91c1c, #dc2626 50%, #e11d48 100%); 
+          color: #ffffff; 
+          font-size: 14px; 
+          font-weight: 700; 
+          letter-spacing: 1.2px;
+          cursor: pointer; 
+          margin-bottom: 12px; 
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 18px rgba(225, 29, 72, 0.35);
+        }
+        button:hover { 
+          transform: translateY(-2px); 
+          box-shadow: 0 8px 25px rgba(225, 29, 72, 0.6); 
+          filter: brightness(1.1);
+        }
+        button:active {
+          transform: translateY(0);
+        }
+        .btn-reset { 
+          background: rgba(18, 5, 8, 0.8); 
+          border: 1px solid rgba(225, 29, 72, 0.35); 
+          color: #f43f5e; 
+          box-shadow: none;
+        }
+        .btn-reset:hover {
+          background: rgba(225, 29, 72, 0.15);
+          box-shadow: 0 4px 15px rgba(225, 29, 72, 0.25);
+          color: #ff6b81;
+        }
+        .code-display-wrap {
+          margin-top: 25px;
+          padding: 15px;
+          border-radius: 14px;
+          background: rgba(225, 29, 72, 0.08);
+          border: 1px dashed rgba(225, 29, 72, 0.4);
+          display: none;
+        }
+        .code-display { 
+          font-family: 'JetBrains Mono', monospace; 
+          font-size: 30px; 
+          font-weight: 800; 
+          color: #ff2a55; 
+          letter-spacing: 5px; 
+          text-shadow: 0 0 15px rgba(255, 42, 85, 0.6);
+        }
+        .code-hint {
+          font-size: 11px;
+          color: #fda4af;
+          margin-top: 6px;
+          letter-spacing: 0.5px;
+        }
       </style>
     </head>
     <body>
-      <div class="glass-panel">
-        <h1 class="title">${BOT_NAME}</h1>
-        <p class="subtitle">Enter WhatsApp number with country code</p>
-        <input type="text" id="phone" placeholder="9470xxxxxxx" />
-        <button id="btn" onclick="getCode()">GENERATE PAIR CODE</button>
-        <button class="btn-reset" onclick="resetDB()">RESET DATABASE</button>
-        <div class="code-display" id="codeBox"></div>
+      <div class="portal-wrapper">
+        <div class="glass-panel">
+          <div class="badge">SYSTEM READY</div>
+          <h1 class="title">${BOT_NAME}</h1>
+          <p class="subtitle">Enter WhatsApp number with country code</p>
+          <div class="input-group">
+            <input type="text" id="phone" placeholder="9470xxxxxxx" autocomplete="off" />
+          </div>
+          <button id="btn" onclick="getCode()">GENERATE PAIR CODE</button>
+          <button class="btn-reset" onclick="resetDB()">RESET DATABASE</button>
+          <div class="code-display-wrap" id="codeWrap">
+            <div class="code-display" id="codeBox"></div>
+            <div class="code-hint">Click or tap to re-copy code</div>
+          </div>
+        </div>
       </div>
       <script>
         async function getCode() {
@@ -90,10 +242,15 @@ app.get('/', (req, res) => {
             const res = await fetch('/pair?num=' + phone);
             const data = await res.json();
             if (data.code) {
+              const codeWrap = document.getElementById('codeWrap');
               const codeElement = document.getElementById('codeBox');
               codeElement.innerText = data.code;
-              codeElement.style.display = 'block';
+              codeWrap.style.display = 'block';
               navigator.clipboard.writeText(data.code);
+              codeWrap.onclick = () => {
+                navigator.clipboard.writeText(data.code);
+                alert('Copied: ' + data.code);
+              };
               alert('✅ Pairing code copied: ' + data.code);
             } else {
               alert(data.error || 'Failed to get code');
@@ -137,13 +294,23 @@ async function initWhatsApp(phoneNumber) {
       browser: Browsers.ubuntu('Chrome'), 
       msgRetryCounterCache,
       syncFullHistory: false,
-      generateHighQualityLinkPreview: false
+      generateHighQualityLinkPreview: false,
+      connectTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000,
+      retryRequestDelayMs: 2000
     });
 
     activeSessions[phoneNumber] = sock;
     delete isStarting[phoneNumber];
 
-    sock.ev.on('creds.update', saveCreds);
+    // Session update handling
+    sock.ev.on('creds.update', async () => {
+      try {
+        await saveCreds();
+      } catch (err) {
+        console.error('Creds save error:', err.message);
+      }
+    });
     
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect } = update;
@@ -153,8 +320,10 @@ async function initWhatsApp(phoneNumber) {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
 
+        // 401: Unauthorized, 403: Forbidden, LoggedOut -> Don't reconnect, otherwise reconnect
         if (statusCode !== DisconnectReason.loggedOut && statusCode !== 401 && statusCode !== 403) {
-          setTimeout(() => initWhatsApp(phoneNumber), 5000);
+          const delayTime = statusCode === DisconnectReason.restartRequired ? 1500 : 5000;
+          setTimeout(() => initWhatsApp(phoneNumber), delayTime);
         } else {
           welcomedNumbers.delete(phoneNumber);
           if (typeof clearSessionData === 'function') await clearSessionData();
@@ -183,7 +352,7 @@ async function initWhatsApp(phoneNumber) {
             const creatorJid = '94719845166@s.whatsapp.net';
             const welcomeImg = 'https://files.catbox.moe/a58add.jpeg';
 
-            // WhatsApp වල කැඩෙන්නේ නැති Straight Line UI Card එක
+            // Straight Line UI Card
             const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
 ────────────────────────────
 *🟢 Status   :* Online Operational
@@ -194,13 +363,13 @@ async function initWhatsApp(phoneNumber) {
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-            // 1. බොට් කනෙක්ට් කරගත් පරිශීලකයාගේ Inbox එකට යැවීම
+            // 1. Send to Bot inbox
             await sock.sendMessage(botJid, { 
               image: { url: welcomeImg },
               caption: connectedMsg
             });
 
-            // 2. වෙනත් අයෙකු කනෙක්ට් කළ විට Creator ට (94719845166) Alert එකක් යැවීම
+            // 2. Alert creator
             if (phoneNumber !== '94719845166') {
               const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
 ────────────────────────────
