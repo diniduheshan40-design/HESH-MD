@@ -1,96 +1,64 @@
 const axios = require('axios');
-const yts = require('yt-search');
 
-module.exports = {
-  name: 'video',
-  category: 'download',
-  desc: 'Download YouTube video in MP4',
-  async execute(sock, msg, args, chatJid, safeReply) {
-    const query = args.join(' ').trim();
-    if (!query) {
-      return await sock.sendMessage(chatJid, { 
-        text: '⚠️ *වීඩියෝවේ නම හෝ YouTube link එක ලබා දෙන්න!*\n\n> උදා: `.video Neth Manema`\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡' 
-      }, { quoted: msg });
-    }
-
-    try {
-      await sock.sendMessage(chatJid, { react: { text: '🎬', key: msg.key } });
-
-      let videoUrl = query;
-      let videoTitle = query;
-      let duration = 'N/A';
-      let thumbnail = '';
-
-      // 1. Check if user sent a query or a direct link
-      const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
-
-      if (!isYtUrl) {
-        const search = await yts(query);
-        const video = search.videos && search.videos[0];
-        if (!video) {
-          return await sock.sendMessage(chatJid, { 
-            text: '❌ වීඩියෝවක් සොයා ගැනීමට නොහැකි විය. කරුණාකර නම නිවැරදිව ලබා දෙන්න.\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡' 
-          }, { quoted: msg });
-        }
-        videoUrl = video.url;
-        videoTitle = video.title;
-        duration = video.timestamp || 'N/A';
-        thumbnail = video.thumbnail;
-      }
-
-      // 2. Fetch direct MP4 URL using fast APIs with fallback
-      let downloadUrl = null;
-
-      // Primary API
-      try {
-        const res1 = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(videoUrl)}`, { timeout: 25000 });
-        if (res1.data?.result?.download_url) {
-          downloadUrl = res1.data.result.download_url;
-          if (!videoTitle || videoTitle === query) videoTitle = res1.data.result.title;
-          if (res1.data.result.duration) duration = res1.data.result.duration;
-        }
-      } catch (e1) {}
-
-      // Fallback API if primary fails
-      if (!downloadUrl) {
+// Command definition
+const videoCommand = {
+    pattern: 'video',
+    desc: 'Download YouTube video in MP4 format',
+    category: 'download',
+    use: '<YouTube URL>',
+    async execute(conn, mek, m, { args, q, reply }) {
         try {
-          const res2 = await axios.get(`https://api.giftedtech.my.id/api/download/ytmp4?url=${encodeURIComponent(videoUrl)}&apikey=gifted`, { timeout: 25000 });
-          if (res2.data?.result?.download_url) {
-            downloadUrl = res2.data.result.download_url;
-          }
-        } catch (e2) {}
-      }
+            // Check if user provided a URL
+            if (!q) {
+                return reply('❌ කරුණාකර YouTube වීඩියෝ link එකක් ඇතුළත් කරන්න.\n*උදාහරණ:* `.video https://www.youtube.com/watch?v=...`');
+            }
 
-      if (!downloadUrl) {
-        return await sock.sendMessage(chatJid, { 
-          text: '❌ වීඩියෝව බාගත කිරීමේ Link එක ලබා ගැනීමට නොහැකි විය. පසුව නැවත උත්සාහ කරන්න.\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡' 
-        }, { quoted: msg });
-      }
+            // Basic YouTube link validation
+            const isYt = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.be)\/.+$/.test(q.trim());
+            if (!isYt) {
+                return reply('❌ කරුණාකර නිවැරදි YouTube URL එකක් ඇතුළත් කරන්න.');
+            }
 
-      const captionText = `*🎬 ${videoTitle}*
+            reply('⏳ වීඩියෝව සකසමින් පවතී, කරුණාකර මොහොතක් රැඳී සිටින්න...');
 
-⏱️ *Duration:* ${duration}
-🌐 *Source:* YouTube
+            const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
+            const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp4?url=${encodeURIComponent(q.trim())}&quality=1080p&api_key=${apiKey}`;
 
-> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
+            // Fetch data from API
+            const response = await axios.get(apiUrl);
+            const resData = response.data;
 
-      // 3. Send video directly
-      await sock.sendMessage(chatJid, {
-        video: { url: downloadUrl },
-        caption: captionText,
-        mimetype: 'video/mp4'
-      }, { quoted: msg });
+            if (!resData || !resData.status || !resData.data) {
+                return reply('❌ වීඩියෝව ලබා ගැනීමට නොහැකි විය. Link එක පරීක්ෂා කර නැවත උත්සාහ කරන්න.');
+            }
 
-      await sock.sendMessage(chatJid, { react: { text: '✅', key: msg.key } });
+            const { title, direct_url, download_url, quality, thumbnail } = resData.data;
+            const videoUrl = direct_url || download_url;
 
-    } catch (err) {
-      console.error('Video DL Error:', err.message);
-      try {
-        await sock.sendMessage(chatJid, { react: { text: '❌', key: msg.key } });
-      } catch (e) {}
-      await sock.sendMessage(chatJid, { 
-        text: '❌ වීඩියෝව ඩවුන්ලෝඩ් කිරීමේදී දෝෂයක් ඇති විය.\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡' 
-      }, { quoted: msg });
+            if (!videoUrl) {
+                return reply('❌ Download link එකක් සොයා ගැනීමට නොහැකි විය.');
+            }
+
+            const captionText = `🎬 *${title || 'YouTube Media'}*\n` +
+                                `⚙️ *Quality:* ${quality || '1080p'}\n` +
+                                `📥 *Downloaded via Bot*`;
+
+            // Send video file
+            await conn.sendMessage(
+                mek.chat,
+                {
+                    video: { url: videoUrl },
+                    mimetype: 'video/mp4',
+                    caption: captionText
+                },
+                { quoted: mek }
+            );
+
+        } catch (error) {
+            console.error('Video command error:', error);
+            reply('❌ දෝෂයක් සිදු විය! API එකෙහි ගැටලුවක් හෝ සේවාදායකය කාර්යබහුල විය හැක.');
+        }
     }
-  }
 };
+
+module.exports = videoCommand;
