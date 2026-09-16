@@ -5,7 +5,7 @@ module.exports = {
     name: 'fb',
     alias: ['facebook'],
     category: 'download',
-    desc: 'Download Facebook Videos with Multi-Fallback & Error Prevention',
+    desc: 'Download Facebook Videos with Strict Media Validation',
 
     async execute(sock, msg, args, chatJid) {
         const DEFAULT_FOOTER = '\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡';
@@ -28,114 +28,106 @@ module.exports = {
         try {
             await sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
 
-            // 1. Loading Message
             loadMsg = await sock.sendMessage(targetChat, { 
-                text: `*⚡ DOWNLOADING FACEBOOK MEDIA ⚡*\n\n⏳ _කරුණාකර මොහොතක් රැඳී සිටින්න, වීඩියෝව සකසමින් පවතී..._${DEFAULT_FOOTER}` 
+                text: `*⚡ DOWNLOADING FACEBOOK MEDIA ⚡*\n\n⏳ _වීඩියෝව සකසමින් පවතී, කරුණාකර රැඳී සිටින්න..._${DEFAULT_FOOTER}` 
             }, { quoted: msg });
 
-            let videoUrl = null;
+            let videoBuffer = null;
             let videoTitle = "Facebook Video";
-            let qualityTag = "HD";
 
-            // 2. Chamindu API (Enhanced validation against yt-dlp errors)
-            try {
-                const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
-                const chamRes = await axios.get(`https://api.chamindu.site/api/v1/facebook?url=${encodeURIComponent(cleanUrl)}&api_key=${API_KEY}`, { 
-                    timeout: 12000,
-                    validateStatus: () => true 
-                });
+            // Helper function to download and strictly validate video binary
+            const fetchAndValidateVideo = async (url) => {
+                if (!url || !url.startsWith('http')) return null;
+                try {
+                    const res = await axios.get(url, {
+                        responseType: 'arraybuffer',
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Accept': '*/*'
+                        },
+                        timeout: 45000
+                    });
 
-                const root = chamRes.data || {};
-                const data = root.data || {};
-                const hasErrorMsg = typeof root.message === 'string' && root.message.toLowerCase().includes('failed');
+                    const cType = res.headers['content-type'] || '';
+                    const buf = Buffer.from(res.data);
 
-                if (!hasErrorMsg && data.status !== 'inaccessible_or_private') {
-                    const candidateUrl = data.fast_download_hd || data.hd || data.fast_download || data.fast_download_sd || data.sd;
-                    if (candidateUrl && candidateUrl.startsWith('http')) {
-                        videoUrl = candidateUrl;
-                        if (data.title && !data.title.includes(':')) videoTitle = data.title;
+                    // Error HTML check & MP4 signature check (ftyp / isom / moov)
+                    const headerStr = buf.slice(0, 100).toString('utf8').toLowerCase();
+                    const isHtml = headerStr.includes('<!doctype') || headerStr.includes('<html');
+                    
+                    if (!isHtml && buf.length > 500000) { // 500KB ට වඩා වැඩි නියම වීඩියෝ පමණි
+                        return buf;
                     }
+                } catch (e) {}
+                return null;
+            };
+
+            // 🟢 1. Siputzx API (ඉතා හොඳින් FB videos වැඩ කරන API එකක්)
+            try {
+                const res = await axios.get(`https://api.siputzx.my.id/api/d/facebook?url=${encodeURIComponent(cleanUrl)}`, { timeout: 10000 });
+                if (res.data?.status && res.data?.data) {
+                    const dlUrl = res.data.data.hd || res.data.data.sd || res.data.data.normal;
+                    videoBuffer = await fetchAndValidateVideo(dlUrl);
+                    if (res.data.data.title) videoTitle = res.data.data.title;
                 }
             } catch (e) {}
 
-            // 3. Fallback API 1 (Dorratz)
-            if (!videoUrl) {
+            // 🟢 2. BK9 FB API
+            if (!videoBuffer) {
                 try {
-                    const fallbackRes = await axios.get(`https://api.dorratz.com/v2/fb-dl?url=${encodeURIComponent(cleanUrl)}`, { 
-                        timeout: 12000 
-                    });
-                    if (fallbackRes.data?.status && Array.isArray(fallbackRes.data?.data) && fallbackRes.data.data.length > 0) {
-                        const dlObj = fallbackRes.data.data.find(v => v.quality?.includes('720') || v.quality?.includes('HD')) || fallbackRes.data.data[0];
-                        if (dlObj?.url && dlObj.url.startsWith('http')) {
-                            videoUrl = dlObj.url;
-                        }
+                    const res = await axios.get(`https://bk9.fun/download/fb?url=${encodeURIComponent(cleanUrl)}`, { timeout: 10000 });
+                    if (res.data?.status && res.data?.BK9) {
+                        const target = res.data.BK9.hd || res.data.BK9.sd;
+                        videoBuffer = await fetchAndValidateVideo(target);
+                        if (res.data.BK9.title) videoTitle = res.data.BK9.title;
                     }
                 } catch (e) {}
             }
 
-            // 4. Fallback API 2 (GiftedTech)
-            if (!videoUrl) {
+            // 🟢 3. Dorratz API
+            if (!videoBuffer) {
                 try {
-                    const giftRes = await axios.get(`https://api.giftedtech.web.id/api/download/facebook?apikey=gifted&url=${encodeURIComponent(cleanUrl)}`, { 
-                        timeout: 12000 
-                    });
-                    if (giftRes.data?.success && giftRes.data?.result) {
-                        const target = giftRes.data.result.hd || giftRes.data.result.sd;
-                        if (target && target.startsWith('http')) {
-                            videoUrl = target;
-                            if (giftRes.data.result.title) videoTitle = giftRes.data.result.title;
-                        }
+                    const res = await axios.get(`https://api.dorratz.com/v2/fb-dl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 10000 });
+                    if (res.data?.status && Array.isArray(res.data?.data)) {
+                        const item = res.data.data.find(v => v.quality?.includes('720') || v.quality?.includes('HD')) || res.data.data[0];
+                        videoBuffer = await fetchAndValidateVideo(item?.url);
                     }
                 } catch (e) {}
             }
 
-            // 5. Fallback API 3 (Vinez API)
-            if (!videoUrl) {
+            // 🟢 4. Chamindu API (yt-dlp error එකක් නැති නම් පමණක්)
+            if (!videoBuffer) {
                 try {
-                    const vinezRes = await axios.get(`https://api.vinez.my.id/api/download/facebook?url=${encodeURIComponent(cleanUrl)}`, { 
-                        timeout: 12000 
-                    });
-                    if (vinezRes.data?.status && (vinezRes.data?.hd || vinezRes.data?.sd)) {
-                        videoUrl = vinezRes.data.hd || vinezRes.data.sd;
+                    const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
+                    const chamRes = await axios.get(`https://api.chamindu.site/api/v1/facebook?url=${encodeURIComponent(cleanUrl)}&api_key=${API_KEY}`, { timeout: 10000 });
+                    const root = chamRes.data || {};
+                    const data = root.data || {};
+                    
+                    if (root.status && !root.message?.includes('Failed') && data.status !== 'inaccessible_or_private') {
+                        const candidate = data.fast_download_hd || data.hd || data.fast_download || data.sd;
+                        videoBuffer = await fetchAndValidateVideo(candidate);
+                        if (data.title) videoTitle = data.title;
                     }
                 } catch (e) {}
             }
 
-            // කිසිම API එකකින් direct link එක නොලැබුණහොත්
-            if (!videoUrl) {
+            // කිසිම API එකකින් හරියට video එක බාගත නොවූ විට
+            if (!videoBuffer) {
                 if (loadMsg) await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
                 await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
                 return await sock.sendMessage(targetChat, { 
-                    text: `❌ *මෙම වීඩියෝව බාගත කළ නොහැක!*\n\n_හේතුව: වීඩියෝව Private එකක් විය හැක, නැතහොත් Facebook සර්වර් මඟින් Download links අවහිර කර ඇත._${DEFAULT_FOOTER}` 
+                    text: `❌ *මෙම වීඩියෝව බාගත කිරීමට නොහැකි විය!*\n\n_හේතුව: වීඩියෝව Private එකක් හෝ Facebook සර්වර් මඟින් Download links Block කර ඇත. වෙනත් link එකක් උත්සාහ කරන්න._${DEFAULT_FOOTER}` 
                 }, { quoted: msg });
             }
 
-            // 6. Direct Buffer Download with Validation
-            const videoRes = await axios.get(videoUrl, {
-                responseType: 'arraybuffer',
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': '*/*'
-                },
-                timeout: 60000
-            });
-
-            const videoBuffer = Buffer.from(videoRes.data);
-
-            // Payload එක HTML/Text error එකක්ද සහ ප්‍රමාණය ප්‍රමාණවත්දැයි පරීක්ෂාව
-            const checkHeader = videoBuffer.slice(0, 100).toString('utf8').toLowerCase();
-            if (checkHeader.includes('<!doctype') || checkHeader.includes('<html') || videoBuffer.length < 50000) {
-                throw new Error('බාගත වූ දත්ත වීඩියෝ ගොනුවක් නොවේ (Stream Corrupted).');
-            }
-
-            // 7. Delete Loading Message
+            // Loading message එක අයින් කිරීම
             if (loadMsg) {
                 await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
             }
 
-            // 8. Send Video
-            const caption = `*📘 𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗩𝗜𝗗𝗘𝗢 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 📘*\n\n📌 *Title:* ${videoTitle}\n📊 *Quality:* ${qualityTag}${DEFAULT_FOOTER}`;
+            const caption = `*📘 𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗩𝗜𝗗𝗘𝗢 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 📘*\n\n📌 *Title:* ${videoTitle}\n📊 *Quality:* HD/SD${DEFAULT_FOOTER}`;
 
+            // Verified MP4 Stream එක යැවීම
             await sock.sendMessage(targetChat, {
                 video: videoBuffer,
                 caption: caption,
@@ -150,7 +142,7 @@ module.exports = {
             if (loadMsg) await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
             await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
             await sock.sendMessage(targetChat, { 
-                text: `❌ *Facebook Download Error:* ${err.message}${DEFAULT_FOOTER}` 
+                text: `❌ *Facebook Error:* ${err.message}${DEFAULT_FOOTER}` 
             }, { quoted: msg });
         }
     }
