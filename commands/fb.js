@@ -1,11 +1,13 @@
 // commands/fb.js
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
 module.exports = {
     name: 'fb',
     alias: ['facebook'],
     category: 'download',
-    desc: 'Download Facebook Videos with Strict Media Validation',
+    desc: 'Download Facebook Videos Error-Free',
 
     async execute(sock, msg, args, chatJid) {
         const DEFAULT_FOOTER = '\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡';
@@ -24,6 +26,7 @@ module.exports = {
 
         const cleanUrl = rawUrl.trim();
         let loadMsg = null;
+        let tempFilePath = null;
 
         try {
             await sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
@@ -32,118 +35,107 @@ module.exports = {
                 text: `*⚡ DOWNLOADING FACEBOOK MEDIA ⚡*\n\n⏳ _වීඩියෝව සකසමින් පවතී, කරුණාකර රැඳී සිටින්න..._${DEFAULT_FOOTER}` 
             }, { quoted: msg });
 
-            let videoBuffer = null;
+            let finalDownloadUrl = null;
             let videoTitle = "Facebook Video";
 
-            // Helper function to download and strictly validate video binary
-            const fetchAndValidateVideo = async (url) => {
-                if (!url || !url.startsWith('http')) return null;
-                try {
-                    const res = await axios.get(url, {
-                        responseType: 'arraybuffer',
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                            'Accept': '*/*'
-                        },
-                        timeout: 45000
-                    });
-
-                    const cType = res.headers['content-type'] || '';
-                    const buf = Buffer.from(res.data);
-
-                    // Error HTML check & MP4 signature check (ftyp / isom / moov)
-                    const headerStr = buf.slice(0, 100).toString('utf8').toLowerCase();
-                    const isHtml = headerStr.includes('<!doctype') || headerStr.includes('<html');
-                    
-                    if (!isHtml && buf.length > 500000) { // 500KB ට වඩා වැඩි නියම වීඩියෝ පමණි
-                        return buf;
-                    }
-                } catch (e) {}
-                return null;
-            };
-
-            // 🟢 1. Siputzx API (ඉතා හොඳින් FB videos වැඩ කරන API එකක්)
+            // 🟢 Method 1: David Cyril Public Stable API
             try {
-                const res = await axios.get(`https://api.siputzx.my.id/api/d/facebook?url=${encodeURIComponent(cleanUrl)}`, { timeout: 10000 });
-                if (res.data?.status && res.data?.data) {
-                    const dlUrl = res.data.data.hd || res.data.data.sd || res.data.data.normal;
-                    videoBuffer = await fetchAndValidateVideo(dlUrl);
-                    if (res.data.data.title) videoTitle = res.data.data.title;
+                const res = await axios.get(`https://api.davidcyriltech.my.id/facebook?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
+                if (res.data?.success && res.data?.result) {
+                    finalDownloadUrl = res.data.result.hd || res.data.result.sd;
+                    if (res.data.result.title) videoTitle = res.data.result.title;
                 }
             } catch (e) {}
 
-            // 🟢 2. BK9 FB API
-            if (!videoBuffer) {
+            // 🟢 Method 2: NexOracle FB API
+            if (!finalDownloadUrl) {
                 try {
-                    const res = await axios.get(`https://bk9.fun/download/fb?url=${encodeURIComponent(cleanUrl)}`, { timeout: 10000 });
-                    if (res.data?.status && res.data?.BK9) {
-                        const target = res.data.BK9.hd || res.data.BK9.sd;
-                        videoBuffer = await fetchAndValidateVideo(target);
-                        if (res.data.BK9.title) videoTitle = res.data.BK9.title;
+                    const res = await axios.get(`https://api.nexoracle.com/downloader/facebook?apikey=free_key@maher_apis&url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
+                    if (res.data?.status === 200 && res.data?.result) {
+                        finalDownloadUrl = res.data.result.hd || res.data.result.sd;
+                        if (res.data.result.title) videoTitle = res.data.result.title;
                     }
                 } catch (e) {}
             }
 
-            // 🟢 3. Dorratz API
-            if (!videoBuffer) {
+            // 🟢 Method 3: Widipe API
+            if (!finalDownloadUrl) {
                 try {
-                    const res = await axios.get(`https://api.dorratz.com/v2/fb-dl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 10000 });
-                    if (res.data?.status && Array.isArray(res.data?.data)) {
-                        const item = res.data.data.find(v => v.quality?.includes('720') || v.quality?.includes('HD')) || res.data.data[0];
-                        videoBuffer = await fetchAndValidateVideo(item?.url);
+                    const res = await axios.get(`https://widipe.com/download/fbdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
+                    if (res.data?.status && res.data?.result) {
+                        finalDownloadUrl = res.data.result.hd || res.data.result.sd;
                     }
                 } catch (e) {}
             }
 
-            // 🟢 4. Chamindu API (yt-dlp error එකක් නැති නම් පමණක්)
-            if (!videoBuffer) {
-                try {
-                    const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
-                    const chamRes = await axios.get(`https://api.chamindu.site/api/v1/facebook?url=${encodeURIComponent(cleanUrl)}&api_key=${API_KEY}`, { timeout: 10000 });
-                    const root = chamRes.data || {};
-                    const data = root.data || {};
-                    
-                    if (root.status && !root.message?.includes('Failed') && data.status !== 'inaccessible_or_private') {
-                        const candidate = data.fast_download_hd || data.hd || data.fast_download || data.sd;
-                        videoBuffer = await fetchAndValidateVideo(candidate);
-                        if (data.title) videoTitle = data.title;
-                    }
-                } catch (e) {}
+            if (!finalDownloadUrl) {
+                throw new Error('වීඩියෝ Link එක ලබා ගැනීමට නොහැකි විය. වීඩියෝව Private එකක් විය හැක.');
             }
 
-            // කිසිම API එකකින් හරියට video එක බාගත නොවූ විට
-            if (!videoBuffer) {
-                if (loadMsg) await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
-                await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
-                return await sock.sendMessage(targetChat, { 
-                    text: `❌ *මෙම වීඩියෝව බාගත කිරීමට නොහැකි විය!*\n\n_හේතුව: වීඩියෝව Private එකක් හෝ Facebook සර්වර් මඟින් Download links Block කර ඇත. වෙනත් link එකක් උත්සාහ කරන්න._${DEFAULT_FOOTER}` 
-                }, { quoted: msg });
+            // Temp directory එක හදාගැනීම
+            const tempDir = path.join(__dirname, '../temp');
+            if (!fs.existsSync(tempDir)) {
+                fs.mkdirSync(tempDir, { recursive: true });
             }
 
-            // Loading message එක අයින් කිරීම
+            tempFilePath = path.join(tempDir, `fb_${Date.now()}.mp4`);
+
+            // Stream එකක් විදිහට file එක write කිරීම (corrupt වීම සම්පූර්ණයෙන්ම වළකයි)
+            const response = await axios({
+                method: 'GET',
+                url: finalDownloadUrl,
+                responseType: 'stream',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Accept': '*/*'
+                },
+                timeout: 60000
+            });
+
+            const writer = fs.createWriteStream(tempFilePath);
+            response.data.pipe(writer);
+
+            await new Promise((resolve, reject) => {
+                writer.on('finish', resolve);
+                writer.on('error', reject);
+            });
+
+            // File size validation (නියම mp4 file එකක් බව තහවුරු කරගැනීම)
+            const stats = fs.statSync(tempFilePath);
+            if (stats.size < 100000) { // 100KB ට වඩා අඩු නම් corrupt එකක්
+                throw new Error('ලබාගත් වීඩියෝව වාදනය කළ නොහැකි ගොනුවකි (Corrupted File).');
+            }
+
             if (loadMsg) {
                 await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
             }
 
-            const caption = `*📘 𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗩𝗜𝗗𝗘𝗢 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 📘*\n\n📌 *Title:* ${videoTitle}\n📊 *Quality:* HD/SD${DEFAULT_FOOTER}`;
+            const caption = `*📘 𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗩𝗜𝗗𝗘𝗢 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 📘*\n\n📌 *Title:* ${videoTitle}${DEFAULT_FOOTER}`;
 
-            // Verified MP4 Stream එක යැවීම
+            // WhatsApp එකට Send කිරීම
             await sock.sendMessage(targetChat, {
-                video: videoBuffer,
+                video: fs.readFileSync(tempFilePath),
                 caption: caption,
                 mimetype: 'video/mp4',
-                fileName: 'facebook_video.mp4'
+                fileName: 'video.mp4'
             }, { quoted: msg });
 
             await sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
         } catch (err) {
-            console.error('FB DL Error:', err.message);
+            console.error('FB Final DL Error:', err.message);
             if (loadMsg) await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
             await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
             await sock.sendMessage(targetChat, { 
-                text: `❌ *Facebook Error:* ${err.message}${DEFAULT_FOOTER}` 
+                text: `❌ *Facebook Download Error:* ${err.message}${DEFAULT_FOOTER}` 
             }, { quoted: msg });
+        } finally {
+            // Memory safe: File එක send උනාට පසු temp එකෙන් delete කිරීම
+            if (tempFilePath && fs.existsSync(tempFilePath)) {
+                try {
+                    fs.unlinkSync(tempFilePath);
+                } catch (e) {}
+            }
         }
     }
 };
