@@ -295,7 +295,7 @@ async function initWhatsApp(phoneNumber) {
         // 🟢 අදාළ Bot Session එකට හිමි Database Settings ලබා ගැනීම
         const myBotJid = sock.user?.id || '';
         const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
-        const currentBotSettings = await getBotSettings(myBotNum);
+        const currentBotSettings = (await getBotSettings(myBotNum)) || {};
 
         // 🟢 1. AUTO STATUS SEEN & STATUS REACTION (Per-bot DB Setting)
         if (chatJid === 'status@broadcast') {
@@ -420,11 +420,13 @@ async function initWhatsApp(phoneNumber) {
         const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ') || cleanInput.startsWith('pin ');
 
         if (isSettingCode && quotedMsgObj && isAuthorizedToControl) {
-          const settingsCmd = commands.get('settings') || commands.get('set');
+          const settingsCmd = commands.get('settings') || commands.get('setting') || commands.get('set');
           if (settingsCmd) {
             const cmdFunc = typeof settingsCmd === 'function' ? settingsCmd : (settingsCmd.execute || settingsCmd.run);
-            await cmdFunc(sock, msg, text.split(/ +/), chatJid, safeReply, { isOwner: isAuthorizedToControl });
-            continue;
+            if (typeof cmdFunc === 'function') {
+              await cmdFunc(sock, msg, text.split(/ +/), chatJid, safeReply, { isOwner: isAuthorizedToControl });
+              continue;
+            }
           }
         }
 
@@ -444,8 +446,10 @@ async function initWhatsApp(phoneNumber) {
             const statusCmd = commands.get('save') || commands.get('status');
             if (statusCmd) {
               const cmdFunc = typeof statusCmd === 'function' ? statusCmd : (statusCmd.downloadAndSendStatus || statusCmd.execute || statusCmd.run);
-              await cmdFunc(sock, msg, [cleanMsgText], chatJid, safeReply, { isOwner: isAuthorizedToControl });
-              continue;
+              if (typeof cmdFunc === 'function') {
+                await cmdFunc(sock, msg, [cleanMsgText], chatJid, safeReply, { isOwner: isAuthorizedToControl });
+                continue;
+              }
             }
           }
         }
@@ -453,14 +457,18 @@ async function initWhatsApp(phoneNumber) {
         const prefix = '.';
         const isCmd = text.startsWith(prefix);
 
-        // 🟢 8. COMMAND EXECUTION
+        // 🟢 8. COMMAND EXECUTION (.setting, .settings, .set ආදී සියල්ල සඳහා fallback සහතික කර ඇත)
         if (isCmd) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
-          if (commands.has(commandName)) {
+          let targetCmd = commands.get(commandName);
+          if (!targetCmd && (commandName === 'setting' || commandName === 'settings' || commandName === 'set' || commandName === 'config')) {
+            targetCmd = commands.get('settings') || commands.get('setting') || commands.get('set');
+          }
+
+          if (targetCmd) {
             try {
-              const targetCmd = commands.get(commandName);
               const cmdFunc = typeof targetCmd === 'function' ? targetCmd : (targetCmd.execute || targetCmd.run);
 
               if (typeof cmdFunc === 'function') {
