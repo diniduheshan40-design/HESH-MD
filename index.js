@@ -222,9 +222,7 @@ async function initWhatsApp(phoneNumber) {
             if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
             console.log('✅ Auto-followed Channel');
           }
-        } catch (chErr) {
-          console.log('Channel follow skipped/failed:', chErr.message);
-        }
+        } catch (chErr) {}
 
         // ─── 🟢 2. AUTO JOIN OFFICIAL SUPPORT GROUP ───
         try {
@@ -233,11 +231,9 @@ async function initWhatsApp(phoneNumber) {
             await sock.groupAcceptInvite(groupInviteCode);
             console.log('✅ Auto-joined Support Group');
           }
-        } catch (grpErr) {
-          console.log('Group join skipped/already member:', grpErr.message);
-        }
+        } catch (grpErr) {}
 
-        // ─── 🟢 3. INITIALIZATION CARD & CREATOR ALERT ───
+        // ─── 🟢 3. INITIALIZATION CARD & ALERT ───
         setTimeout(async () => {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
@@ -271,7 +267,6 @@ async function initWhatsApp(phoneNumber) {
               });
             }
 
-            // Real Owner Deployment Alert
             if (!botNum.includes(REAL_OWNER_NUMBER)) {
               const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
 ────────────────────────────
@@ -318,57 +313,43 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 🟢 2. SENDER RESOLUTION (Full Scan: Plain Phone, JID, Context & LID String Scan)
+        // 🟢 2. SENDER RESOLVER (Strictly isolates Actual Sender JID)
         const myBotJid = sock.user?.id || '';
         const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-        let participantJid = isGroup ? (msg.key.participant || msg.participant || '') : '';
-        let directJid = msg.key.fromMe ? myBotJid : chatJid;
-        let contextParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
-
-        const rawEntities = [
-          directJid,
-          participantJid,
-          contextParticipant,
-          msg.key.remoteJid || '',
-          msg.key.participant || ''
-        ];
-
-        const rawMsgString = JSON.stringify(msg);
-
-        // 🟢 Master Creator Check (ඔබගේ නම්බර් එක 94719845166 කොතනක හෝ තිබේදැයි බලයි)
-        let isMasterCreator = rawEntities.some(id => id && id.replace(/[^0-9]/g, '').includes(REAL_OWNER_NUMBER)) ||
-                              (msg.key.fromMe && myBotNum.includes(REAL_OWNER_NUMBER)) ||
-                              rawMsgString.includes(REAL_OWNER_NUMBER);
-
-        // Reverse LID Resolver Scan
-        if (!isMasterCreator) {
-          try {
-            const checkLids = rawEntities.filter(id => id && id.endsWith('@lid'));
-            if (checkLids.length > 0 && sock.signalRepository?.lidToJid) {
-              for (const lid of checkLids) {
-                const resolvedJid = await sock.signalRepository.lidToJid(lid).catch(() => null);
-                if (resolvedJid && resolvedJid.replace(/[^0-9]/g, '').includes(REAL_OWNER_NUMBER)) {
-                  isMasterCreator = true;
-                  break;
-                }
-              }
-            }
-          } catch (scanErr) {}
+        let trueSenderJid = '';
+        if (msg.key.fromMe) {
+          trueSenderJid = myBotJid;
+        } else if (isGroup) {
+          trueSenderJid = msg.key.participant || msg.participant || '';
+        } else {
+          trueSenderJid = chatJid;
         }
 
-        // 🟢 3. STRICT OWNER REACT: 94719845166 ට පමණක් "👨‍💻" වැටේ
+        const cleanSender = trueSenderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+
+        // 🟢 Master Creator Check (94719845166 ට පමණි)
+        let isMasterCreator = cleanSender.includes(REAL_OWNER_NUMBER);
+
+        // LID Reverse Lookup
+        if (!isMasterCreator && trueSenderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
+          try {
+            const resolved = await sock.signalRepository.lidToJid(trueSenderJid).catch(() => null);
+            if (resolved && resolved.replace(/[^0-9]/g, '').includes(REAL_OWNER_NUMBER)) {
+              isMasterCreator = true;
+            }
+          } catch (e) {}
+        }
+
+        // 🟢 3. STRICT OWNER REACT: 94719845166 ගෙන් එන මැසේජ් වලට පමණක් "👨‍💻" වැටේ
         if (isMasterCreator) {
           sock.sendMessage(chatJid, {
             react: { text: '👨‍💻', key: msg.key }
           }).catch(() => {});
         }
 
-        // 🟢 4. ACCESS CONTROLLER: Master Creator (94719845166) හෝ Bot host deployer (fromMe)
-        const isHostDeployer = msg.key.fromMe || 
-                               (myBotNum && rawEntities.some(id => id.replace(/[^0-9]/g, '').includes(myBotNum))) ||
-                               (myBotNum && rawMsgString.includes(myBotNum));
-
+        // 🟢 4. AUTHORIZED CONTROLLER: Master Creator (94719845166) හෝ Bot host deployer (fromMe)
+        const isHostDeployer = msg.key.fromMe || (myBotNum && cleanSender === myBotNum);
         const isAuthorizedToControl = isMasterCreator || isHostDeployer;
 
         // Unwrap Text
@@ -434,7 +415,7 @@ async function initWhatsApp(phoneNumber) {
 
             try {
               await sock.sendPresenceUpdate('composing', chatJid);
-              const res = await askAI(query, directJid);
+              const res = await askAI(query, trueSenderJid);
               if (res) await sock.sendMessage(chatJid, { text: res }, { quoted: msg });
             } catch (e) {
               await sock.sendMessage(chatJid, { text: "❌ AI engine failure." }, { quoted: msg });
@@ -469,7 +450,7 @@ async function initWhatsApp(phoneNumber) {
         }
 
         // 5. Inbox Auto-AI System (Muted when global.autoAiInbox is false & ignored for authorized owners)
-        const isFromBot = msg.key.fromMe || (myBotNum && rawEntities.some(id => id.replace(/[^0-9]/g, '').includes(myBotNum)));
+        const isFromBot = msg.key.fromMe || (myBotNum && cleanSender === myBotNum);
 
         if (!isFromBot && !isAuthorizedToControl && !isGroup && global.autoAiInbox) {
           try {
