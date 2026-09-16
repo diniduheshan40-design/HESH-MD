@@ -341,11 +341,16 @@ async function initWhatsApp(phoneNumber) {
           } catch (e) {}
         }
 
-        // 🟢 3. STRICT OWNER REACT: 94719845166 ගෙන් එන මැසේජ් වලට පමණක් "👨‍💻" වැටේ
-        if (isMasterCreator) {
-          sock.sendMessage(chatJid, {
-            react: { text: '👨‍💻', key: msg.key }
-          }).catch(() => {});
+        // 🟢 3. ONLY OWNER REACT (94719845166 ට පමණි)
+        const actualSenderNum = msg.key.fromMe ? myBotNum : cleanSender;
+        const isStrictOwnerMsg = isMasterCreator || actualSenderNum === REAL_OWNER_NUMBER || actualSenderNum.endsWith(REAL_OWNER_NUMBER);
+
+        if (isStrictOwnerMsg) {
+          try {
+            await sock.sendMessage(chatJid, {
+              react: { text: '👑', key: msg.key }
+            });
+          } catch (e) {}
         }
 
         // 🟢 4. AUTHORIZED CONTROLLER: Master Creator (94719845166) හෝ Bot host deployer (fromMe)
