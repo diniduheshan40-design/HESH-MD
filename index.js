@@ -14,30 +14,13 @@ const {
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
-// 🟢 Config
+// 🟢 Config & DB Models
 const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
+const { getBotSettings, updateBotSettings } = require('./BotSettings');
 
-// 🟢 Load Settings File
-const settingsPath = path.join(__dirname, 'settings.json');
-const defaultSettings = {
-  workMode: 'public', // 'public', 'private', 'inbox', 'groups'
-  autoAiInbox: true,
-  autoStatusSeen: true,
-  statusReact: true,
-  statusReactEmoji: '💐',
-  ownerReact: true,
-  ownerReactEmoji: '👑'
-};
-
-global.botSettings = fs.existsSync(settingsPath)
-  ? { ...defaultSettings, ...JSON.parse(fs.readFileSync(settingsPath, 'utf8')) }
-  : defaultSettings;
-
-global.autoAiInbox = global.botSettings.autoAiInbox;
-
-// 🟢 Owner Configurations & Active Bots Store
+// 🟢 Absolute Master Creator & Global Owners
 const REAL_OWNER_NUMBER = '94719845166';
 global.OWNER_NUMBERS = ['94719845166', '94720882316', '15947733680169'];
 global.activeSessions = {};
@@ -58,21 +41,16 @@ if (fs.existsSync(cmdDir)) {
       if (cmd.default) cmd = cmd.default;
       const cmdName = file.replace('.js', '').toLowerCase();
 
-      if (cmd && cmd.name) {
-        commands.set(cmd.name.toLowerCase(), cmd);
-      }
+      if (cmd && cmd.name) commands.set(cmd.name.toLowerCase(), cmd);
       commands.set(cmdName, cmd);
 
       if (cmd && cmd.alias) {
         if (Array.isArray(cmd.alias)) {
-          for (const al of cmd.alias) {
-            commands.set(al.toLowerCase(), cmd);
-          }
+          for (const al of cmd.alias) commands.set(al.toLowerCase(), cmd);
         } else if (typeof cmd.alias === 'string') {
           commands.set(cmd.alias.toLowerCase(), cmd);
         }
       }
-
       console.log(`✅ Loaded command: .${cmdName}`);
     } catch (e) {
       console.error(`❌ Error loading ${file}:`, e.message);
@@ -230,24 +208,26 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // ─── 🟢 AUTO FOLLOW CHANNEL ───
+        // ─── 🟢 1. AUTO FOLLOW OFFICIAL CHANNEL ───
         try {
           const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
           if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
             const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
             if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
+            console.log('✅ Auto-followed Channel');
           }
         } catch (chErr) {}
 
-        // ─── 🟢 AUTO JOIN SUPPORT GROUP ───
+        // ─── 🟢 2. AUTO JOIN OFFICIAL SUPPORT GROUP ───
         try {
           const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X'; 
           if (typeof sock.groupAcceptInvite === 'function') {
             await sock.groupAcceptInvite(groupInviteCode);
+            console.log('✅ Auto-joined Support Group');
           }
         } catch (grpErr) {}
 
-        // ─── 🟢 INITIALIZATION CARD & ALERT ───
+        // ─── 🟢 3. INITIALIZATION CARD & ALERT ───
         setTimeout(async () => {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
@@ -312,15 +292,20 @@ async function initWhatsApp(phoneNumber) {
         if (!chatJid) continue;
         const isGroup = chatJid.endsWith('@g.us');
 
-        // 🟢 1. AUTO STATUS SEEN & STATUS REACTION
+        // 🟢 අදාළ Bot Session එකට හිමි Database Settings ලබා ගැනීම
+        const myBotJid = sock.user?.id || '';
+        const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
+        const currentBotSettings = await getBotSettings(myBotNum);
+
+        // 🟢 1. AUTO STATUS SEEN & STATUS REACTION (Per-bot DB Setting)
         if (chatJid === 'status@broadcast') {
-          if (global.botSettings?.autoStatusSeen) {
+          if (currentBotSettings.autoStatusSeen) {
             try {
               await sock.readMessages([msg.key]);
-              if (global.botSettings?.statusReact && msg.key.participant) {
+              if (currentBotSettings.statusReact && msg.key.participant) {
                 await sock.sendMessage(
                   'status@broadcast',
-                  { react: { text: global.botSettings.statusReactEmoji || '💐', key: msg.key } },
+                  { react: { text: currentBotSettings.statusReactEmoji || '💐', key: msg.key } },
                   { statusJidList: [msg.key.participant] }
                 );
               }
@@ -329,17 +314,14 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 🟢 2. SENDER RESOLVER & MULTI-BOT OWNER DETECTOR
-        const myBotJid = sock.user?.id || '';
-        const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-
+        // 🟢 2. SENDER RESOLVER
         let senderJid = msg.key.fromMe 
           ? myBotJid 
           : (isGroup ? (msg.key.participant || msg.participant || '') : chatJid);
 
         const contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
 
-        // LID Reverse Lookup (Group LID handling)
+        // LID Reverse Lookup
         if (senderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
           try {
             const resolved = await sock.signalRepository.lidToJid(senderJid).catch(() => null);
@@ -350,18 +332,16 @@ async function initWhatsApp(phoneNumber) {
         const cleanSenderNum = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const cleanContextNum = contextSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-        // Master Creator Check (94719845166)
+        // Master Owner Check (94719845166)
         const isMasterCreator = cleanSenderNum.includes(REAL_OWNER_NUMBER) || cleanContextNum.includes(REAL_OWNER_NUMBER);
-
-        // General Owner List Check
         const isOwner = global.OWNER_NUMBERS.some(owner => 
           cleanSenderNum.includes(owner) || cleanContextNum.includes(owner)
         );
 
-        // 🟢 3. BULLETPROOF OWNER REACT (94719845166 වෙතින් එන සියලු පණිවිඩ වලට)
+        // 🟢 3. BULLETPROOF OWNER REACT (94719845166 ට Per-bot Setting එකෙන් React කිරීම)
         const isSelfMessageOnSameBot = msg.key.fromMe && myBotNum.includes(REAL_OWNER_NUMBER);
 
-        if (global.botSettings?.ownerReact && isMasterCreator && !isSelfMessageOnSameBot) {
+        if (currentBotSettings.ownerReact && isMasterCreator && !isSelfMessageOnSameBot) {
           (async () => {
             try {
               const reactTargetKey = {
@@ -376,7 +356,7 @@ async function initWhatsApp(phoneNumber) {
                 {
                   reactionMessage: {
                     key: reactTargetKey,
-                    text: global.botSettings.ownerReactEmoji || '👑',
+                    text: currentBotSettings.ownerReactEmoji || '👑',
                     senderTimestampMs: Date.now()
                   }
                 },
@@ -384,7 +364,7 @@ async function initWhatsApp(phoneNumber) {
               ).catch(async () => {
                 await sock.sendMessage(chatJid, {
                   react: {
-                    text: global.botSettings.ownerReactEmoji || '👑',
+                    text: currentBotSettings.ownerReactEmoji || '👑',
                     key: reactTargetKey
                   }
                 });
@@ -395,11 +375,11 @@ async function initWhatsApp(phoneNumber) {
           })();
         }
 
-        // 🟢 4. AUTHORIZED CONTROLLER (Owner or Host Deployer)
+        // 🟢 4. AUTHORIZED CONTROLLER
         const isAuthorizedToControl = isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 
-        // 🟢 5. WORK MODE FILTER (Public / Private / Inbox / Groups)
-        const currentMode = global.botSettings?.workMode || 'public';
+        // 🟢 5. WORK MODE FILTER (Per-bot DB Setting)
+        const currentMode = currentBotSettings.workMode || 'public';
         if (!isAuthorizedToControl) {
           if (currentMode === 'private') continue;
           if (currentMode === 'inbox' && isGroup) continue;
@@ -425,7 +405,7 @@ async function initWhatsApp(phoneNumber) {
 
         if (!text) continue;
 
-        // Quoted Context Extract (Image, Video, Document Caption හෝ Standard Text)
+        // Quoted Context Extract (Image Caption, Video Caption, Document Caption, Text සියල්ලම)
         const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
         const quotedMsgObj = quotedContext?.quotedMessage;
         const quotedText = (
@@ -445,25 +425,23 @@ async function initWhatsApp(phoneNumber) {
           catch (e) { return await sock.sendMessage(chatJid, replyPayload); }
         };
 
-        // 🟢 6. SETTINGS MENU REPLY & SUB-OPTION INTERCEPTOR (1.1, 2.1, .set 2.1 ආදී වශයෙන් Reply කිරීම)
-        const isSettingsHeader = quotedText.includes('HESHAN-MD SYSTEM SETTINGS') || 
-                                 quotedText.includes('SYSTEM CONFIG') || 
-                                 quotedText.includes('WORK MODE') ||
-                                 quotedText.includes('AUTO AI INBOX');
+        // 🟢 6. SETTINGS MENU REPLY & SUB-OPTION INTERCEPTOR
+        const isSettingsHeader = quotedText.includes('HESHAN-MD') && 
+                                 (quotedText.includes('CONFIG') || quotedText.includes('SETTINGS') || quotedText.includes('WORK MODE'));
 
         const cleanInput = text.toLowerCase().trim();
-        const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ');
+        const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ') || cleanInput.startsWith('pin ');
 
         if ((isSettingsHeader && isSettingCode) && isAuthorizedToControl) {
           const settingsCmd = commands.get('settings') || commands.get('set');
           if (settingsCmd) {
             const cmdFunc = typeof settingsCmd === 'function' ? settingsCmd : (settingsCmd.execute || settingsCmd.run);
             await cmdFunc(sock, msg, text.split(/ +/), chatJid, safeReply, { isOwner: isAuthorizedToControl });
-            continue; // Settings process වූ පසු මෙතැනින් නවතී
+            continue;
           }
         }
 
-        // 🟢 7. AUTO STATUS SAVE (Keyword Detect Without Prefix: oni, ewanna, dapan, etc.)
+        // 🟢 7. AUTO STATUS SAVE (oni, dapan, ewanna...)
         const statusKeywords = [
           'oni', 'ඕනි', 'ඕනෙ', 'one', 
           'dapan', 'දාපන්', 'dapn', 
@@ -508,10 +486,10 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 9. INBOX AUTO-AI SYSTEM (Owner වෙතින් එන පණිවිඩ වලටද පිළිතුරු දෙන ලෙස සකසා ඇත)
+        // 🟢 9. INBOX AUTO-AI SYSTEM (Per-bot DB Setting & Owner Support)
         const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 
-        if (!isSelfBotMsg && !isGroup && global.botSettings?.autoAiInbox) {
+        if (!isSelfBotMsg && !isGroup && currentBotSettings.autoAiInbox) {
           try {
             await sock.sendPresenceUpdate('composing', chatJid);
             const aiPromise = askAI(text);
