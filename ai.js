@@ -7,7 +7,7 @@ const MAX_TRACKED_USERS = 100;
 
 let currentKeyIndex = 0;
 function getActiveKey() {
-  const keys = (OPENROUTER_KEYS && OPENROUTER_KEYS.length > 0 && OPENROUTER_KEYS[0] !== '') 
+  const keys = (Array.isArray(OPENROUTER_KEYS) && OPENROUTER_KEYS.length > 0 && OPENROUTER_KEYS[0] !== '') 
     ? OPENROUTER_KEYS 
     : [process.env.OPENROUTER_API_KEY || OPENROUTER_API_KEY].filter(Boolean);
     
@@ -29,6 +29,7 @@ STRICT RULES:
 `.trim();
 
 async function askAI(userText, senderJid = 'default_user') {
+  let timeoutId;
   try {
     const apiKey = getActiveKey();
     const selectedModel = process.env.AI_MODEL || AI_MODEL || 'deepseek/deepseek-chat';
@@ -41,13 +42,13 @@ async function askAI(userText, senderJid = 'default_user') {
     // Cache cleanup - memory leak prevention
     if (chatHistory.size > MAX_TRACKED_USERS) {
       const firstKey = chatHistory.keys().next().value;
-      chatHistory.delete(firstKey);
+      if (firstKey) chatHistory.delete(firstKey);
     }
 
     if (!chatHistory.has(senderJid)) {
       chatHistory.set(senderJid, []);
     }
-    const history = chatHistory.get(senderJid);
+    const history = chatHistory.get(senderJid) || [];
 
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
@@ -55,8 +56,10 @@ async function askAI(userText, senderJid = 'default_user') {
       { role: 'user', content: userText }
     ];
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    // Cross-runtime safe AbortController setup
+    const AbortControllerClass = globalThis.AbortController || require('abort-controller');
+    const controller = new AbortControllerClass();
+    timeoutId = setTimeout(() => controller.abort(), 12000);
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -75,32 +78,34 @@ async function askAI(userText, senderJid = 'default_user') {
       signal: controller.signal
     });
 
-    clearTimeout(timeout);
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
-      const errText = await response.text();
+      const errText = await response.text().catch(() => '');
       console.error(`OpenRouter Error [${response.status}]:`, errText);
       return "පොඩි අවුලක් වුණා, පොඩ්ඩකින් ආයෙ කියන්නකො ❤️";
     }
 
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
 
-    if (data.choices && data.choices.length > 0 && data.choices[0].message?.content) {
+    if (data?.choices && data.choices.length > 0 && data.choices[0].message?.content) {
       const aiReply = data.choices[0].message.content.trim();
 
-      history.push({ role: 'user', content: userText });
-      history.push({ role: 'assistant', content: aiReply });
-      if (history.length > 4) {
-        history.splice(0, history.length - 4);
-      }
-      chatHistory.set(senderJid, history);
+      // Memory-safe clean update
+      const updatedHistory = [
+        ...history,
+        { role: 'user', content: userText },
+        { role: 'assistant', content: aiReply }
+      ];
 
+      chatHistory.set(senderJid, updatedHistory.slice(-4));
       return aiReply;
     } else {
       return "අනේ මට තේරුණේ නෑ, ආයෙ අහන්නකො? 🥺";
     }
 
   } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
       console.error('askAI Error: Request timed out');
       return "Reply එක පරක්කු වුණා, ආයෙ අහන්නකො ❤️";
@@ -111,3 +116,4 @@ async function askAI(userText, senderJid = 'default_user') {
 }
 
 module.exports = { askAI };
+
