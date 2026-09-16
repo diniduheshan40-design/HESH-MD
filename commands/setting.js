@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
-// Direct MongoDB Schema for Per-Bot Settings
-const BotSettingsSchema = new mongoose.Schema({
+// Per-Bot MongoDB Schema
+const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   workMode: { type: String, default: 'public' },
   autoAiInbox: { type: Boolean, default: true },
@@ -13,7 +13,7 @@ const BotSettingsSchema = new mongoose.Schema({
   securityPin: { type: String, default: '1234' }
 });
 
-const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
+const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -29,11 +29,11 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
     let initialMsg = await sock.sendMessage(chatJid, { text: loadingFrames[0] }, { quoted: quotedMsg });
 
     for (let i = 1; i < loadingFrames.length; i++) {
-      await sleep(200);
+      await sleep(150);
       await sock.sendMessage(chatJid, { text: loadingFrames[i], edit: initialMsg.key }).catch(() => {});
     }
 
-    await sleep(200);
+    await sleep(150);
     await sock.sendMessage(chatJid, { text: finalContent, edit: initialMsg.key }).catch(async () => {
       await sock.sendMessage(chatJid, { text: finalContent }, { quoted: quotedMsg });
     });
@@ -51,9 +51,8 @@ module.exports = {
       return await safeReply('⛔ *Access Denied!* Only Owner can modify settings.');
     }
 
-    const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || 'default';
     
-    // DB Settings Load / Create
     let settings = await SettingsModel.findById(botNumber);
     if (!settings) {
       settings = await SettingsModel.create({ _id: botNumber });
