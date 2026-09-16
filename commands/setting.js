@@ -3,7 +3,6 @@ const path = require('path');
 
 const settingsPath = path.join(__dirname, '../settings.json');
 
-// Default Settings
 const defaultSettings = {
   workMode: 'public', // 'public', 'private', 'inbox', 'groups'
   autoAiInbox: true,
@@ -35,7 +34,6 @@ function saveSettings(settings) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// 🟢 Animated Progress Loader & Editor
 async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
   try {
     const loadingFrames = [
@@ -45,27 +43,23 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
       "🔄 *Finalizing Setup...*\n[■■■■■■■■■■] 100%"
     ];
 
-    // මුලින්ම loading message එක යවනවා
     let initialMsg = await sock.sendMessage(chatJid, { text: loadingFrames[0] }, { quoted: quotedMsg });
 
-    // Loading stages animation
     for (let i = 1; i < loadingFrames.length; i++) {
-      await sleep(350);
+      await sleep(300);
       await sock.sendMessage(chatJid, {
         text: loadingFrames[i],
         edit: initialMsg.key
       });
     }
 
-    await sleep(400);
+    await sleep(350);
 
-    // අවසානයේ Setting change වුණු ලස්සන final message එකට edit වෙනවා
     await sock.sendMessage(chatJid, {
       text: finalContent,
       edit: initialMsg.key
     });
   } catch (err) {
-    // Message edit support නැති උනොත් කෙලින්ම final message එක යවනවා
     await sock.sendMessage(chatJid, { text: finalContent }, { quoted: quotedMsg });
   }
 }
@@ -73,15 +67,14 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
 module.exports = {
   name: 'settings',
   alias: ['setting', 'set', 'config'],
-  description: 'Manage bot settings via modern interactive menu with animated loader',
+  description: 'Manage bot settings with sub-options and animated loader',
   async execute(sock, msg, args, chatJid, safeReply, { isOwner }) {
     if (!isOwner) {
-      return await safeReply('⛔ *Access Denied!* Only the Master Owner can access settings.');
+      return await safeReply('⛔ *Access Denied!* Only Owner can modify settings.');
     }
 
     let settings = getSettings();
 
-    // Context reply detection
     const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
     const quotedText = quotedMsg?.conversation || quotedMsg?.extendedTextMessage?.text || '';
     const isReplyToMenu = quotedText.includes('SYSTEM CONFIG');
@@ -92,102 +85,136 @@ module.exports = {
       input = currentRaw.trim();
     }
 
-    const parts = input.split(/ +/);
-    const choice = parts[0]?.toLowerCase();
+    const choice = input.toLowerCase();
 
-    // 🟢 1. Work Mode Selector
-    if (choice === '1') {
-      const sub = parts[1]?.toLowerCase();
-      if (sub === 'public' || sub === 'private' || sub === 'inbox' || sub === 'groups') {
-        settings.workMode = sub;
-      } else {
-        const modes = ['public', 'private', 'inbox', 'groups'];
-        const nextIdx = (modes.indexOf(settings.workMode) + 1) % modes.length;
-        settings.workMode = modes[nextIdx];
-      }
+    // 🟢 1. WORK MODE SUB-OPTIONS
+    if (choice === '1.1') {
+      settings.workMode = 'private';
       saveSettings(settings);
-
-      const resText = `╔══════════════════════════════════╗\n║  ✅ *WORK MODE UPDATED*           \n╠══════════════════════════════════╣\n║  🌐 Mode set to: *${settings.workMode.toUpperCase()}*\n╚══════════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
-      return await applyWithLoader(sock, chatJid, msg, resText);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *WORK MODE UPDATED*       \n╠══════════════════════════════╣\n║  🌐 Mode set to: *PRIVATE 🔒* \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
+    }
+    if (choice === '1.2') {
+      settings.workMode = 'public';
+      saveSettings(settings);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *WORK MODE UPDATED*       \n╠══════════════════════════════╣\n║  🌐 Mode set to: *PUBLIC 🌐*  \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
+    }
+    if (choice === '1.3') {
+      settings.workMode = 'inbox';
+      saveSettings(settings);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *WORK MODE UPDATED*       \n╠══════════════════════════════╣\n║  🌐 Mode set to: *INBOX ONLY 📥*\n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
+    }
+    if (choice === '1.4') {
+      settings.workMode = 'groups';
+      saveSettings(settings);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *WORK MODE UPDATED*       \n╠══════════════════════════════╣\n║  🌐 Mode set to: *GROUPS ONLY 👥*\n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
     }
 
-    // 🟢 2. Auto AI Inbox
-    if (choice === '2') {
-      settings.autoAiInbox = !settings.autoAiInbox;
+    // 🟢 2. AUTO AI SUB-OPTIONS
+    if (choice === '2.1') {
+      settings.autoAiInbox = true;
       saveSettings(settings);
-
-      const resText = `╔══════════════════════════════════╗\n║  ✅ *AI INBOX CONFIG UPDATED*     \n╠══════════════════════════════════╣\n║  🤖 Status: *${settings.autoAiInbox ? 'ENABLED 🟢' : 'DISABLED 🔴'}*\n╚══════════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
-      return await applyWithLoader(sock, chatJid, msg, resText);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *AI INBOX UPDATED*        \n╠══════════════════════════════╣\n║  🤖 Auto AI: *ENABLED 🟢*     \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
+    }
+    if (choice === '2.2') {
+      settings.autoAiInbox = false;
+      saveSettings(settings);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *AI INBOX UPDATED*        \n╠══════════════════════════════╣\n║  🤖 Auto AI: *DISABLED 🔴*    \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
     }
 
-    // 🟢 3. Auto Status Seen
-    if (choice === '3') {
-      settings.autoStatusSeen = !settings.autoStatusSeen;
+    // 🟢 3. AUTO STATUS SEEN SUB-OPTIONS
+    if (choice === '3.1') {
+      settings.autoStatusSeen = true;
       saveSettings(settings);
-
-      const resText = `╔══════════════════════════════════╗\n║  ✅ *STATUS SEEN UPDATED*         \n╠══════════════════════════════════╣\n║  👁️ Status: *${settings.autoStatusSeen ? 'ENABLED 🟢' : 'DISABLED 🔴'}*\n╚══════════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
-      return await applyWithLoader(sock, chatJid, msg, resText);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *STATUS SEEN UPDATED*     \n╠══════════════════════════════╣\n║  👁️ Seen: *ENABLED 🟢*        \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
+    }
+    if (choice === '3.2') {
+      settings.autoStatusSeen = false;
+      saveSettings(settings);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *STATUS SEEN UPDATED*     \n╠══════════════════════════════╣\n║  👁️ Seen: *DISABLED 🔴*       \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
     }
 
-    // 🟢 4. Status Reaction
-    if (choice === '4') {
-      settings.statusReact = !settings.statusReact;
+    // 🟢 4. STATUS REACT SUB-OPTIONS
+    if (choice === '4.1') {
+      settings.statusReact = true;
       saveSettings(settings);
-
-      const resText = `╔══════════════════════════════════╗\n║  ✅ *STATUS REACT UPDATED*        \n╠══════════════════════════════════╣\n║  💐 Status: *${settings.statusReact ? 'ENABLED 🟢' : 'DISABLED 🔴'}*\n╚══════════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
-      return await applyWithLoader(sock, chatJid, msg, resText);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *STATUS REACT UPDATED*    \n╠══════════════════════════════╣\n║  💐 React: *ENABLED 🟢*       \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
+    }
+    if (choice === '4.2') {
+      settings.statusReact = false;
+      saveSettings(settings);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *STATUS REACT UPDATED*    \n╠══════════════════════════════╣\n║  💐 React: *DISABLED 🔴*      \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
     }
 
-    // 🟢 5. Owner React
-    if (choice === '5') {
-      settings.ownerReact = !settings.ownerReact;
+    // 🟢 5. OWNER REACT SUB-OPTIONS
+    if (choice === '5.1') {
+      settings.ownerReact = true;
       saveSettings(settings);
-
-      const resText = `╔══════════════════════════════════╗\n║  ✅ *OWNER REACT UPDATED*         \n╠══════════════════════════════════╣\n║  👑 Status: *${settings.ownerReact ? 'ENABLED 🟢' : 'DISABLED 🔴'}*\n╚══════════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
-      return await applyWithLoader(sock, chatJid, msg, resText);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *OWNER REACT UPDATED*     \n╠══════════════════════════════╣\n║  👑 React: *ENABLED 🟢*       \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
+    }
+    if (choice === '5.2') {
+      settings.ownerReact = false;
+      saveSettings(settings);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *OWNER REACT UPDATED*     \n╠══════════════════════════════╣\n║  👑 React: *DISABLED 🔴*      \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
     }
 
-    // 🟢 6. Owner Emoji Change
-    if (choice === '6') {
-      const emoji = parts[1] || args[1];
+    // 🟢 6. OWNER EMOJI CHANGE (Ex: .set 6 🔥 or reply with 6 🔥)
+    if (choice.startsWith('6')) {
+      const parts = choice.split(/ +/);
+      const emoji = parts[1];
       if (!emoji) {
         return await safeReply('⚠️ කරුණාකර Emoji එකක් ඇතුළත් කරන්න!\n_උදා: `.set 6 ⚡` හෝ reply කර `6 ⚡`_');
       }
       settings.ownerReactEmoji = emoji;
       saveSettings(settings);
-
-      const resText = `╔══════════════════════════════════╗\n║  ✅ *OWNER EMOJI UPDATED*         \n╠══════════════════════════════════╣\n║  🎨 New Emoji: *${emoji}*\n╚══════════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
-      return await applyWithLoader(sock, chatJid, msg, resText);
+      return await applyWithLoader(sock, chatJid, msg, `╔══════════════════════════════╗\n║  ✅ *OWNER EMOJI UPDATED*     \n╠══════════════════════════════╣\n║  🎨 New Emoji: *${emoji}*      \n╚══════════════════════════════╝\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`);
     }
 
-    // 🟢 Control Panel Menu (Neon Box Style)
-    const stateBadge = (val) => (val ? '🟢 ON ' : '🔴 OFF');
+    // 🟢 Display Settings Menu with Sub-options
+    const stateBadge = (val) => (val ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
-      public: '🌐 PUBLIC ',
-      private: '🔒 PRIVATE',
-      inbox: '📥 INBOX  ',
-      groups: '👥 GROUPS '
-    }[settings.workMode] || '🌐 PUBLIC ';
+      public: 'PUBLIC 🌐',
+      private: 'PRIVATE 🔒',
+      inbox: 'INBOX 📥',
+      groups: 'GROUPS 👥'
+    }[settings.workMode] || 'PUBLIC 🌐';
 
     const menu = `
-╔══════════════════════════════════╗
-║   ⚡ HESHAN-MD SYSTEM CONFIG ⚡   ║
-╠══════════════════════════════════╣
-║                                  ║
-║  [1] 🌐 Mode       : [ ${modeBadge} ]  ║
-║  [2] 🤖 Auto AI   : [ ${stateBadge(settings.autoAiInbox)} ]  ║
-║  [3] 👁️  Seen WA   : [ ${stateBadge(settings.autoStatusSeen)} ]  ║
-║  [4] 💐 React WA  : [ ${stateBadge(settings.statusReact)} ]  ║
-║  [5] 👑 Own React : [ ${stateBadge(settings.ownerReact)} ]  ║
-║  [6] 🎨 Own Emoji : [  ${settings.ownerReactEmoji || '👑'}  ]        ║
-║                                  ║
-╠══════════════════════════════════╣
-║  🔢 පාලනය සඳහා ක්‍රම:             ║
-║  • මේ මැසේජ් එකට අදාළ අංකය      ║
-║    Reply කරන්න (උදා: 1 හෝ 2)     ║
-║  • නැතහොත් .set 1, .set 6 🔥 ලෙස   ║
-║    command එක සමඟ යවන්න          ║
-╚══════════════════════════════════╝
+╔══════════════════════════════════════╗
+║      ⚡ HESHAN-MD SYSTEM CONFIG ⚡    ║
+╠══════════════════════════════════════╣
+║                                      ║
+║  [1] 🌐 WORK MODE [ ${modeBadge} ]
+║      ├ 1.1 Private                   ║
+║      ├ 1.2 Public                    ║
+║      ├ 1.3 Inbox Only                ║
+║      └ 1.4 Group Only                ║
+║                                      ║
+║  [2] 🤖 AUTO AI INBOX [ ${stateBadge(settings.autoAiInbox)} ]
+║      ├ 2.1 AI On                     ║
+║      └ 2.2 AI Off                    ║
+║                                      ║
+║  [3] 👁️ AUTO STATUS SEEN [ ${stateBadge(settings.autoStatusSeen)} ]
+║      ├ 3.1 Status Seen On            ║
+║      └ 3.2 Status Seen Off           ║
+║                                      ║
+║  [4] 💐 STATUS REACT [ ${stateBadge(settings.statusReact)} ]
+║      ├ 4.1 Status React On           ║
+║      └ 4.2 Status React Off          ║
+║                                      ║
+║  [5] 👑 OWNER REACT [ ${stateBadge(settings.ownerReact)} ]
+║      ├ 5.1 Owner React On            ║
+║      └ 5.2 Owner React Off           ║
+║                                      ║
+║  [6] 🎨 OWNER EMOJI [  ${settings.ownerReactEmoji || '👑'}  ]
+║      └ .set 6 <emoji>                ║
+║                                      ║
+╠══════════════════════════════════════╣
+║  🔢 පාලනය සඳහා:                      ║
+║  • මේ මැසේජ් එකට අදාළ අංකය Reply     ║
+║    කරන්න (උදා: 1.1 හෝ 2.2)           ║
+║  • නැතහොත් .set 1.2, .set 6 🔥 ලෙස   ║
+║    command එක සමඟ යවන්න              ║
+╚══════════════════════════════════════╝
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
     return await safeReply(menu);
