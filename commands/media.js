@@ -1,4 +1,5 @@
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+const { Sticker, StickerTypes } = require('wa-sticker-formatter');
 
 module.exports = {
   name: 'sticker',
@@ -24,14 +25,28 @@ module.exports = {
 
       try {
         await safeReply('⏳ Processing sticker...');
+        
+        // Image stream එක download කරගැනීම
         const stream = await downloadContentFromMessage(targetImg, 'image');
         let buffer = Buffer.from([]);
         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
+        // WhatsApp WebP Sticker එකක් බවට convert කිරීම
+        const sticker = new Sticker(buffer, {
+          pack: 'HESHAN-MD', // Sticker Pack Name
+          author: '⚡ HESHAN', // Author Name
+          type: StickerTypes.FULL, // Sticker Type: FULL හෝ CROPPED
+          quality: 70
+        });
+
+        const stickerBuffer = await sticker.toBuffer();
+
         return await sock.sendMessage(chatJid, {
-          sticker: buffer
+          sticker: stickerBuffer
         }, { quoted: msg });
+
       } catch (err) {
+        console.error('Sticker error:', err);
         return await safeReply(`❌ Sticker creation failed: ${err.message}`);
       }
     }
