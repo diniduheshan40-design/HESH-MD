@@ -23,7 +23,7 @@ const { askAI } = require('./ai');
 global.autoAiInbox = true;
 
 // 🟢 Global Owner & Sessions Store
-global.OWNER_NUMBERS = ['94719845166', '94766889183'];
+global.OWNER_NUMBERS = ['94719845166', '94705836838'];
 global.activeSessions = {};
 
 const app = express();
