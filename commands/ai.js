@@ -1,5 +1,6 @@
+// commands/ai.js
 const path = require('path');
-// Path resolve safe import
+
 let askAI;
 try {
     askAI = require('../ai').askAI;
@@ -11,14 +12,26 @@ module.exports = {
     name: 'ai',
     category: 'ai',
     desc: 'Ask AI or toggle inbox auto-ai',
-    async execute(sock, msg, args, targetChat) {
-        const chatJid = targetChat || msg.key.remoteJid;
+    async execute(sock, msg, args, targetChat, safeReply, extra = {}) {
+        const chatJid = (typeof targetChat === 'string' && targetChat.includes('@')) 
+            ? targetChat 
+            : msg.key.remoteJid;
+
         const option = args[0]?.toLowerCase();
 
+        // 🟢 Bulletproof Owner Detection (index.js fallback included)
         const isGroup = chatJid.endsWith('@g.us');
-        const sender = isGroup ? (msg.key.participant || '') : chatJid;
+        const rawSender = msg.key.fromMe 
+            ? (sock.user?.id || '') 
+            : (isGroup ? (msg.key.participant || msg.participant || '') : chatJid);
+        
+        const cleanSender = rawSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const creatorNumber = '94719845166';
-        const isOwner = msg.key.fromMe || sender.includes(creatorNumber);
+
+        const isOwner = extra?.isOwner || 
+                        cleanSender.includes(creatorNumber) || 
+                        (msg.key.fromMe && myBotNum.includes(creatorNumber));
 
         // 1. Auto AI Switch Controls (Owner Only)
         if (option === 'on') {
@@ -29,7 +42,7 @@ module.exports = {
             }
             global.autoAiInbox = true;
             return await sock.sendMessage(chatJid, { 
-                text: "🤖 *AUTO AI INBOX: ENABLED* 🟢\n\n> දැන් Inbox එකට එන ඕනෑම පණිවිඩයකට ස්වයංක්‍රීයව AI පිළිතුරු ලබා දේ.\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
+                text: "┏━━━❮ 🤖 *AUTO AI INBOX* ❯━━━┓\n┃\n┃ ◈ *Status* : *ENABLED 🟢*\n┃ ◈ *Mode*   : Auto-reply Active\n┃\n┗━━━━━━━━━━━━━━━━━━━━━━┛\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
             }, { quoted: msg });
         }
 
@@ -41,30 +54,30 @@ module.exports = {
             }
             global.autoAiInbox = false;
             return await sock.sendMessage(chatJid, { 
-                text: "🤖 *AUTO AI INBOX: DISABLED* 🔴\n\n> Inbox Auto AI පිළිතුරු අක්‍රිය කරන ලදී.\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
+                text: "┏━━━❮ 🤖 *AUTO AI INBOX* ❯━━━┓\n┃\n┃ ◈ *Status* : *DISABLED 🔴*\n┃ ◈ *Mode*   : Auto-reply Muted\n┃\n┗━━━━━━━━━━━━━━━━━━━━━━┛\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
             }, { quoted: msg });
         }
 
         // 2. Manual Question Ask via .ai
         const query = args.join(" ").trim();
         if (!query) {
-            const helpText = `
-╭───〔 🤖 *AI ASSISTANT* 〕───╮
-│
-├▸ *.ai on* - Enable Inbox Auto Reply
-├▸ *.ai off* - Disable Inbox Auto Reply
-├▸ *.ai <query>* - Ask a question directly
-│
-╰────────────────────────────╯
-> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
+            const helpText = `┏━━━❮ 🤖 *AI ASSISTANT* ❯━━━┓
+┃
+┃ ◈ \`.ai on\`  ⌁ _Enable Inbox AI_
+┃ ◈ \`.ai off\` ⌁ _Disable Inbox AI_
+┃ ◈ \`.ai <text>\` ⌁ _Ask any question_
+┃
+┗━━━━━━━━━━━━━━━━━━━━━┛
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
 
             return await sock.sendMessage(chatJid, { text: helpText }, { quoted: msg });
         }
 
         try {
+            await sock.sendMessage(chatJid, { react: { text: "🧠", key: msg.key } }).catch(() => {});
             await sock.sendPresenceUpdate('composing', chatJid);
             
-            const response = await askAI(query, sender);
+            const response = await askAI(query, rawSender);
             
             if (response) {
                 await sock.sendMessage(chatJid, { text: response }, { quoted: msg });
