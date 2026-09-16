@@ -18,7 +18,31 @@ const {
 const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
-const { getBotSettings, updateBotSettings } = require('./BotSettings');
+
+// 🟢 MongoDB Settings Schema (Per-Bot)
+const SettingsSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  workMode: { type: String, default: 'public' },
+  autoAiInbox: { type: Boolean, default: true },
+  autoStatusSeen: { type: Boolean, default: true },
+  statusReact: { type: Boolean, default: true },
+  statusReactEmoji: { type: String, default: '💐' },
+  ownerReact: { type: Boolean, default: true },
+  ownerReactEmoji: { type: String, default: '👑' },
+  securityPin: { type: String, default: '1234' }
+});
+
+const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
+
+async function getBotSettings(botNum) {
+  try {
+    let s = await SettingsModel.findById(botNum);
+    if (!s) s = await SettingsModel.create({ _id: botNum });
+    return s.toObject();
+  } catch (e) {
+    return { workMode: 'public', autoAiInbox: true, autoStatusSeen: true, statusReact: true, statusReactEmoji: '💐', ownerReact: true, ownerReactEmoji: '👑', securityPin: '1234' };
+  }
+}
 
 // 🟢 Absolute Master Creator & Global Owners
 const REAL_OWNER_NUMBER = '94719845166';
@@ -29,7 +53,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
-// 🟢 1. Command Loader with Alias Support
+// 🟢 1. Command Loader with Strict Alias Mapping
 const commands = new Map();
 const cmdDir = path.join(__dirname, 'commands');
 
@@ -338,7 +362,7 @@ async function initWhatsApp(phoneNumber) {
           cleanSenderNum.includes(owner) || cleanContextNum.includes(owner)
         );
 
-        // 🟢 3. BULLETPROOF OWNER REACT (94719845166 ට Per-bot Setting එකෙන් React කිරීම)
+        // 🟢 3. BULLETPROOF OWNER REACT
         const isSelfMessageOnSameBot = msg.key.fromMe && myBotNum.includes(REAL_OWNER_NUMBER);
 
         if (currentBotSettings.ownerReact && isMasterCreator && !isSelfMessageOnSameBot) {
@@ -378,7 +402,7 @@ async function initWhatsApp(phoneNumber) {
         // 🟢 4. AUTHORIZED CONTROLLER
         const isAuthorizedToControl = isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 
-        // 🟢 5. WORK MODE FILTER (Per-bot DB Setting)
+        // 🟢 5. WORK MODE FILTER
         const currentMode = currentBotSettings.workMode || 'public';
         if (!isAuthorizedToControl) {
           if (currentMode === 'private') continue;
@@ -405,7 +429,7 @@ async function initWhatsApp(phoneNumber) {
 
         if (!text) continue;
 
-        // Quoted Context Extract (Image Caption, Video Caption, Document Caption, Text)
+        // Quoted Context Extract
         const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
         const quotedMsgObj = quotedContext?.quotedMessage;
 
@@ -415,7 +439,7 @@ async function initWhatsApp(phoneNumber) {
           catch (e) { return await sock.sendMessage(chatJid, replyPayload); }
         };
 
-        // 🟢 6. SETTINGS DIRECT REPLY INTERCEPTOR (1.1, 2.1, pin ආදී replies කෙලින්ම handle කිරීම)
+        // 🟢 6. SETTINGS DIRECT REPLY INTERCEPTOR (1.1, 2.1 ආදී replies කෙලින්ම handle කිරීම)
         const cleanInput = text.toLowerCase().trim();
         const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ') || cleanInput.startsWith('pin ');
 
@@ -457,13 +481,14 @@ async function initWhatsApp(phoneNumber) {
         const prefix = '.';
         const isCmd = text.startsWith(prefix);
 
-        // 🟢 8. COMMAND EXECUTION (.setting, .settings, .set ආදී සියල්ල සඳහා fallback සහතික කර ඇත)
+        // 🟢 8. BULLETPROOF COMMAND EXECUTION
         if (isCmd) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
+          // Command හෝ Alias හරහා සොයා ගැනීම
           let targetCmd = commands.get(commandName);
-          if (!targetCmd && (commandName === 'setting' || commandName === 'settings' || commandName === 'set' || commandName === 'config')) {
+          if (!targetCmd && ['setting', 'settings', 'set', 'config'].includes(commandName)) {
             targetCmd = commands.get('settings') || commands.get('setting') || commands.get('set');
           }
 
@@ -477,11 +502,11 @@ async function initWhatsApp(phoneNumber) {
             } catch (err) {
               console.error(`Error executing .${commandName}:`, err);
             }
-            continue;
+            continue; // Command එක run වූ පසු AI වෙත නොයයි
           }
         }
 
-        // 🟢 9. INBOX AUTO-AI SYSTEM (Per-bot DB Setting & Owner Support)
+        // 🟢 9. INBOX AUTO-AI SYSTEM
         const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 
         if (!isSelfBotMsg && !isGroup && currentBotSettings.autoAiInbox) {
