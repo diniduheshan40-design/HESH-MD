@@ -8,38 +8,42 @@ const FALLBACK_LOGO_URL = 'https://files.catbox.moe/gs150o.jpg';
 
 function getEmojiTime(jid) {
     let tz = 'Asia/Colombo'; 
-    if (jid && jid.includes('@s.whatsapp.net')) {
-        const num = jid.split('@')[0].split(':')[0]; 
-        if (num.startsWith('91')) tz = 'Asia/Kolkata'; 
-        else if (num.startsWith('92')) tz = 'Asia/Karachi'; 
-        else if (num.startsWith('971')) tz = 'Asia/Dubai'; 
-        else if (num.startsWith('966')) tz = 'Asia/Riyadh'; 
-        else if (num.startsWith('974')) tz = 'Asia/Qatar'; 
-        else if (num.startsWith('60')) tz = 'Asia/Kuala_Lumpur'; 
-        else if (num.startsWith('65')) tz = 'Asia/Singapore'; 
-        else if (num.startsWith('44')) tz = 'Europe/London'; 
-        else if (num.startsWith('1') && num.length <= 12) tz = 'America/New_York'; 
-        else if (num.startsWith('61')) tz = 'Australia/Sydney'; 
-        else if (num.startsWith('880')) tz = 'Asia/Dhaka'; 
-        else if (num.startsWith('39') || num.startsWith('49') || num.startsWith('33')) tz = 'Europe/Berlin'; 
+    try {
+        if (jid && jid.includes('@s.whatsapp.net')) {
+            const num = jid.split('@')[0].split(':')[0]; 
+            if (num.startsWith('91')) tz = 'Asia/Kolkata'; 
+            else if (num.startsWith('92')) tz = 'Asia/Karachi'; 
+            else if (num.startsWith('971')) tz = 'Asia/Dubai'; 
+            else if (num.startsWith('966')) tz = 'Asia/Riyadh'; 
+            else if (num.startsWith('974')) tz = 'Asia/Qatar'; 
+            else if (num.startsWith('60')) tz = 'Asia/Kuala_Lumpur'; 
+            else if (num.startsWith('65')) tz = 'Asia/Singapore'; 
+            else if (num.startsWith('44')) tz = 'Europe/London'; 
+            else if (num.startsWith('1') && num.length <= 12) tz = 'America/New_York'; 
+            else if (num.startsWith('61')) tz = 'Australia/Sydney'; 
+            else if (num.startsWith('880')) tz = 'Asia/Dhaka'; 
+            else if (num.startsWith('39') || num.startsWith('49') || num.startsWith('33')) tz = 'Europe/Berlin'; 
+        }
+
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true
+        });
+
+        const parts = formatter.formatToParts(new Date());
+        let hours = parts.find(p => p.type === 'hour')?.value || '00';
+        let minutes = parts.find(p => p.type === 'minute')?.value || '00';
+        let ampm = parts.find(p => p.type === 'dayPeriod')?.value.toUpperCase() || 'AM';
+
+        const numberMap = { '0': '0️⃣', '1': '1️⃣', '2': '2️⃣', '3': '3️⃣', '4': '4️⃣', '5': '5️⃣', '6': '6️⃣', '7': '7️⃣', '8': '8️⃣', '9': '9️⃣' };
+        
+        let emojiHours = hours.split('').map(d => numberMap[d] || d).join('');
+        let emojiMinutes = minutes.split('').map(d => numberMap[d] || d).join('');
+        let emojiAmPm = ampm === 'PM' ? '🇵‌🇲‌' : '🇦‌🇲‌';
+        
+        return `${emojiHours} : ${emojiMinutes} ${emojiAmPm}`;
+    } catch (e) {
+        return "12:00 🇵‌🇲‌";
     }
-
-    const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: true
-    });
-
-    const parts = formatter.formatToParts(new Date());
-    let hours = parts.find(p => p.type === 'hour')?.value || '00';
-    let minutes = parts.find(p => p.type === 'minute')?.value || '00';
-    let ampm = parts.find(p => p.type === 'dayPeriod')?.value.toUpperCase() || 'AM';
-
-    const numberMap = { '0': '0️⃣', '1': '1️⃣', '2': '2️⃣', '3': '3️⃣', '4': '4️⃣', '5': '5️⃣', '6': '6️⃣', '7': '7️⃣', '8': '8️⃣', '9': '9️⃣' };
-    
-    let emojiHours = hours.split('').map(d => numberMap[d] || d).join('');
-    let emojiMinutes = minutes.split('').map(d => numberMap[d] || d).join('');
-    let emojiAmPm = ampm === 'PM' ? '🇵‌🇲‌' : '🇦‌🇲‌';
-    
-    return `${emojiHours} : ${emojiMinutes} ${emojiAmPm}`;
 }
 
 function formatUptime(seconds) {
@@ -55,7 +59,6 @@ const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg) => {
     try {
         const cmdPath = path.join(__dirname, `${cmdName}.js`);
         if (fs.existsSync(cmdPath)) {
-            delete require.cache[require.resolve(cmdPath)];
             const cmdModule = require(cmdPath);
             const remoteJid = replyMsg.key.remoteJid;
             const args = fakeUserText.trim().split(/\s+/).slice(1);
@@ -69,7 +72,7 @@ const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg) => {
             }
         }
     } catch (e) {
-        console.error(`❌ Error triggering ${cmdName}:`, e);
+        console.error(`❌ Error triggering ${cmdName}:`, e.message);
     }
 };
 
@@ -97,60 +100,41 @@ module.exports = {
         const uptime = formatUptime(process.uptime());
         const emojiTime = getEmojiTime(senderJid);
 
-        const aliveMsg = `*𝐖ᴇʟᴄᴏᴍᴇ 𝐓ᴏ 𝐇𝐄𝐒𝐇𝐀𝐍-𝐌𝐃* ༻
-✧ 𝗛𝗲𝗹𝗹𝗼 👋 ${firstName} ✧𓆩⚔𓆪
-╔═══❈═══════៚
-║ ☬ 𝙊𝙒𝙉𝙀𝙍 ⌁ *Dinidu Heshan*
-║ ☬ 𝘽𝙊𝙏   ⌁ *ʜᴇsʜᴀɴ-ᴍᴅ*
-║ ☬ 𝙐𝙋𝙏𝙄𝙈𝙀⌁ *${uptime}*
-║ ☬ 𝙎𝙏𝘼𝙏𝙐𝙎 ⌁ *Online 🟢*
-╚═══❈══════࿐
-❰彡 ⚡ 𝙄'𝙈 𝘼𝙇𝙄𝙑𝙀 𝙉𝙊𝙒 彡❱
- ⏰ *𝖳𝖨𝖬𝖤 - ${emojiTime}*
+        const aliveMsg = `┏━━━〔 ⚔ 𝐇𝐄𝐒𝐇𝐀𝐍-𝐌𝐃 ⚔ 〕━━━┓
+┃
+┃  👋 *𝗛𝗲𝘆*, ${firstName}
+┃  ───────────────
+┃  👑 *𝗖𝗿𝗲𝗮𝘁𝗼𝗿* ⌁ Dinidu Heshan
+┃  ⏳ *𝗨𝗽𝘁𝗶𝗺𝗲*  ⌁ ${uptime}
+┃  ⏰ *𝗧𝗶𝗺𝗲*    ⌁ ${emojiTime}
+┃  📶 *𝗦𝘆𝘀𝘁𝗲𝗺*  ⌁ Ultra-Smooth 🟢
+┃
+┗━━━━━━━━━━━━━━━━━━━━━━┛
 
-*╔═「 𝙍𝙚𝙥𝙡𝙮 𝙉𝙪𝙢𝙗𝙚𝙧 ⌁彡* 
-*║* ➊ 𝙈𝘼𝙄𝙉 𝙈𝙀𝙉𝙐
-*║* ➋ 𝙋𝙄𝙉𝙂 𝙎𝙋𝙀𝙀𝘿
-*║* ➌ 𝙊𝙒𝙉𝙀𝙍 𝙄𝙉𝙁𝙊
-*╚════════════៚*
+┌───「 𝗥𝗲𝗽𝗹𝘆 𝗡𝘂𝗺𝗯𝗲𝗿 」───┐
+│
+│  [1] ➜ 📜 𝗠𝗮𝗶𝗻 𝗠𝗲𝗻𝘂
+│  [2] ➜ ⚡ 𝗣𝗶𝗻𝗴 / 𝗦𝗽𝗲𝗲𝗱
+│  [3] ➜ 👑 𝗢𝘄𝗻𝗲𝗿 𝗜𝗻𝗳𝗼
+│
+└────────────────────────┘
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            // Buffer Loader: local නැත්නම් online URL එක arraybuffer ලෙස ගනී
-            let imgBuffer = null;
+            let imagePayload = { url: FALLBACK_LOGO_URL };
             if (fs.existsSync(LOCAL_LOGO)) {
-                imgBuffer = fs.readFileSync(LOCAL_LOGO);
-            } else {
-                try {
-                    const res = await axios.get(FALLBACK_LOGO_URL, {
-                        responseType: 'arraybuffer',
-                        timeout: 10000
-                    });
-                    imgBuffer = Buffer.from(res.data, 'binary');
-                } catch (err) {
-                    const backupRes = await axios.get('https://files.catbox.moe/a58add.jpeg', {
-                        responseType: 'arraybuffer',
-                        timeout: 10000
-                    }).catch(() => null);
-                    if (backupRes) imgBuffer = Buffer.from(backupRes.data, 'binary');
-                }
+                imagePayload = fs.readFileSync(LOCAL_LOGO);
             }
 
-            let sentMsg;
-            if (imgBuffer) {
-                sentMsg = await sock.sendMessage(targetChat, {
-                    image: imgBuffer,
-                    caption: aliveMsg
-                }, { quoted: msg });
-            } else {
-                sentMsg = await sock.sendMessage(targetChat, {
-                    image: { url: FALLBACK_LOGO_URL },
-                    caption: aliveMsg
-                }, { quoted: msg });
-            }
+            const sentMsg = await sock.sendMessage(targetChat, {
+                image: imagePayload,
+                caption: aliveMsg
+            }, { quoted: msg }).catch(async () => {
+                return await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg });
+            });
 
             const stanzaId = sentMsg?.key?.id;
-            const usedOptions = new Set();
+            let cleanupTimer;
 
             const replyListener = async (m) => {  
                 try {  
@@ -172,12 +156,12 @@ module.exports = {
                                     msgContent.imageMessage?.caption || 
                                     msgContent.videoMessage?.caption || "";
 
-                    replyText = replyText.trim();  
+                    replyText = replyText.trim().replace(/[\[\]]/g, ''); // User '1' හෝ '[1]' දැම්මත් handle කරයි 
                     const replyChat = replyMsg.key.remoteJid;
 
                     if (["1", "2", "3"].includes(replyText)) {
-                        if (usedOptions.has(replyText)) return; 
-                        usedOptions.add(replyText);
+                        sock.ev.off('messages.upsert', replyListener);
+                        if (cleanupTimer) clearTimeout(cleanupTimer);
 
                         if (replyText === "1") {  
                             await sock.sendMessage(replyChat, { react: { text: '📜', key: replyMsg.key } }).catch(() => {});  
@@ -199,18 +183,18 @@ module.exports = {
                         }  
                     }
                 } catch (error) {  
-                    console.error("Alive Listener Error:", error);  
+                    console.error("Alive Listener Error:", error.message);  
                 }  
             };  
 
             sock.ev.on('messages.upsert', replyListener);  
 
-            setTimeout(() => {  
+            cleanupTimer = setTimeout(() => {  
                 sock.ev.off('messages.upsert', replyListener);  
             }, 60000);  
 
         } catch (err) {
-            console.error("Alive Execution Error:", err);
+            console.error("Alive Execution Error:", err.message);
             await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg }).catch(() => {});
         }
     }
