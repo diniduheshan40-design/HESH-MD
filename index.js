@@ -425,7 +425,7 @@ async function initWhatsApp(phoneNumber) {
 
         if (!text) continue;
 
-        // Quoted Context Extract (Image Caption, Video Caption, Text සියල්ලම සහය දක්වයි)
+        // Quoted Context Extract (Image, Video, Document Caption හෝ Standard Text)
         const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
         const quotedMsgObj = quotedContext?.quotedMessage;
         const quotedText = (
@@ -434,6 +434,8 @@ async function initWhatsApp(phoneNumber) {
           quotedMsgObj?.imageMessage?.caption ||
           quotedMsgObj?.videoMessage?.caption ||
           quotedMsgObj?.documentWithCaptionMessage?.message?.imageMessage?.caption ||
+          quotedMsgObj?.documentWithCaptionMessage?.message?.videoMessage?.caption ||
+          quotedMsgObj?.documentWithCaptionMessage?.message?.conversation ||
           ''
         ).trim();
 
@@ -443,7 +445,7 @@ async function initWhatsApp(phoneNumber) {
           catch (e) { return await sock.sendMessage(chatJid, replyPayload); }
         };
 
-        // 🟢 6. SETTINGS MENU REPLY & SUB-OPTION INTERCEPTOR (Image Caption හෝ Text Match)
+        // 🟢 6. SETTINGS MENU REPLY & SUB-OPTION INTERCEPTOR (1.1, 2.1, .set 2.1 ආදී වශයෙන් Reply කිරීම)
         const isSettingsHeader = quotedText.includes('HESHAN-MD SYSTEM SETTINGS') || 
                                  quotedText.includes('SYSTEM CONFIG') || 
                                  quotedText.includes('WORK MODE') ||
@@ -452,12 +454,12 @@ async function initWhatsApp(phoneNumber) {
         const cleanInput = text.toLowerCase().trim();
         const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ');
 
-        if ((isSettingsHeader || isSettingCode) && isAuthorizedToControl) {
-          const settingsCmd = commands.get('settings');
+        if ((isSettingsHeader && isSettingCode) && isAuthorizedToControl) {
+          const settingsCmd = commands.get('settings') || commands.get('set');
           if (settingsCmd) {
             const cmdFunc = typeof settingsCmd === 'function' ? settingsCmd : (settingsCmd.execute || settingsCmd.run);
             await cmdFunc(sock, msg, text.split(/ +/), chatJid, safeReply, { isOwner: isAuthorizedToControl });
-            continue; // AI එකට හෝ Command Loader එකට නොගොස් මෙතැනින් නවතී
+            continue; // Settings process වූ පසු මෙතැනින් නවතී
           }
         }
 
@@ -506,10 +508,10 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 9. INBOX AUTO-AI SYSTEM
+        // 🟢 9. INBOX AUTO-AI SYSTEM (Owner වෙතින් එන පණිවිඩ වලටද පිළිතුරු දෙන ලෙස සකසා ඇත)
         const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 
-        if (!isSelfBotMsg && !isAuthorizedToControl && !isGroup && global.botSettings?.autoAiInbox) {
+        if (!isSelfBotMsg && !isGroup && global.botSettings?.autoAiInbox) {
           try {
             await sock.sendPresenceUpdate('composing', chatJid);
             const aiPromise = askAI(text);
@@ -526,6 +528,7 @@ async function initWhatsApp(phoneNumber) {
               }
             }
           } catch (aiErr) {
+            console.error('AI Processing Error:', aiErr.message);
           } finally {
             await sock.sendPresenceUpdate('paused', chatJid);
           }
