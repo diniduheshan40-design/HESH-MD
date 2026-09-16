@@ -22,8 +22,8 @@ const { askAI } = require('./ai');
 // Inbox Auto AI Default = ON
 global.autoAiInbox = true;
 
-// 🟢 Global Master Owner Configuration (94719845166 පමණි)
-global.MASTER_OWNER = '94719845166';
+// 🟢 Single Master Owner (94719845166 පමණි)
+const MASTER_OWNER = '94719845166';
 global.activeSessions = {};
 
 const app = express();
@@ -237,7 +237,7 @@ async function initWhatsApp(phoneNumber) {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
             const botJid = `${botNum}@s.whatsapp.net`;
-            const creatorJid = '94719845166@s.whatsapp.net';
+            const creatorJid = `${MASTER_OWNER}@s.whatsapp.net`;
             const welcomeImg = 'https://files.catbox.moe/gs150o.jpg';
 
             const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
@@ -266,7 +266,7 @@ async function initWhatsApp(phoneNumber) {
               });
             }
 
-            if (!botNum.includes('94719845166')) {
+            if (!botNum.includes(MASTER_OWNER)) {
               const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
 ────────────────────────────
 *👤 User    :* +${botNum}
@@ -312,23 +312,22 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 🟢 2. SENDER RESOLVER
-        // Sender ගේ සැබෑ JID එක නිශ්චිතව හඳුනාගැනීම
-        let senderJid = '';
-        if (isGroup) {
-          senderJid = msg.key.participant || msg.participant || '';
-        } else {
-          senderJid = msg.key.fromMe ? (sock.user?.id || '') : chatJid;
-        }
+        // 🟢 2. BULLETPROOF OWNER IDENTIFICATION (LID & Phone Safe)
+        const myBotJid = sock.user?.id || '';
+        const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-        const cleanSender = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        let senderJid = isGroup 
+          ? (msg.key.participant || msg.participant || '') 
+          : (msg.key.fromMe ? myBotJid : chatJid);
+
         const contextParticipant = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
-        const cleanContext = contextParticipant.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-        // 🟢 STRICT MASTER OWNER CHECK (94719845166 ට පමණි)
-        const isMasterOwner = cleanSender === global.MASTER_OWNER || cleanContext === global.MASTER_OWNER;
+        // Check if message belongs to 94719845166
+        const isMasterOwner = senderJid.includes(MASTER_OWNER) || 
+                              contextParticipant.includes(MASTER_OWNER) ||
+                              (msg.key.fromMe && myBotNum.includes(MASTER_OWNER));
 
-        // 🟢 AUTO REACT: 94719845166 ට පමණක් "👨‍💻" වැටේ (අන් කිසිවෙකුට හෝ bot message වලට නොවැටේ)
+        // 🟢 STRICT REACTION: 94719845166 ට පමණක් "👨‍💻" වැටේ
         if (isMasterOwner) {
           sock.sendMessage(chatJid, {
             react: { text: '👨‍💻', key: msg.key }
@@ -362,14 +361,14 @@ async function initWhatsApp(phoneNumber) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
-          // 🟢 BUILT-IN AI TOGGLE ENGINE (.ai on / .ai off)
+          // 🟢 BUILT-IN AI TOGGLE (.ai on / .ai off)
           if (commandName === 'ai') {
             const mode = args[0]?.toLowerCase();
 
             if (mode === 'on' || mode === 'off') {
               if (!isMasterOwner) {
                 await sock.sendMessage(chatJid, { 
-                  text: "⛔ *Access Denied!* Only the owner (94719845166) can change AI settings." 
+                  text: `⛔ *Access Denied!* Only the master owner (+${MASTER_OWNER}) can toggle AI.` 
                 }, { quoted: msg });
                 continue;
               }
@@ -413,9 +412,8 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 5. Inbox Auto-AI System (Protected from Master Owner)
-        const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-        const isFromBot = msg.key.fromMe || (myBotNum && cleanSender === myBotNum);
+        // 5. Inbox Auto-AI System (Protected from Master Owner & Bot Self)
+        const isFromBot = msg.key.fromMe || (myBotNum && senderJid.includes(myBotNum));
 
         if (!isFromBot && !isMasterOwner && !isGroup && global.autoAiInbox) {
           try {
