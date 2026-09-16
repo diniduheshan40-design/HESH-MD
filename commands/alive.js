@@ -1,8 +1,10 @@
 // commands/alive.js
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
 const LOCAL_LOGO = path.join(process.cwd(), 'logo.jpg');
+const FALLBACK_LOGO_URL = 'https://files.catbox.moe/gs150o.jpg';
 
 function getEmojiTime(jid) {
     let tz = 'Asia/Colombo'; 
@@ -49,7 +51,6 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// Sub-command trigger
 const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg) => {
     try {
         const cmdPath = path.join(__dirname, `${cmdName}.js`);
@@ -84,7 +85,6 @@ module.exports = {
 
         const senderJid = msg.key.participant || targetChat;
 
-        // Reaction
         sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
         let pushName = msg.pushName || "User";  
@@ -116,26 +116,42 @@ module.exports = {
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            let sentMsg;
-
-            // Save කරපු logo එක තියෙනවාදැයි බැලීම
+            // Buffer Loader: local නැත්නම් online URL එක arraybuffer ලෙස ගනී
+            let imgBuffer = null;
             if (fs.existsSync(LOCAL_LOGO)) {
-                const imageBuffer = fs.readFileSync(LOCAL_LOGO);
+                imgBuffer = fs.readFileSync(LOCAL_LOGO);
+            } else {
+                try {
+                    const res = await axios.get(FALLBACK_LOGO_URL, {
+                        responseType: 'arraybuffer',
+                        timeout: 10000
+                    });
+                    imgBuffer = Buffer.from(res.data, 'binary');
+                } catch (err) {
+                    const backupRes = await axios.get('https://files.catbox.moe/a58add.jpeg', {
+                        responseType: 'arraybuffer',
+                        timeout: 10000
+                    }).catch(() => null);
+                    if (backupRes) imgBuffer = Buffer.from(backupRes.data, 'binary');
+                }
+            }
+
+            let sentMsg;
+            if (imgBuffer) {
                 sentMsg = await sock.sendMessage(targetChat, {
-                    image: imageBuffer,
+                    image: imgBuffer,
                     caption: aliveMsg
                 }, { quoted: msg });
             } else {
-                // තවම Logo එකක් set කර නැත්නම් Text එක පමණක් යවයි
                 sentMsg = await sock.sendMessage(targetChat, {
-                    text: aliveMsg
+                    image: { url: FALLBACK_LOGO_URL },
+                    caption: aliveMsg
                 }, { quoted: msg });
             }
 
             const stanzaId = sentMsg?.key?.id;
             const usedOptions = new Set();
 
-            // Reply listener එක (1, 2, 3)
             const replyListener = async (m) => {  
                 try {  
                     const replyMsg = m.messages?.[0];  
@@ -176,7 +192,7 @@ module.exports = {
                             const ownerDetails = `*👑 HESHAN-MD OWNER INFO*\n\n` +
                                                  `*• Name:* Dinidu Heshan\n` +
                                                  `*• Status:* Active\n` +
-                                                 `*• Contact:* wa.me/94770000000\n\n` +
+                                                 `*• Contact:* wa.me/94719845166\n\n` +
                                                  `> 🔐 *heshan ofc • all rights reserved*`;
                             
                             await sock.sendMessage(replyChat, { text: ownerDetails }, { quoted: replyMsg });
