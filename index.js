@@ -371,7 +371,6 @@ async function initWhatsApp(phoneNumber) {
                 participant: isGroup ? (msg.key.participant || msg.participant) : undefined
               };
 
-              // RelayMessage (100% Reliable in modern Baileys)
               await sock.relayMessage(
                 chatJid,
                 {
@@ -383,7 +382,6 @@ async function initWhatsApp(phoneNumber) {
                 },
                 { messageId: sock.generateMessageTag() }
               ).catch(async () => {
-                // Fallback direct react
                 await sock.sendMessage(chatJid, {
                   react: {
                     text: global.botSettings.ownerReactEmoji || '👑',
@@ -427,7 +425,43 @@ async function initWhatsApp(phoneNumber) {
 
         if (!text) continue;
 
-        // 🟢 6. AUTO STATUS SAVE (Keyword Detect Without Prefix: oni, ewanna, dapan, etc.)
+        // Quoted Context Extract (Image Caption, Video Caption, Text සියල්ලම සහය දක්වයි)
+        const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
+        const quotedMsgObj = quotedContext?.quotedMessage;
+        const quotedText = (
+          quotedMsgObj?.conversation ||
+          quotedMsgObj?.extendedTextMessage?.text ||
+          quotedMsgObj?.imageMessage?.caption ||
+          quotedMsgObj?.videoMessage?.caption ||
+          quotedMsgObj?.documentWithCaptionMessage?.message?.imageMessage?.caption ||
+          ''
+        ).trim();
+
+        const safeReply = async (content) => {
+          const replyPayload = typeof content === 'string' ? { text: content } : content;
+          try { return await sock.sendMessage(chatJid, replyPayload, { quoted: msg }); } 
+          catch (e) { return await sock.sendMessage(chatJid, replyPayload); }
+        };
+
+        // 🟢 6. SETTINGS MENU REPLY & SUB-OPTION INTERCEPTOR (Image Caption හෝ Text Match)
+        const isSettingsHeader = quotedText.includes('HESHAN-MD SYSTEM SETTINGS') || 
+                                 quotedText.includes('SYSTEM CONFIG') || 
+                                 quotedText.includes('WORK MODE') ||
+                                 quotedText.includes('AUTO AI INBOX');
+
+        const cleanInput = text.toLowerCase().trim();
+        const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ');
+
+        if ((isSettingsHeader || isSettingCode) && isAuthorizedToControl) {
+          const settingsCmd = commands.get('settings');
+          if (settingsCmd) {
+            const cmdFunc = typeof settingsCmd === 'function' ? settingsCmd : (settingsCmd.execute || settingsCmd.run);
+            await cmdFunc(sock, msg, text.split(/ +/), chatJid, safeReply, { isOwner: isAuthorizedToControl });
+            continue; // AI එකට හෝ Command Loader එකට නොගොස් මෙතැනින් නවතී
+          }
+        }
+
+        // 🟢 7. AUTO STATUS SAVE (Keyword Detect Without Prefix: oni, ewanna, dapan, etc.)
         const statusKeywords = [
           'oni', 'ඕනි', 'ඕනෙ', 'one', 
           'dapan', 'දාපන්', 'dapn', 
@@ -435,22 +469,16 @@ async function initWhatsApp(phoneNumber) {
           'save', 'status', 'send', 'send me', 'evanna'
         ];
 
-        const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
         const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
         const cleanMsgText = text.toLowerCase().trim();
 
-        if (quotedContext?.quotedMessage && (isQuotedFromStatus || statusKeywords.includes(cleanMsgText))) {
+        if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanMsgText))) {
           if (statusKeywords.includes(cleanMsgText)) {
             const statusCmd = commands.get('save') || commands.get('status');
             if (statusCmd) {
               const cmdFunc = typeof statusCmd === 'function' ? statusCmd : (statusCmd.downloadAndSendStatus || statusCmd.execute || statusCmd.run);
-              const safeReply = async (content) => {
-                const replyPayload = typeof content === 'string' ? { text: content } : content;
-                try { return await sock.sendMessage(chatJid, replyPayload, { quoted: msg }); } 
-                catch (e) { return await sock.sendMessage(chatJid, replyPayload); }
-              };
               await cmdFunc(sock, msg, [cleanMsgText], chatJid, safeReply, { isOwner: isAuthorizedToControl });
-              continue; // AI හෝ commands trigger නොවී මෙතැනින් නවතී
+              continue;
             }
           }
         }
@@ -458,22 +486,13 @@ async function initWhatsApp(phoneNumber) {
         const prefix = '.';
         const isCmd = text.startsWith(prefix);
 
-        // 🟢 7. COMMAND EXECUTION
+        // 🟢 8. COMMAND EXECUTION
         if (isCmd) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
           if (commands.has(commandName)) {
             try {
-              const safeReply = async (content) => {
-                const replyPayload = typeof content === 'string' ? { text: content } : content;
-                try {
-                  return await sock.sendMessage(chatJid, replyPayload, { quoted: msg });
-                } catch (e) {
-                  return await sock.sendMessage(chatJid, replyPayload);
-                }
-              };
-
               const targetCmd = commands.get(commandName);
               const cmdFunc = typeof targetCmd === 'function' ? targetCmd : (targetCmd.execute || targetCmd.run);
 
@@ -483,23 +502,6 @@ async function initWhatsApp(phoneNumber) {
             } catch (err) {
               console.error(`Error executing .${commandName}:`, err);
             }
-            continue;
-          }
-        }
-
-        // 🟢 8. QUOTED REPLY DETECTION FOR SETTINGS (1.1, 1.2, 2.1 ආදී උප-අංක මඟින් Settings වෙනස් කිරීම)
-        const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        const quotedText = quotedMsg?.conversation || quotedMsg?.extendedTextMessage?.text || '';
-        if (quotedText.includes('SYSTEM CONFIG') && isAuthorizedToControl) {
-          const cmd = commands.get('settings');
-          if (cmd) {
-            const cmdFunc = typeof cmd === 'function' ? cmd : (cmd.execute || cmd.run);
-            const safeReply = async (content) => {
-              const replyPayload = typeof content === 'string' ? { text: content } : content;
-              try { return await sock.sendMessage(chatJid, replyPayload, { quoted: msg }); } 
-              catch (e) { return await sock.sendMessage(chatJid, replyPayload); }
-            };
-            await cmdFunc(sock, msg, text.split(/ +/), chatJid, safeReply, { isOwner: isAuthorizedToControl });
             continue;
           }
         }
