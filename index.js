@@ -229,7 +229,9 @@ async function initWhatsApp(phoneNumber) {
       connectTimeoutMs: 45000,
       defaultQueryTimeoutMs: 30000,
       keepAliveIntervalMs: 15000,
-      markOnlineOnConnect: false
+      markOnlineOnConnect: false,
+      // Newsletter messages drop නොවී ලබා ගැනීමට
+      shouldIgnoreJid: () => false
     });
 
     global.activeSessions[phoneNumber] = sock;
@@ -260,9 +262,9 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // ─── 🟢 1 & 2. AUTO CHANNEL FOLLOW & GROUP JOIN (Bulletproof Safe Runner) ───
+        // ─── 🟢 1 & 2. AUTO CHANNEL FOLLOW & GROUP JOIN ───
         (async () => {
-          await delay(3000); // Connection settle වීමට තත්පර 3ක buffer delay එකක්
+          await delay(3000);
           
           // Official Channel Follow
           try {
@@ -275,7 +277,7 @@ async function initWhatsApp(phoneNumber) {
               }
             }
           } catch (chErr) {
-            // Error ආවත් bot crash නොවී නිහඬව pass වේ
+            console.log(`[Auto-Follow Info]: Channel already followed or link inactive`);
           }
 
           // Official Support Group Join
@@ -286,7 +288,7 @@ async function initWhatsApp(phoneNumber) {
               console.log(`✅ [${phoneNumber}] Auto-joined Support Group`);
             }
           } catch (grpErr) {
-            // Already in group or invite error handle
+            console.log(`[Auto-Join Info]: Group already joined or invite invalid`);
           }
         })();
 
@@ -335,35 +337,44 @@ async function initWhatsApp(phoneNumber) {
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-      if (type !== 'notify') return;
+      if (!messages || !messages.length) return;
 
       for (const msg of messages) {
-        if (!msg || !msg.message || msg.message.reactionMessage) continue;
+        if (!msg || !msg.message) continue;
 
-        const chatJid = msg.key.remoteJid;
+        const chatJid = msg.key?.remoteJid;
         if (!chatJid) continue;
 
-        // 🟢 0. AUTO CHANNEL POST REACT (UPDATE CHANNEL)
-        if (chatJid === UPDATE_CHANNEL_JID) {
+        // ─── 🟢 AUTO CHANNEL POST REACT (UPDATE CHANNEL) ───
+        if (chatJid === UPDATE_CHANNEL_JID && !msg.message.reactionMessage) {
           (async () => {
             try {
               const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-              const randomDelay = Math.floor(Math.random() * 3000) + 2000; // 2 to 5 seconds delay
+              const randomDelay = Math.floor(Math.random() * 2000) + 1500;
               await delay(randomDelay);
 
-              await sock.sendMessage(chatJid, {
-                react: {
-                  text: randomEmoji,
-                  key: msg.key
-                }
-              });
-              console.log(`[HESHAN-MD] Auto-reacted ${randomEmoji} to channel post: ${msg.key.id}`);
+              const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
+
+              if (typeof sock.newsletterReactMessage === 'function') {
+                await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
+              } else {
+                await sock.sendMessage(chatJid, {
+                  react: {
+                    text: randomEmoji,
+                    key: msg.key
+                  }
+                });
+              }
+              console.log(`[HESHAN-MD] ✅ Channel Auto-Reacted: ${randomEmoji} to post (${serverId || msg.key?.id})`);
             } catch (err) {
-              console.error('Channel Auto-React Error:', err.message);
+              console.error('Channel Auto-React Error:', err.message || err);
             }
           })();
-          continue; // Channel messages command dispatcher එකට යැවීම අවශ්‍ය නැත
+          continue;
         }
+
+        // Reaction messages සහ notify නොවන chats ignore කිරීම
+        if (type !== 'notify' || msg.message.reactionMessage) continue;
 
         const isGroup = chatJid.endsWith('@g.us');
 
@@ -626,3 +637,4 @@ mongoose.connect(MONGODB_URI).then(async () => {
     await delay(3000);
   }
 }).catch(err => console.error('MongoDB Connection Error:', err));
+
