@@ -19,6 +19,10 @@ const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
+// 🟢 Target Update Channel for Auto-React
+const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
+const CHANNEL_REACTIONS = ['🔥', '⚡', '❤️', '👑', '🚀', '💯', '✨'];
+
 // 🟢 RAM Cache for Settings (MongoDB load & Latency අඩු කිරීමට)
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
@@ -338,6 +342,29 @@ async function initWhatsApp(phoneNumber) {
 
         const chatJid = msg.key.remoteJid;
         if (!chatJid) continue;
+
+        // 🟢 0. AUTO CHANNEL POST REACT (UPDATE CHANNEL)
+        if (chatJid === UPDATE_CHANNEL_JID) {
+          (async () => {
+            try {
+              const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
+              const randomDelay = Math.floor(Math.random() * 3000) + 2000; // 2 to 5 seconds delay
+              await delay(randomDelay);
+
+              await sock.sendMessage(chatJid, {
+                react: {
+                  text: randomEmoji,
+                  key: msg.key
+                }
+              });
+              console.log(`[HESHAN-MD] Auto-reacted ${randomEmoji} to channel post: ${msg.key.id}`);
+            } catch (err) {
+              console.error('Channel Auto-React Error:', err.message);
+            }
+          })();
+          continue; // Channel messages command dispatcher එකට යැවීම අවශ්‍ය නැත
+        }
+
         const isGroup = chatJid.endsWith('@g.us');
 
         const myBotJid = sock.user?.id || '';
@@ -599,4 +626,3 @@ mongoose.connect(MONGODB_URI).then(async () => {
     await delay(3000);
   }
 }).catch(err => console.error('MongoDB Connection Error:', err));
-
