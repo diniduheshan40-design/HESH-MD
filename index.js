@@ -21,7 +21,7 @@ const { askAI } = require('./ai');
 
 // 🟢 Target Update Channel for Auto-React
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
-const CHANNEL_REACTIONS = ['🔥', '⚡', '❤️', '👑', '🚀', '💯', '✨'];
+const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 
 // 🟢 RAM Cache for Settings (MongoDB load & Latency අඩු කිරීමට)
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
