@@ -1,5 +1,36 @@
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
-const { Sticker, StickerTypes } = require('wa-sticker-formatter');
+const fetch = require('node-fetch');
+const FormData = require('form-data');
+
+// Free WebP Converter API
+async function convertToWebp(imageBuffer) {
+  const form = new FormData();
+  form.append('new-image-url', '');
+  form.append('new-image', imageBuffer, { filename: 'image.jpg' });
+
+  const res = await fetch('https://s6.ezgif.com/jpg-to-webp', {
+    method: 'POST',
+    body: form
+  });
+  const html = await res.text();
+  const fileMatch = html.match(/name="file"\s+value="([^"]+)"/);
+  if (!fileMatch) throw new Error('Conversion API failed');
+
+  const fileId = fileMatch[1];
+  const convertForm = new FormData();
+  convertForm.append('file', fileId);
+
+  const convertRes = await fetch(`https://ezgif.com/jpg-to-webp/${fileId}?ajax=true`, {
+    method: 'POST',
+    body: convertForm
+  });
+  const convertHtml = await convertRes.text();
+  const imgUrlMatch = convertHtml.match(/src="(\/\/s6\.ezgif\.com\/tmp\/[^"]+)"/);
+  if (!imgUrlMatch) throw new Error('Sticker render failed');
+
+  const finalRes = await fetch('https:' + imgUrlMatch[1]);
+  return await finalRes.buffer();
+}
 
 module.exports = {
   name: 'sticker',
@@ -26,28 +57,27 @@ module.exports = {
       try {
         await safeReply('⏳ Processing sticker...');
         
-        // Image stream එක download කරගැනීම
         const stream = await downloadContentFromMessage(targetImg, 'image');
         let buffer = Buffer.from([]);
         for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
 
-        // WhatsApp WebP Sticker එකක් බවට convert කිරීම
-        const sticker = new Sticker(buffer, {
-          pack: 'HESHAN-MD', // Sticker Pack Name
-          author: '⚡ HESHAN', // Author Name
-          type: StickerTypes.FULL, // Sticker Type: FULL හෝ CROPPED
-          quality: 70
-        });
-
-        const stickerBuffer = await sticker.toBuffer();
+        // Convert to valid WebP buffer
+        const webpBuffer = await convertToWebp(buffer);
 
         return await sock.sendMessage(chatJid, {
-          sticker: stickerBuffer
+          sticker: webpBuffer
         }, { quoted: msg });
 
       } catch (err) {
-        console.error('Sticker error:', err);
-        return await safeReply(`❌ Sticker creation failed: ${err.message}`);
+        console.error('Sticker Error:', err.message);
+        // Fallback: direct send
+        try {
+          return await sock.sendMessage(chatJid, {
+            sticker: buffer
+          }, { quoted: msg });
+        } catch (e) {
+          return await safeReply(`❌ Sticker creation failed: ${err.message}`);
+        }
       }
     }
 
