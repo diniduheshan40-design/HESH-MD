@@ -12,30 +12,35 @@ module.exports = {
     name: 'ai',
     category: 'ai',
     desc: 'Ask AI or toggle inbox auto-ai',
-    async execute(sock, msg, args, targetChat, safeReply, extra = {}) {
+    async execute(sock, msg, args, targetChat) {
         const chatJid = (typeof targetChat === 'string' && targetChat.includes('@')) 
             ? targetChat 
             : msg.key.remoteJid;
 
         const option = args[0]?.toLowerCase();
 
-        // 🟢 Bulletproof Owner Detection (index.js fallback included)
+        // 🟢 100% BULLETPROOF SENDER RESOLVER
         const isGroup = chatJid.endsWith('@g.us');
-        const rawSender = msg.key.fromMe 
-            ? (sock.user?.id || '') 
-            : (isGroup ? (msg.key.participant || msg.participant || '') : chatJid);
-        
+        const rawSender = isGroup 
+            ? (msg.key.participant || msg.participant || '') 
+            : (msg.key.fromMe ? (sock.user?.id || '') : chatJid);
+
+        const contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
         const cleanSender = rawSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const cleanContext = contextSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-        const creatorNumber = '94719845166';
 
-        const isOwner = extra?.isOwner || 
-                        cleanSender.includes(creatorNumber) || 
-                        (msg.key.fromMe && myBotNum.includes(creatorNumber));
+        const MASTER_NUM = '94719845166';
 
-        // 1. Auto AI Switch Controls (Owner Only)
+        // බොට් දුවන එකවුන්ට් එකට හෝ 94719845166 ට පමණක් අවසර ඇත
+        const isAuthorized = msg.key.fromMe || 
+                             cleanSender.includes(MASTER_NUM) || 
+                             cleanContext.includes(MASTER_NUM) ||
+                             (myBotNum && cleanSender.includes(myBotNum));
+
+        // 🟢 Auto AI Switch Controls
         if (option === 'on') {
-            if (!isOwner) {
+            if (!isAuthorized) {
                 return await sock.sendMessage(chatJid, { 
                     text: "⛔ *Access Denied!* Only the bot owner can change AI settings." 
                 }, { quoted: msg });
@@ -47,7 +52,7 @@ module.exports = {
         }
 
         if (option === 'off') {
-            if (!isOwner) {
+            if (!isAuthorized) {
                 return await sock.sendMessage(chatJid, { 
                     text: "⛔ *Access Denied!* Only the bot owner can change AI settings." 
                 }, { quoted: msg });
@@ -58,7 +63,7 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        // 2. Manual Question Ask via .ai
+        // 🟢 Direct AI Question
         const query = args.join(" ").trim();
         if (!query) {
             const helpText = `┏━━━❮ 🤖 *AI ASSISTANT* ❯━━━┓
@@ -88,9 +93,7 @@ module.exports = {
             console.error('AI Command Error:', err.message);
             await sock.sendMessage(chatJid, { text: "❌ AI engine failure. Please try again later." }, { quoted: msg });
         } finally {
-            try {
-                await sock.sendPresenceUpdate('paused', chatJid);
-            } catch (e) {}
+            await sock.sendPresenceUpdate('paused', chatJid);
         }
     }
 };
