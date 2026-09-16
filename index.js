@@ -405,19 +405,9 @@ async function initWhatsApp(phoneNumber) {
 
         if (!text) continue;
 
-        // Quoted Context Extract (Image Caption, Video Caption, Document Caption, Text සියල්ලම)
+        // Quoted Context Extract (Image Caption, Video Caption, Document Caption, Text)
         const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
         const quotedMsgObj = quotedContext?.quotedMessage;
-        const quotedText = (
-          quotedMsgObj?.conversation ||
-          quotedMsgObj?.extendedTextMessage?.text ||
-          quotedMsgObj?.imageMessage?.caption ||
-          quotedMsgObj?.videoMessage?.caption ||
-          quotedMsgObj?.documentWithCaptionMessage?.message?.imageMessage?.caption ||
-          quotedMsgObj?.documentWithCaptionMessage?.message?.videoMessage?.caption ||
-          quotedMsgObj?.documentWithCaptionMessage?.message?.conversation ||
-          ''
-        ).trim();
 
         const safeReply = async (content) => {
           const replyPayload = typeof content === 'string' ? { text: content } : content;
@@ -425,14 +415,11 @@ async function initWhatsApp(phoneNumber) {
           catch (e) { return await sock.sendMessage(chatJid, replyPayload); }
         };
 
-        // 🟢 6. SETTINGS MENU REPLY & SUB-OPTION INTERCEPTOR
-        const isSettingsHeader = quotedText.includes('HESHAN-MD') && 
-                                 (quotedText.includes('CONFIG') || quotedText.includes('SETTINGS') || quotedText.includes('WORK MODE'));
-
+        // 🟢 6. SETTINGS DIRECT REPLY INTERCEPTOR (1.1, 2.1, pin ආදී replies කෙලින්ම handle කිරීම)
         const cleanInput = text.toLowerCase().trim();
         const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ') || cleanInput.startsWith('pin ');
 
-        if ((isSettingsHeader && isSettingCode) && isAuthorizedToControl) {
+        if (isSettingCode && quotedMsgObj && isAuthorizedToControl) {
           const settingsCmd = commands.get('settings') || commands.get('set');
           if (settingsCmd) {
             const cmdFunc = typeof settingsCmd === 'function' ? settingsCmd : (settingsCmd.execute || settingsCmd.run);
