@@ -22,69 +22,94 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
-        const apiUrl = `https://api.chamindu.site/api/v1/facebook?url=${encodeURIComponent(url.trim())}&api_key=${API_KEY}`;
-
         let loadMsg = null;
 
         try {
             await sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
 
-            // 🟢 1. Loading / Downloading Message එක යැවීම
+            // 🟢 1. Loading Message එක යැවීම
             loadMsg = await sock.sendMessage(targetChat, { 
                 text: `*⚡ DOWNLOADING FACEBOOK MEDIA ⚡*\n\n⏳ _කරුණාකර මොහොතක් රැඳී සිටින්න, වීඩියෝව සකසමින් පවතී..._${DEFAULT_FOOTER}` 
             }, { quoted: msg });
 
-            const res = await axios.get(apiUrl, { timeout: 35000 });
-            const data = res.data?.data || res.data;
+            let videoUrl = null;
+            let videoTitle = "Facebook Video";
+            let qualityTag = "HD";
 
-            // වීඩියෝ URL එක තෝරාගැනීම
-            const videoUrl = data.fast_download_hd || data.hd || data.fast_download || data.fast_download_sd || data.sd;
+            // 🟢 Primary API: GiftedTech API
+            try {
+                const res1 = await axios.get(`https://api.giftedtech.web.id/api/download/facebook?apikey=gifted&url=${encodeURIComponent(url.trim())}`, { timeout: 20000 });
+                if (res1.data?.success && res1.data?.result) {
+                    videoUrl = res1.data.result.hd || res1.data.result.sd;
+                    videoTitle = res1.data.result.title || videoTitle;
+                }
+            } catch (e1) {}
+
+            // 🟢 Fallback API 1: Betabotz / Dorratz
+            if (!videoUrl) {
+                try {
+                    const res2 = await axios.get(`https://api.dorratz.com/v2/fb-dl?url=${encodeURIComponent(url.trim())}`, { timeout: 20000 });
+                    if (res2.data?.data) {
+                        videoUrl = res2.data.data.find(v => v.quality?.includes('720') || v.quality?.includes('HD'))?.url || res2.data.data[0]?.url;
+                    }
+                } catch (e2) {}
+            }
+
+            // 🟢 Fallback API 2: Chamindu Site API
+            if (!videoUrl) {
+                try {
+                    const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
+                    const res3 = await axios.get(`https://api.chamindu.site/api/v1/facebook?url=${encodeURIComponent(url.trim())}&api_key=${API_KEY}`, { timeout: 20000 });
+                    const data3 = res3.data?.data || res3.data;
+                    videoUrl = data3?.hd || data3?.fast_download_hd || data3?.sd || data3?.fast_download;
+                    if (data3?.title && !data3.title.includes(':')) videoTitle = data3.title;
+                } catch (e3) {}
+            }
 
             if (!videoUrl) {
                 if (loadMsg) await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
                 await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
                 return await sock.sendMessage(targetChat, { 
-                    text: `❌ *Could not extract Facebook video. Make sure the video is public!*${DEFAULT_FOOTER}` 
+                    text: `❌ *වීඩියෝව ලබාගත නොහැකි විය. වීඩියෝව Public එකක් දැයි තහවුරු කරගන්න!*${DEFAULT_FOOTER}` 
                 }, { quoted: msg });
             }
 
-            const qualityTag = (data.fast_download_hd || data.hd) ? "HD" : "SD";
-            const videoTitle = (data.title && !data.title.includes(':')) ? data.title : "Facebook Video";
-
             const caption = `*📘 𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗩𝗜𝗗𝗘𝗢 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 📘*\n\n📌 *Title:* ${videoTitle}\n📊 *Quality:* ${qualityTag}${DEFAULT_FOOTER}`;
 
-            // 🟢 2. Video එක ArrayBuffer එකක් විදිහට Download කරගැනීම (Play නොවී හිරවීම වළක්වයි)
+            // 🟢 2. Stream Buffer Validation
             const videoRes = await axios.get(videoUrl, {
                 responseType: 'arraybuffer',
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
-                    'Referer': 'https://www.facebook.com/'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'video/mp4,video/*;q=0.9,*/*;q=0.8'
                 },
                 timeout: 60000
             });
 
             const videoBuffer = Buffer.from(videoRes.data);
 
-            // 🟢 3. කලින් යවපු Loading Message එක Auto-Delete කිරීම
+            // 🟢 3. HTML Error Page එකක් Buffer එකට ආවාදැයි පරීක්ෂාව
+            const checkHeader = videoBuffer.slice(0, 50).toString('utf8');
+            if (checkHeader.includes('<!DOCTYPE') || checkHeader.includes('<html')) {
+                throw new Error('CDN returned HTML page instead of video binary');
+            }
+
+            // 🟢 4. Loading Message එක Auto-Delete කිරීම
             if (loadMsg) {
                 await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
             }
 
-            // 🟢 4. Playable Video එක යැවීම
+            // 🟢 5. Valid Playable Video එක යැවීම
             await sock.sendMessage(targetChat, {
                 video: videoBuffer,
                 caption: caption,
-                mimetype: 'video/mp4',
-                fileName: 'facebook_video.mp4',
-                ptv: false
+                mimetype: 'video/mp4'
             }, { quoted: msg });
 
             await sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
         } catch (err) {
             console.error('FB DL Error:', err.message);
-            // Error එකක් ආවොත් load message එක අයින් කිරීම
             if (loadMsg) await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
             await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
             await sock.sendMessage(targetChat, { 
