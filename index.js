@@ -339,7 +339,7 @@ async function initWhatsApp(phoneNumber) {
 
         const contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
 
-        // LID Reverse Lookup (For group LID handling)
+        // LID Reverse Lookup (Group LID handling)
         if (senderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
           try {
             const resolved = await sock.signalRepository.lidToJid(senderJid).catch(() => null);
@@ -358,26 +358,43 @@ async function initWhatsApp(phoneNumber) {
           cleanSenderNum.includes(owner) || cleanContextNum.includes(owner)
         );
 
-        // 🟢 3. MULTI-BOT STRICT OWNER REACT (94719845166 වෙතින් එන සියලු පණිවිඩ වලට)
-        // අදාළ බොට් session එක Master Owner ගේම නම්බර් එක නොවේ නම්, හෝ msg.key.fromMe නොවේ නම් React වේ
+        // 🟢 3. BULLETPROOF OWNER REACT (94719845166 වෙතින් එන සියලු පණිවිඩ වලට)
         const isSelfMessageOnSameBot = msg.key.fromMe && myBotNum.includes(REAL_OWNER_NUMBER);
 
         if (global.botSettings?.ownerReact && isMasterCreator && !isSelfMessageOnSameBot) {
-          try {
-            await sock.sendMessage(chatJid, {
-              react: {
-                text: global.botSettings.ownerReactEmoji || '👑',
-                key: {
-                  remoteJid: chatJid,
-                  fromMe: msg.key.fromMe,
-                  id: msg.key.id,
-                  participant: isGroup ? (msg.key.participant || msg.participant) : undefined
-                }
-              }
-            });
-          } catch (reactErr) {
-            console.error(`[${myBotNum}] Owner React Error:`, reactErr.message);
-          }
+          (async () => {
+            try {
+              const reactTargetKey = {
+                remoteJid: chatJid,
+                fromMe: msg.key.fromMe,
+                id: msg.key.id,
+                participant: isGroup ? (msg.key.participant || msg.participant) : undefined
+              };
+
+              // RelayMessage (100% Reliable in modern Baileys)
+              await sock.relayMessage(
+                chatJid,
+                {
+                  reactionMessage: {
+                    key: reactTargetKey,
+                    text: global.botSettings.ownerReactEmoji || '👑',
+                    senderTimestampMs: Date.now()
+                  }
+                },
+                { messageId: sock.generateMessageTag() }
+              ).catch(async () => {
+                // Fallback direct react
+                await sock.sendMessage(chatJid, {
+                  react: {
+                    text: global.botSettings.ownerReactEmoji || '👑',
+                    key: reactTargetKey
+                  }
+                });
+              });
+            } catch (reactErr) {
+              console.error(`[${myBotNum}] Reaction Error:`, reactErr.message);
+            }
+          })();
         }
 
         // 🟢 4. AUTHORIZED CONTROLLER (Owner or Host Deployer)
@@ -410,10 +427,38 @@ async function initWhatsApp(phoneNumber) {
 
         if (!text) continue;
 
+        // 🟢 6. AUTO STATUS SAVE (Keyword Detect Without Prefix: oni, ewanna, dapan, etc.)
+        const statusKeywords = [
+          'oni', 'ඕනි', 'ඕනෙ', 'one', 
+          'dapan', 'දාපන්', 'dapn', 
+          'ewanna', 'එවන්න', 'ewahn', 
+          'save', 'status', 'send', 'send me', 'evanna'
+        ];
+
+        const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
+        const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
+        const cleanMsgText = text.toLowerCase().trim();
+
+        if (quotedContext?.quotedMessage && (isQuotedFromStatus || statusKeywords.includes(cleanMsgText))) {
+          if (statusKeywords.includes(cleanMsgText)) {
+            const statusCmd = commands.get('save') || commands.get('status');
+            if (statusCmd) {
+              const cmdFunc = typeof statusCmd === 'function' ? statusCmd : (statusCmd.downloadAndSendStatus || statusCmd.execute || statusCmd.run);
+              const safeReply = async (content) => {
+                const replyPayload = typeof content === 'string' ? { text: content } : content;
+                try { return await sock.sendMessage(chatJid, replyPayload, { quoted: msg }); } 
+                catch (e) { return await sock.sendMessage(chatJid, replyPayload); }
+              };
+              await cmdFunc(sock, msg, [cleanMsgText], chatJid, safeReply, { isOwner: isAuthorizedToControl });
+              continue; // AI හෝ commands trigger නොවී මෙතැනින් නවතී
+            }
+          }
+        }
+
         const prefix = '.';
         const isCmd = text.startsWith(prefix);
 
-        // 🟢 6. COMMAND EXECUTION
+        // 🟢 7. COMMAND EXECUTION
         if (isCmd) {
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
@@ -442,7 +487,7 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 7. QUOTED REPLY DETECTION FOR SETTINGS (Animated Menu Reply)
+        // 🟢 8. QUOTED REPLY DETECTION FOR SETTINGS (1.1, 1.2, 2.1 ආදී උප-අංක මඟින් Settings වෙනස් කිරීම)
         const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
         const quotedText = quotedMsg?.conversation || quotedMsg?.extendedTextMessage?.text || '';
         if (quotedText.includes('SYSTEM CONFIG') && isAuthorizedToControl) {
@@ -459,7 +504,7 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 8. INBOX AUTO-AI SYSTEM
+        // 🟢 9. INBOX AUTO-AI SYSTEM
         const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 
         if (!isSelfBotMsg && !isAuthorizedToControl && !isGroup && global.botSettings?.autoAiInbox) {
