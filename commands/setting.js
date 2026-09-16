@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-// Per-Bot MongoDB Schema
+// 🟢 Per-Bot MongoDB Schema
 const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   workMode: { type: String, default: 'public' },
@@ -17,6 +17,7 @@ const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// 🟢 Visual Progress Bar Animation
 async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
   try {
     const loadingFrames = [
@@ -53,6 +54,7 @@ module.exports = {
 
     const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || 'default';
     
+    // DB Settings Load / Create
     let settings = await SettingsModel.findById(botNumber);
     if (!settings) {
       settings = await SettingsModel.create({ _id: botNumber });
@@ -154,7 +156,7 @@ module.exports = {
       return await applyWithLoader(sock, chatJid, msg, `🔐 *[+${botNumber}]* PIN Updated to: *${newPin}*`);
     }
 
-    // 🟢 MAIN SETTINGS MENU
+    // 🟢 PREMIUM CYBER-AESTHETIC MENU CARD
     const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
@@ -163,51 +165,56 @@ module.exports = {
       groups: 'GROUPS 👥'
     }[settings.workMode || 'public'] || 'PUBLIC 🌐';
 
-    const menu = `
-╔══════════════════════════════════════╗
-║      ⚡ HESHAN-MD BOT CONFIG ⚡       ║
-╠══════════════════════════════════════╣
-║ 🤖 *Target Bot :* +${botNumber}
-║ 🔐 *Security   :* PIN Protected
-╠══════════════════════════════════════╣
-║                                      ║
-║  [1] 🌐 WORK MODE [ ${modeBadge} ]
-║      ├ 1.1 Private                   ║
-║      ├ 1.2 Public                    ║
-║      ├ 1.3 Inbox Only                ║
-║      └ 1.4 Group Only                ║
-║                                      ║
-║  [2] 🤖 AUTO AI INBOX [ ${stateBadge(settings.autoAiInbox)} ]
-║      ├ 2.1 AI On                     ║
-║      └ 2.2 AI Off                    ║
-║                                      ║
-║  [3] 👁️ AUTO STATUS SEEN [ ${stateBadge(settings.autoStatusSeen)} ]
-║      ├ 3.1 Status Seen On            ║
-║      └ 3.2 Status Seen Off           ║
-║                                      ║
-║  [4] 💐 STATUS REACT [ ${stateBadge(settings.statusReact)} ]
-║      ├ 4.1 Status React On           ║
-║      └ 4.2 Status React Off          ║
-║                                      ║
-║  [5] 👑 OWNER REACT [ ${stateBadge(settings.ownerReact)} ]
-║      ├ 5.1 Owner React On            ║
-║      └ 5.2 Owner React Off           ║
-║                                      ║
-║  [6] 🎨 OWNER EMOJI [  ${settings.ownerReactEmoji || '👑'}  ]
-║      └ Reply: 6 <emoji>              ║
-║                                      ║
-║  [7] 🔐 CHANGE PIN [ ${settings.securityPin || '1234'} ]
-║      └ Command: .set pin <new_pin>   ║
-║                                      ║
-╠══════════════════════════════════════╣
-║  🔢 පාලනය සඳහා:                      ║
-║  • මේ මැසේජ් එකට අදාළ අංකය Reply     ║
-║    කරන්න (උදා: 1.1 හෝ 2.2)           ║
-║  • නැතහොත් .set 2.1 ලෙස යවන්න        ║
-╚══════════════════════════════════════╝
+    const menu = `╭─── ⚡ *HESHAN-MD SYSTEM SETTINGS* ⚡ ───╮
+│
+├ 🤖 *Target Session :* +${botNumber}
+├ 🛡️ *Master Access  :* Verified
+├ 🔐 *Security PIN   :* ${settings.securityPin || '1234'}
+│
+├─◈ *1. WORK MODE* ⤿ [ ${modeBadge} ]
+│  ├ 1.1 Private
+│  ├ 1.2 Public
+│  ├ 1.3 Inbox Only
+│  └ 1.4 Group Only
+│
+├─◈ *2. AUTO AI INBOX* ⤿ [ ${stateBadge(settings.autoAiInbox)} ]
+│  ├ 2.1 Turn AI On
+│  └ 2.2 Turn AI Off
+│
+├─◈ *3. AUTO STATUS SEEN* ⤿ [ ${stateBadge(settings.autoStatusSeen)} ]
+│  ├ 3.1 Status Seen On
+│  └ 3.2 Status Seen Off
+│
+├─◈ *4. STATUS REACTION* ⤿ [ ${stateBadge(settings.statusReact)} ]
+│  ├ 4.1 React On
+│  └ 4.2 React Off
+│
+├─◈ *5. OWNER REACT* ⤿ [ ${stateBadge(settings.ownerReact)} ]
+│  ├ 5.1 Owner React On
+│  └ 5.2 Owner React Off
+│
+├─◈ *6. OWNER EMOJI* ⤿ [ ${settings.ownerReactEmoji || '👑'} ]
+│  └ ✦ Type: .set 6 <emoji>
+│
+├─◈ *7. CHANGE PIN* ⤿ [ ${settings.securityPin || '1234'} ]
+│  └ ✦ Type: .set pin <new_pin>
+│
+╰────────────────────────────────╯
+💡 *පාලනය කිරීමට:*
+• අදාළ Option අංකය කෙලින්ම Reply කරන්න (උදා: *1.1* හෝ *2.1*)
+
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-    return await safeReply(menu);
+    const bannerImg = 'https://files.catbox.moe/a58add.jpeg';
+
+    try {
+      return await sock.sendMessage(chatJid, {
+        image: { url: bannerImg },
+        caption: menu
+      }, { quoted: msg });
+    } catch (err) {
+      return await safeReply(menu);
+    }
   }
 };
 
