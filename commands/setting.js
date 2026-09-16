@@ -1,17 +1,19 @@
-let getBotSettings, updateBotSettings;
-try {
-  const mod = require('../BotSettings');
-  getBotSettings = mod.getBotSettings;
-  updateBotSettings = mod.updateBotSettings;
-} catch (e) {
-  try {
-    const mod = require('../../BotSettings');
-    getBotSettings = mod.getBotSettings;
-    updateBotSettings = mod.updateBotSettings;
-  } catch (err) {
-    console.error('Failed to load BotSettings in settings.js:', err.message);
-  }
-}
+const mongoose = require('mongoose');
+
+// Direct MongoDB Schema for Per-Bot Settings
+const BotSettingsSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  workMode: { type: String, default: 'public' },
+  autoAiInbox: { type: Boolean, default: true },
+  autoStatusSeen: { type: Boolean, default: true },
+  statusReact: { type: Boolean, default: true },
+  statusReactEmoji: { type: String, default: '💐' },
+  ownerReact: { type: Boolean, default: true },
+  ownerReactEmoji: { type: String, default: '👑' },
+  securityPin: { type: String, default: '1234' }
+});
+
+const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', BotSettingsSchema);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -27,18 +29,12 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
     let initialMsg = await sock.sendMessage(chatJid, { text: loadingFrames[0] }, { quoted: quotedMsg });
 
     for (let i = 1; i < loadingFrames.length; i++) {
-      await sleep(250);
-      await sock.sendMessage(chatJid, {
-        text: loadingFrames[i],
-        edit: initialMsg.key
-      }).catch(() => {});
+      await sleep(200);
+      await sock.sendMessage(chatJid, { text: loadingFrames[i], edit: initialMsg.key }).catch(() => {});
     }
 
-    await sleep(250);
-    await sock.sendMessage(chatJid, {
-      text: finalContent,
-      edit: initialMsg.key
-    }).catch(async () => {
+    await sleep(200);
+    await sock.sendMessage(chatJid, { text: finalContent, edit: initialMsg.key }).catch(async () => {
       await sock.sendMessage(chatJid, { text: finalContent }, { quoted: quotedMsg });
     });
   } catch (err) {
@@ -49,105 +45,118 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
 module.exports = {
   name: 'settings',
   alias: ['setting', 'set', 'config'],
-  description: 'Manage individual bot settings with MongoDB and PIN security',
+  description: 'Manage individual bot settings',
   async execute(sock, msg, args, chatJid, safeReply, { isOwner }) {
     if (!isOwner) {
       return await safeReply('⛔ *Access Denied!* Only Owner can modify settings.');
     }
 
-    // මේ bot session එකේ phone number එක ලබාගැනීම
     const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-    let settings = getBotSettings ? (await getBotSettings(botNumber)) : {};
-    if (!settings) settings = {};
+    
+    // DB Settings Load / Create
+    let settings = await SettingsModel.findById(botNumber);
+    if (!settings) {
+      settings = await SettingsModel.create({ _id: botNumber });
+    }
 
-    // Input එක ලබාගැනීම (Args වලින් හෝ direct message එකෙන්)
-    let input = args.join(' ').trim();
+    let input = (args[0] || '').trim().toLowerCase();
     if (!input) {
       const rawText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-      input = rawText.trim();
+      input = rawText.trim().toLowerCase();
     }
 
-    const choice = input.toLowerCase();
-
-    // 🟢 WORK MODE
-    if (choice === '1.1') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { workMode: 'private' });
+    // 🟢 1. WORK MODE
+    if (input === '1.1') {
+      settings.workMode = 'private';
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Mode set to: *PRIVATE 🔒*`);
     }
-    if (choice === '1.2') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { workMode: 'public' });
+    if (input === '1.2') {
+      settings.workMode = 'public';
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Mode set to: *PUBLIC 🌐*`);
     }
-    if (choice === '1.3') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { workMode: 'inbox' });
+    if (input === '1.3') {
+      settings.workMode = 'inbox';
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Mode set to: *INBOX ONLY 📥*`);
     }
-    if (choice === '1.4') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { workMode: 'groups' });
+    if (input === '1.4') {
+      settings.workMode = 'groups';
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Mode set to: *GROUPS ONLY 👥*`);
     }
 
-    // 🟢 AUTO AI INBOX
-    if (choice === '2.1') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { autoAiInbox: true });
+    // 🟢 2. AUTO AI INBOX
+    if (input === '2.1') {
+      settings.autoAiInbox = true;
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `🤖 *[+${botNumber}]* Auto AI: *ENABLED 🟢*`);
     }
-    if (choice === '2.2') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { autoAiInbox: false });
+    if (input === '2.2') {
+      settings.autoAiInbox = false;
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `🤖 *[+${botNumber}]* Auto AI: *DISABLED 🔴*`);
     }
 
-    // 🟢 AUTO STATUS SEEN
-    if (choice === '3.1') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { autoStatusSeen: true });
+    // 🟢 3. AUTO STATUS SEEN
+    if (input === '3.1') {
+      settings.autoStatusSeen = true;
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `👁️ *[+${botNumber}]* Status Seen: *ENABLED 🟢*`);
     }
-    if (choice === '3.2') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { autoStatusSeen: false });
+    if (input === '3.2') {
+      settings.autoStatusSeen = false;
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `👁️ *[+${botNumber}]* Status Seen: *DISABLED 🔴*`);
     }
 
-    // 🟢 STATUS REACT
-    if (choice === '4.1') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { statusReact: true });
+    // 🟢 4. STATUS REACT
+    if (input === '4.1') {
+      settings.statusReact = true;
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `💐 *[+${botNumber}]* Status React: *ENABLED 🟢*`);
     }
-    if (choice === '4.2') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { statusReact: false });
+    if (input === '4.2') {
+      settings.statusReact = false;
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `💐 *[+${botNumber}]* Status React: *DISABLED 🔴*`);
     }
 
-    // 🟢 OWNER REACT
-    if (choice === '5.1') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { ownerReact: true });
+    // 🟢 5. OWNER REACT
+    if (input === '5.1') {
+      settings.ownerReact = true;
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `👑 *[+${botNumber}]* Owner React: *ENABLED 🟢*`);
     }
-    if (choice === '5.2') {
-      if (updateBotSettings) await updateBotSettings(botNumber, { ownerReact: false });
+    if (input === '5.2') {
+      settings.ownerReact = false;
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `👑 *[+${botNumber}]* Owner React: *DISABLED 🔴*`);
     }
 
-    // 🟢 CHANGE EMOJI (.set 6 🔥)
-    if (choice.startsWith('6')) {
-      const parts = choice.split(/ +/);
+    // 🟢 6. CHANGE EMOJI (.set 6 🔥)
+    if (input.startsWith('6')) {
+      const parts = args.join(' ').split(/ +/);
       const emoji = parts[1];
-      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `6 🔥`)');
-      if (updateBotSettings) await updateBotSettings(botNumber, { ownerReactEmoji: emoji });
+      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 6 🔥`)');
+      settings.ownerReactEmoji = emoji;
+      await settings.save();
       return await applyWithLoader(sock, chatJid, msg, `🎨 *[+${botNumber}]* New Owner Emoji: *${emoji}*`);
     }
 
-    // 🟢 CHANGE PASSWORD/PIN (.set pin 5566)
-    if (choice.startsWith('pin')) {
-      const newPin = choice.split(/ +/)[1];
-      if (!newPin || newPin.length < 4) {
-        return await safeReply('⚠️ කරුණාකර අවම අංක 4ක නව Password එකක් දෙන්න! (උදා: `.set pin 7788`)');
-      }
-      if (updateBotSettings) await updateBotSettings(botNumber, { securityPin: newPin });
-      return await applyWithLoader(sock, chatJid, msg, `🔐 *[+${botNumber}]* Security PIN Updated to: *${newPin}*`);
+    // 🟢 7. CHANGE PIN (.set pin 5566)
+    if (input.startsWith('pin')) {
+      const parts = args.join(' ').split(/ +/);
+      const newPin = parts[1];
+      if (!newPin || newPin.length < 4) return await safeReply('⚠️ අවම අංක 4ක PIN එකක් දෙන්න! (උදා: `.set pin 7788`)');
+      settings.securityPin = newPin;
+      await settings.save();
+      return await applyWithLoader(sock, chatJid, msg, `🔐 *[+${botNumber}]* PIN Updated to: *${newPin}*`);
     }
 
-    // 🟢 Main Settings Menu Card
-    const stateBadge = (val) => (val ? '🟢 ON' : '🔴 OFF');
+    // 🟢 MAIN SETTINGS MENU
+    const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
       private: 'PRIVATE 🔒',
@@ -169,19 +178,19 @@ module.exports = {
 ║      ├ 1.3 Inbox Only                ║
 ║      └ 1.4 Group Only                ║
 ║                                      ║
-║  [2] 🤖 AUTO AI INBOX [ ${stateBadge(settings.autoAiInbox !== false)} ]
+║  [2] 🤖 AUTO AI INBOX [ ${stateBadge(settings.autoAiInbox)} ]
 ║      ├ 2.1 AI On                     ║
 ║      └ 2.2 AI Off                    ║
 ║                                      ║
-║  [3] 👁️ AUTO STATUS SEEN [ ${stateBadge(settings.autoStatusSeen !== false)} ]
+║  [3] 👁️ AUTO STATUS SEEN [ ${stateBadge(settings.autoStatusSeen)} ]
 ║      ├ 3.1 Status Seen On            ║
 ║      └ 3.2 Status Seen Off           ║
 ║                                      ║
-║  [4] 💐 STATUS REACT [ ${stateBadge(settings.statusReact !== false)} ]
+║  [4] 💐 STATUS REACT [ ${stateBadge(settings.statusReact)} ]
 ║      ├ 4.1 Status React On           ║
 ║      └ 4.2 Status React Off          ║
 ║                                      ║
-║  [5] 👑 OWNER REACT [ ${stateBadge(settings.ownerReact !== false)} ]
+║  [5] 👑 OWNER REACT [ ${stateBadge(settings.ownerReact)} ]
 ║      ├ 5.1 Owner React On            ║
 ║      └ 5.2 Owner React Off           ║
 ║                                      ║
