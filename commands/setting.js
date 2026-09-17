@@ -1,11 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const mongoose = require('mongoose');
 
 const DEFAULT_BANNER = 'https://files.catbox.moe/a58add.jpeg';
 
-// Per-Bot MongoDB Schema (autoPresence එක් කරන ලදී)
+// Per-Bot Database Schema
 const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   workMode: { type: String, default: 'public' },
@@ -89,60 +88,60 @@ module.exports = {
       settings = await SettingsModel.create({ _id: botNumber });
     }
 
-    let input = (args[0] || '').trim().toLowerCase();
-    if (!input) {
-      const rawText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
-      input = rawText.trim().toLowerCase();
-    }
+    // Input Resolution (Direct or Reply)
+    const rawMsg = msg.message?.conversation || 
+                   msg.message?.extendedTextMessage?.text || 
+                   '';
+    let fullInput = (args && args.length > 0 ? args.join(' ') : rawMsg).trim().toLowerCase();
 
     let isUpdated = false;
 
     // 1. WORK MODE
-    if (input === '1.1') { settings.workMode = 'private'; isUpdated = true; }
-    else if (input === '1.2') { settings.workMode = 'public'; isUpdated = true; }
-    else if (input === '1.3') { settings.workMode = 'inbox'; isUpdated = true; }
-    else if (input === '1.4') { settings.workMode = 'groups'; isUpdated = true; }
+    if (fullInput === '1.1') { settings.workMode = 'private'; isUpdated = true; }
+    else if (fullInput === '1.2') { settings.workMode = 'public'; isUpdated = true; }
+    else if (fullInput === '1.3') { settings.workMode = 'inbox'; isUpdated = true; }
+    else if (fullInput === '1.4') { settings.workMode = 'groups'; isUpdated = true; }
 
     // 2. AUTO AI INBOX
-    else if (input === '2.1') { settings.autoAiInbox = true; isUpdated = true; }
-    else if (input === '2.2') { settings.autoAiInbox = false; isUpdated = true; }
+    else if (fullInput === '2.1') { settings.autoAiInbox = true; isUpdated = true; }
+    else if (fullInput === '2.2') { settings.autoAiInbox = false; isUpdated = true; }
 
     // 3. AUTO STATUS SEEN
-    else if (input === '3.1') { settings.autoStatusSeen = true; isUpdated = true; }
-    else if (input === '3.2') { settings.autoStatusSeen = false; isUpdated = true; }
+    else if (fullInput === '3.1') { settings.autoStatusSeen = true; isUpdated = true; }
+    else if (fullInput === '3.2') { settings.autoStatusSeen = false; isUpdated = true; }
 
     // 4. STATUS REACT
-    else if (input === '4.1') { settings.statusReact = true; isUpdated = true; }
-    else if (input === '4.2') { settings.statusReact = false; isUpdated = true; }
+    else if (fullInput === '4.1') { settings.statusReact = true; isUpdated = true; }
+    else if (fullInput === '4.2') { settings.statusReact = false; isUpdated = true; }
 
     // 5. OWNER REACT
-    else if (input === '5.1') { settings.ownerReact = true; isUpdated = true; }
-    else if (input === '5.2') { settings.ownerReact = false; isUpdated = true; }
+    else if (fullInput === '5.1') { settings.ownerReact = true; isUpdated = true; }
+    else if (fullInput === '5.2') { settings.ownerReact = false; isUpdated = true; }
 
-    // 6. AUTO PRESENCE (Typing / Recording)
-    else if (input === '6.1') { settings.autoPresence = 'typing'; isUpdated = true; }
-    else if (input === '6.2') { settings.autoPresence = 'recording'; isUpdated = true; }
-    else if (input === '6.3') { settings.autoPresence = 'off'; isUpdated = true; }
+    // 6. FAKE ACTION (TYPING / RECORDING)
+    else if (fullInput === '6.1') { settings.autoPresence = 'typing'; isUpdated = true; }
+    else if (fullInput === '6.2') { settings.autoPresence = 'recording'; isUpdated = true; }
+    else if (fullInput === '6.3') { settings.autoPresence = 'off'; isUpdated = true; }
 
     // 7. CHANGE EMOJI (.set 7 🔥)
-    else if (input.startsWith('7')) {
-      const parts = args.join(' ').split(/ +/);
-      const emoji = parts[1];
-      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 7 🔥`)');
+    else if (fullInput.startsWith('7') || fullInput.startsWith('set 7')) {
+      const parts = fullInput.split(/ +/);
+      const emoji = parts[1] || parts[2];
+      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `7 🔥`)');
       settings.ownerReactEmoji = emoji;
       isUpdated = true;
     }
 
     // 8. CHANGE PIN (.set pin 5566)
-    else if (input.startsWith('pin')) {
-      const parts = args.join(' ').split(/ +/);
+    else if (fullInput.startsWith('pin')) {
+      const parts = fullInput.split(/ +/);
       const newPin = parts[1];
-      if (!newPin || newPin.length < 4) return await safeReply('⚠️ අවම අංක 4ක PIN එකක් දෙන්න! (උදා: `.set pin 7788`)');
+      if (!newPin || newPin.length < 4) return await safeReply('⚠️ අවම අංක 4ක PIN එකක් දෙන්න! (උදා: `pin 7788`)');
       settings.securityPin = newPin;
       isUpdated = true;
     }
 
-    // MongoDB Database එකට Save කර Cache Clear කිරීම
+    // Database Update & Cache Eviction
     if (isUpdated) {
       await settings.save();
       if (global.clearSettingsCache) global.clearSettingsCache(botNumber);
@@ -160,10 +159,15 @@ module.exports = {
         off: 'OFF 🔴'
       }[settings.autoPresence || 'off'];
 
-      return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n• Work Mode: *${modeBadge}*\n• Fake Status: *${presenceBadge}*\n• AI Inbox: *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*`);
+      return await applyWithLoader(
+        sock, 
+        chatJid, 
+        msg, 
+        `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n• Work Mode: *${modeBadge}*\n• Fake Action: *${presenceBadge}*\n• AI Inbox: *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*`
+      );
     }
 
-    // MENU UI
+    // SETTINGS MENU DISPLAY
     const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
