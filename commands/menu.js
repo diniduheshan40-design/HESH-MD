@@ -69,6 +69,9 @@ module.exports = {
       ? chatJid 
       : msg.key.remoteJid;
 
+    // .menu command එක run කරපු කෙනාගේ jid එක මතක තියාගන්නවා (group එකේ quote නොකර reply කරන්න ඉඩ දෙන්න)
+    const invokerJid = msg.key.participant || msg.key.remoteJid;
+
     // Active Bot ගේ අංකය ලබාගැනීම
     const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
@@ -186,7 +189,13 @@ module.exports = {
           if (["1", "2", "3", "4"].includes(replyText)) {
             const contextInfo = msgContent.extendedTextMessage?.contextInfo;
             const isQuotedMenu = contextInfo && contextInfo.stanzaId === menuMessageId;
-            if (targetChat.endsWith('@g.us') && !isQuotedMenu) return;
+            const replySenderJid = replyMsg.key.participant || replyMsg.key.remoteJid;
+            const isSameInvoker = replySenderJid === invokerJid;
+
+            // Group එකේ: menu message එක quote කළත්, .menu command එක run කරපු කෙනාම
+            // quote නොකර කෙලින්ම type කළත් - දෙකම accept කරනවා. වෙන කෙනෙක් random number
+            // එකක් type කළොත් (quote නොකර) ignore කරනවා.
+            if (targetChat.endsWith('@g.us') && !isQuotedMenu && !isSameInvoker) return;
 
             sock.ev.off('messages.upsert', replyListener);
 
@@ -214,4 +223,3 @@ module.exports = {
     }
   }
 };
-
