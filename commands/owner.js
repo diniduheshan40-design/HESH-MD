@@ -9,7 +9,7 @@ module.exports = {
   name: 'owner',
   alias: ['creator', 'developer', 'dev', 'hesan'],
   category: 'main',
-  desc: 'Ultra-luxurious official owner profile card',
+  desc: 'Ultra-luxurious official owner profile card with real typewriter',
 
   async execute(sock, msg, args, chatJid, safeReply) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -24,26 +24,42 @@ module.exports = {
       const ownerName = '𝐃𝐈𝐍𝐈𝐃𝐔 𝐇𝐄𝐒𝐇𝐀𝐍';
       const ownerCrown = '🤴';
 
-      // 2. මුලින්ම නම අකුරෙන් අකුර Edit වන Typewriter Animation එක
+      // 2. අකුරෙන් අකුර සැබෑ Typewriter Animation එක (Crash-Proof 850ms Rate-Limit Safe Buffer)
       const chars = Array.from(ownerName);
-      let animatedText = chars[0];
+      let currentProgress = chars[0];
 
+      // පළමු අකුර යැවීම
       let animMsg = await sock.sendMessage(targetChat, { 
-        text: `*👑 ARCHITECT :* ${animatedText} ▎` 
+        text: `*👑 ARCHITECT :* ${currentProgress} ▎` 
       }, { quoted: msg });
 
+      // ඉතිරි අකුරු එකින් එක edit කිරීම
       for (let i = 1; i < chars.length; i++) {
-        await sleep(280);
-        animatedText += chars[i];
-        const cursor = (i === chars.length - 1) ? ` ${ownerCrown}` : ' ▎';
+        // WhatsApp rate limit එකට හසු නොවීමට 850ms delay එකක් ලබාදෙයි
+        await sleep(850);
+        currentProgress += chars[i];
 
-        await sock.sendMessage(targetChat, { 
-          text: `*👑 ARCHITECT :* ${animatedText}${cursor}`, 
-          edit: animMsg.key 
-        }).catch(() => {});
+        const isLastChar = (i === chars.length - 1);
+        const cursor = isLastChar ? ` ${ownerCrown}` : ' ▎';
+
+        try {
+          await sock.sendMessage(targetChat, { 
+            text: `*👑 ARCHITECT :* ${currentProgress}${cursor}`, 
+            edit: animMsg.key 
+          });
+        } catch (editErr) {
+          // Request එකක් drop වුණොත් තත්පරයක් රැඳී නැවත try කරයි
+          await sleep(1000);
+          await sock.sendMessage(targetChat, { 
+            text: `*👑 ARCHITECT :* ${currentProgress}${cursor}`, 
+            edit: animMsg.key 
+          }).catch(() => {});
+        }
       }
 
-      // 3. High-Tech Glassmorphic Identity Poster Caption
+      await sleep(600);
+
+      // 3. High-Tech Identity Poster Caption
       const profileCaption = `╭─── ⚡ *CORE SYSTEM ARCHITECT* ⚡ ───╮
 │
 ├ 👑 *Developer :* ${ownerName} ${ownerCrown}
@@ -60,7 +76,7 @@ module.exports = {
 ╰──────────────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
 
-      // 4. Photo එක ලබාගැනීම (Local File හෝ Fallback Buffer)
+      // 4. Photo Buffer ලබා ගැනීම
       let imgPayload = null;
       const localPhotoPath = path.join(process.cwd(), 'owner.jpg');
 
@@ -68,12 +84,10 @@ module.exports = {
         imgPayload = fs.readFileSync(localPhotoPath);
       } else {
         try {
-          const res = await fetch('https://files.catbox.moe/qlulrw.jpeg', { timeout: 5000 });
+          const res = await fetch('https://files.catbox.moe/qlulrw.jpeg', { timeout: 6000 });
           if (res.ok) imgPayload = await res.buffer();
         } catch (e) {}
       }
-
-      await sleep(350);
 
       // 5. Photo එක Caption එක සමඟ යැවීම
       if (imgPayload) {
@@ -96,7 +110,7 @@ module.exports = {
         + 'NOTE:Official Founder & Bot Creator\n'
         + 'END:VCARD';
 
-      await sleep(350);
+      await sleep(400);
 
       // 7. Contact Box එක යැවීම
       await sock.sendMessage(targetChat, {
@@ -106,12 +120,13 @@ module.exports = {
         }
       }, { quoted: msg });
 
-      // 8. Crown Reaction
+      // 8. Signature Crown Reaction
       await sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
 
     } catch (err) {
       console.error("Owner Command Error:", err);
-      return sock.sendMessage(targetChat, { text: `❌ *Execution Interrupted:* ${err.message}` }, { quoted: msg });
+      return sock.sendMessage(targetChat, { text: `❌ *Error:* ${err.message}` }, { quoted: msg });
     }
   }
 };
+
