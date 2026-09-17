@@ -88,11 +88,15 @@ module.exports = {
       settings = await SettingsModel.create({ _id: botNumber });
     }
 
-    // Input Resolution (Direct or Reply)
+    // Input Resolution (Direct Command or Reply to Menu)
     const rawMsg = msg.message?.conversation || 
                    msg.message?.extendedTextMessage?.text || 
                    '';
+                   
     let fullInput = (args && args.length > 0 ? args.join(' ') : rawMsg).trim().toLowerCase();
+
+    // Remove command prefixes if present (e.g., '.set 1.1' -> '1.1')
+    fullInput = fullInput.replace(/^[./!#]?(settings|setting|set|config)\s*/i, '').trim();
 
     let isUpdated = false;
 
@@ -118,21 +122,21 @@ module.exports = {
     else if (fullInput === '5.1') { settings.ownerReact = true; isUpdated = true; }
     else if (fullInput === '5.2') { settings.ownerReact = false; isUpdated = true; }
 
-    // 6. FAKE ACTION (TYPING / RECORDING)
+    // 6. FAKE ACTION (TYPING / RECORDING / OFF)
     else if (fullInput === '6.1') { settings.autoPresence = 'typing'; isUpdated = true; }
     else if (fullInput === '6.2') { settings.autoPresence = 'recording'; isUpdated = true; }
     else if (fullInput === '6.3') { settings.autoPresence = 'off'; isUpdated = true; }
 
-    // 7. CHANGE EMOJI (.set 7 🔥)
-    else if (fullInput.startsWith('7') || fullInput.startsWith('set 7')) {
+    // 7. CHANGE EMOJI (.set 7 🔥 or reply '7 🔥')
+    else if (fullInput.startsWith('7')) {
       const parts = fullInput.split(/ +/);
-      const emoji = parts[1] || parts[2];
-      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `7 🔥`)');
+      const emoji = parts[1];
+      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `7 🔥` හෝ `.set 7 🔥`)');
       settings.ownerReactEmoji = emoji;
       isUpdated = true;
     }
 
-    // 8. CHANGE PIN (.set pin 5566)
+    // 8. CHANGE PIN (.set pin 5566 or reply 'pin 5566')
     else if (fullInput.startsWith('pin')) {
       const parts = fullInput.split(/ +/);
       const newPin = parts[1];
