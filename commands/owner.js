@@ -17,53 +17,14 @@ module.exports = {
       : msg.key.remoteJid;
 
     try {
+      // 1. Initial State Reaction
       await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
       const ownerNumber = '94719845166';
       const ownerName = '𝐃𝐈𝐍𝐈𝐃𝐔 𝐇𝐄𝐒𝐇𝐀𝐍';
       const ownerCrown = '🤴';
 
-      const profileCaption = `╭─── ⚡ *CORE SYSTEM ARCHITECT* ⚡ ───╮
-│
-├ 👑 *Developer :* ${ownerName} ${ownerCrown}
-├ 🛡️ *Access    :* Master Root [Level 100]
-├ 📱 *Hotline   :* +${ownerNumber}
-├ 🌐 *Origin    :* Sri Lanka 🇱🇰
-├ ⚙️ *Engine    :* HESHAN-MD Ultra V2
-│
-├─◈ *SYSTEM CREDENTIALS:*
-│  ✦ Status: Full Operational Authority
-│  ✦ Framework: Baileys Core Multi-Engine
-│  ✦ Security: Encrypted Database Vault
-│
-╰──────────────────────────────────────╯
-> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
-
-      // 1. Photo එක local storage එකෙන් හෝ external link එකකින් ආරක්ෂිතව ලබාගැනීම
-      let imgPayload = null;
-      const localPhotoPath = path.join(process.cwd(), 'owner.jpg');
-
-      if (fs.existsSync(localPhotoPath)) {
-        imgPayload = fs.readFileSync(localPhotoPath);
-      } else {
-        // Local file එක නැත්නම් විකල්ප CDN එකකින් Buffer එකක් ලබා ගැනීම
-        try {
-          const res = await fetch('https://files.catbox.moe/qlulrw.jpeg', { timeout: 5000 });
-          if (res.ok) imgPayload = await res.buffer();
-        } catch (e) {}
-      }
-
-      // 2. Photo එක Caption එක සමඟ යැවීම
-      if (imgPayload) {
-        await sock.sendMessage(targetChat, {
-          image: imgPayload,
-          caption: profileCaption
-        }, { quoted: msg });
-      } else {
-        await sock.sendMessage(targetChat, { text: profileCaption }, { quoted: msg });
-      }
-
-      // 3. Typewriter Animation එක
+      // 2. මුලින්ම නම අකුරෙන් අකුර Edit වන Typewriter Animation එක
       const chars = Array.from(ownerName);
       let animatedText = chars[0];
 
@@ -82,7 +43,49 @@ module.exports = {
         }).catch(() => {});
       }
 
-      // 4. Clean Contact Card එක
+      // 3. High-Tech Glassmorphic Identity Poster Caption
+      const profileCaption = `╭─── ⚡ *CORE SYSTEM ARCHITECT* ⚡ ───╮
+│
+├ 👑 *Developer :* ${ownerName} ${ownerCrown}
+├ 🛡️ *Access    :* Master Root [Level 100]
+├ 📱 *Hotline   :* +${ownerNumber}
+├ 🌐 *Origin    :* Sri Lanka 🇱🇰
+├ ⚙️ *Engine    :* HESHAN-MD Ultra V2
+│
+├─◈ *SYSTEM CREDENTIALS:*
+│  ✦ Status: Full Operational Authority
+│  ✦ Framework: Baileys Core Multi-Engine
+│  ✦ Security: Encrypted Database Vault
+│
+╰──────────────────────────────────────╯
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
+
+      // 4. Photo එක ලබාගැනීම (Local File හෝ Fallback Buffer)
+      let imgPayload = null;
+      const localPhotoPath = path.join(process.cwd(), 'owner.jpg');
+
+      if (fs.existsSync(localPhotoPath)) {
+        imgPayload = fs.readFileSync(localPhotoPath);
+      } else {
+        try {
+          const res = await fetch('https://files.catbox.moe/qlulrw.jpeg', { timeout: 5000 });
+          if (res.ok) imgPayload = await res.buffer();
+        } catch (e) {}
+      }
+
+      await sleep(350);
+
+      // 5. Photo එක Caption එක සමඟ යැවීම
+      if (imgPayload) {
+        await sock.sendMessage(targetChat, {
+          image: imgPayload,
+          caption: profileCaption
+        }, { quoted: msg });
+      } else {
+        await sock.sendMessage(targetChat, { text: profileCaption }, { quoted: msg });
+      }
+
+      // 6. Zero-Comma Clean Structured Contact Card
       const vcard = 'BEGIN:VCARD\n'
         + 'VERSION:3.0\n'
         + `FN:${ownerName} ${ownerCrown}\n`
@@ -95,6 +98,7 @@ module.exports = {
 
       await sleep(350);
 
+      // 7. Contact Box එක යැවීම
       await sock.sendMessage(targetChat, {
         contacts: {
           displayName: `${ownerName} ${ownerCrown}`,
@@ -102,6 +106,7 @@ module.exports = {
         }
       }, { quoted: msg });
 
+      // 8. Crown Reaction
       await sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
 
     } catch (err) {
