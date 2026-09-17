@@ -72,23 +72,18 @@ module.exports = {
         }
       }
 
-      let sentMsg = null;
       if (imgBuffer) {
-        sentMsg = await sock.sendMessage(targetChat, {
+        await sock.sendMessage(targetChat, {
           image: imgBuffer,
           caption: mainText
         }, { quoted: msg });
       } else {
-        sentMsg = await sock.sendMessage(targetChat, {
+        await sock.sendMessage(targetChat, {
           image: { url: FALLBACK_LOGO_URL },
           caption: mainText
         }, { quoted: msg });
       }
 
-      const stanzaId = sentMsg?.key?.id;
-      const usedOptions = new Set();
-
-      // Sub-menu definitions (10, 11, 12, 13)
       const subMenus = {
         "10": `┏━━━❮ 📥 *DOWNLOAD MENU* ❯━━━┓
 ┃
@@ -131,29 +126,29 @@ module.exports = {
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
       };
 
-      // 10, 11, 12, 13 Reply Listener
+      // 🟢 Bulletproof Reply Listener
       const replyListener = async (m) => {
         try {
           const replyMsg = m.messages?.[0];
           if (!replyMsg || !replyMsg.message) return;
 
+          // Message එක ආවේ Menu එක දැම්ම chat එකෙන්මද බලනවා
+          const fromChat = replyMsg.key?.remoteJid;
+          if (fromChat !== targetChat) return;
+
           let msgContent = replyMsg.message;
           if (msgContent.ephemeralMessage) msgContent = msgContent.ephemeralMessage.message;
           if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
 
-          const msgContext = msgContent?.extendedTextMessage?.contextInfo;
-          // Menu Message එකටම කරපු reply එකක්දැයි තහවුරු කරගැනීම
-          if (stanzaId && msgContext?.stanzaId !== stanzaId) return;
-
-          let replyText = (
+          const replyText = (
             msgContent.conversation || 
             msgContent.extendedTextMessage?.text || 
             ""
           ).trim().replace(/[\[\]]/g, '');
 
+          // 10, 11, 12, 13 ආවොත් කෙලින්ම Submenu එක යවනවා
           if (["10", "11", "12", "13"].includes(replyText)) {
-            if (usedOptions.has(replyText)) return;
-            usedOptions.add(replyText);
+            sock.ev.off('messages.upsert', replyListener); // තවත් listen නොවී ඉවත් කරයි
 
             const emojis = { "10": "📥", "11": "🛠️", "12": "👥", "13": "⚡" };
             await sock.sendMessage(targetChat, { react: { text: emojis[replyText], key: replyMsg.key } }).catch(() => {});
@@ -169,9 +164,10 @@ module.exports = {
 
       sock.ev.on('messages.upsert', replyListener);
 
+      // තත්පර 60කින් listener එක close වෙයි
       setTimeout(() => {
         sock.ev.off('messages.upsert', replyListener);
-      }, 90000);
+      }, 60000);
 
     } catch (err) {
       console.error('Error in menu command:', err.message);
