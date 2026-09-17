@@ -1,4 +1,5 @@
 // commands/owner.js
+const fetch = require('node-fetch');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -22,7 +23,7 @@ module.exports = {
       const ownerName = '𝐃𝐈𝐍𝐈𝐃𝐔 𝐇𝐄𝐒𝐇𝐀𝐍';
       const ownerCrown = '🤴';
 
-      // 2. High-Tech Glassmorphic Identity Poster
+      // 2. High-Tech Glassmorphic Identity Poster Caption
       const profileCaption = `╭─── ⚡ *CORE SYSTEM ARCHITECT* ⚡ ───╮
 │
 ├ 👑 *Developer :* ${ownerName} ${ownerCrown}
@@ -39,13 +40,28 @@ module.exports = {
 ╰──────────────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
 
-      await sock.sendMessage(targetChat, {
-        image: { url: ownerPhotoUrl },
-        caption: profileCaption
-      }, { quoted: msg });
+      // 3. Photo එක Download කර ආරක්ෂිතව යැවීම (ECONNREFUSED වැළැක්වීමේ fallback එක සහිතයි)
+      let photoSent = false;
+      try {
+        const res = await fetch(ownerPhotoUrl, { timeout: 8000 });
+        if (res.ok) {
+          const imgBuffer = await res.buffer();
+          await sock.sendMessage(targetChat, {
+            image: imgBuffer,
+            caption: profileCaption
+          }, { quoted: msg });
+          photoSent = true;
+        }
+      } catch (e) {
+        console.error('Image fetch error, falling back to direct url or text:', e.message);
+      }
 
-      // 3. Ultra-Smooth Typewriter Animation (Rate-limit safe & No comma artifact)
-      // Array.from() මගින් bold unicode glyphs කැඩී යාම වළක්වයි
+      // Image server එක down නම් text විතරක් යවයි (command එක crash නොවී run වේ)
+      if (!photoSent) {
+        await sock.sendMessage(targetChat, { text: profileCaption }, { quoted: msg });
+      }
+
+      // 4. Ultra-Smooth Typewriter Animation (Crash Proof)
       const chars = Array.from(ownerName);
       let animatedText = chars[0];
 
@@ -53,9 +69,8 @@ module.exports = {
         text: `*👑 ARCHITECT :* ${animatedText} ▎` 
       }, { quoted: msg });
 
-      // අකුරෙන් අකුර edit වන smooth transition එක
       for (let i = 1; i < chars.length; i++) {
-        await sleep(300);
+        await sleep(280);
         animatedText += chars[i];
         const cursor = (i === chars.length - 1) ? ` ${ownerCrown}` : ' ▎';
 
@@ -65,8 +80,7 @@ module.exports = {
         }).catch(() => {});
       }
 
-      // 4. Clean Structured Contact Card (Zero Comma Display)
-      // N: සහ FN: දෙකම semicolons මගින් split කර Single Full Name එකක් ලෙස සකසා ඇත
+      // 5. Clean Structured Contact Card (Zero-Comma Structured format)
       const vcard = 'BEGIN:VCARD\n'
         + 'VERSION:3.0\n'
         + `FN:${ownerName} ${ownerCrown}\n`
@@ -79,7 +93,7 @@ module.exports = {
 
       await sleep(350);
 
-      // 5. Contact Box එක යැවීම
+      // Contact Box එක යැවීම
       await sock.sendMessage(targetChat, {
         contacts: {
           displayName: `${ownerName} ${ownerCrown}`,
@@ -87,7 +101,7 @@ module.exports = {
         }
       }, { quoted: msg });
 
-      // 6. Signature Crown Reaction
+      // 6. Crown Reaction
       await sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
 
     } catch (err) {
@@ -96,4 +110,3 @@ module.exports = {
     }
   }
 };
-
