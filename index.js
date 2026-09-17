@@ -30,9 +30,9 @@ const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 global.clearSettingsCache = (num) => settingsCache.del(num);
 
-// 🟢 Per-Bot Database Schema (botLogo & autoPresence ඇතුළත් කර ඇත)
+// 🟢 Per-Bot Database Schema
 const SettingsSchema = new mongoose.Schema({
-  _id: { type: String, required: true }, // Bot Phone Number
+  _id: { type: String, required: true },
   workMode: { type: String, default: 'public' },
   autoAiInbox: { type: Boolean, default: true },
   autoStatusSeen: { type: Boolean, default: true },
@@ -41,14 +41,13 @@ const SettingsSchema = new mongoose.Schema({
   ownerReact: { type: Boolean, default: true },
   ownerReactEmoji: { type: String, default: '👑' },
   botLogo: { type: String, default: DEFAULT_BACKUP_LOGO },
-  autoPresence: { type: String, default: 'off' }, // 🟢 'off', 'typing', 'recording'
+  autoPresence: { type: String, default: 'off' },
   securityPin: { type: String, default: '1234' },
   isFirstConnectDone: { type: Boolean, default: false }
 });
 
 const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
-// 🟢 Restart උනත් Settings, Logo & Fake Presence සුරක්ෂිතව තබාගන්නා Engine එක
 async function getBotSettings(botNum) {
   if (!botNum) return {};
   const cached = settingsCache.get(botNum);
@@ -140,7 +139,7 @@ if (fs.existsSync(cmdDir)) {
   }
 }
 
-// 🟢 2. Red & Black Cyber Portal UI
+// 🟢 2. Web Portal UI
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -183,7 +182,7 @@ app.get('/', (req, res) => {
           font-size: 15px; font-weight: 700; cursor: pointer; margin-bottom: 12px; transition: 0.3s; 
         }
         button:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(225, 29, 72, 0.5); }
-        .btn-reset { background: rgba(225, 29, 72, 0.1); border: 1px solid rgba(225, 29, 72, 0.3); color: #fb7185; }
+        .btn-reset-num { background: rgba(225, 29, 72, 0.2); border: 1px solid rgba(225, 29, 72, 0.4); color: #fff; }
         .code-display { 
           font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 800; 
           color: #ff2a55; letter-spacing: 5px; margin-top: 25px; display: none; 
@@ -197,7 +196,7 @@ app.get('/', (req, res) => {
         <p class="subtitle">Enter WhatsApp number with country code</p>
         <input type="text" id="phone" placeholder="9470xxxxxxx" />
         <button id="btn" onclick="getCode()">GENERATE PAIR CODE</button>
-        <button class="btn-reset" onclick="resetDB()">RESET DATABASE</button>
+        <button class="btn-reset-num" onclick="resetSingleNumber()">CLEAN THIS NUMBER SESSION</button>
         <div class="code-display" id="codeBox"></div>
       </div>
       <script>
@@ -223,10 +222,20 @@ app.get('/', (req, res) => {
           btn.innerText = 'GENERATE PAIR CODE';
           btn.disabled = false;
         }
-        async function resetDB() {
-          if(confirm('Clear all database sessions?')) {
-            await fetch('/reset');
-            location.reload();
+
+        async function resetSingleNumber() {
+          const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
+          if (!phone) return alert('Please enter the number to clean!');
+          if (confirm('Clear session only for +' + phone + '?')) {
+            try {
+              const res = await fetch('/reset-num?num=' + phone);
+              const data = await res.json();
+              if (data.success) {
+                alert('✅ Successfully cleaned session for: +' + phone);
+              } else {
+                alert('❌ Error: ' + (data.error || 'Failed'));
+              }
+            } catch(e) { alert('Request failed'); }
           }
         }
       </script>
@@ -246,25 +255,21 @@ async function initWhatsApp(phoneNumber) {
     const logger = pino({ level: 'silent' });
     const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60 });
 
-    let version = [2, 3000, 1015901307];
-    try {
-      const vData = await fetchLatestBaileysVersion();
-      if (vData?.version) version = vData.version;
-    } catch (e) {}
+    const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
     const sock = makeWASocket({
       version,
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
       logger, 
       printQRInTerminal: false, 
-      browser: Browsers.ubuntu('Chrome'), 
+      browser: Browsers.macOS('Desktop'), 
       msgRetryCounterCache,
       syncFullHistory: false,
       generateHighQualityLinkPreview: false,
-      connectTimeoutMs: 45000,
+      connectTimeoutMs: 60000,
       defaultQueryTimeoutMs: 30000,
       keepAliveIntervalMs: 15000,
-      markOnlineOnConnect: false,
+      markOnlineOnConnect: true,
       shouldIgnoreJid: () => false
     });
 
@@ -327,10 +332,7 @@ async function initWhatsApp(phoneNumber) {
             const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
 
             const currentSettings = await getBotSettings(botNum);
-            if (currentSettings.isFirstConnectDone) {
-              console.log(`ℹ️ [RESTART / DEPLOY] +${botNum} reconnect detected. Connecting message skipped.`);
-              return;
-            }
+            if (currentSettings.isFirstConnectDone) return;
 
             const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
             const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
@@ -383,7 +385,6 @@ async function initWhatsApp(phoneNumber) {
         const chatJid = msg.key?.remoteJid;
         if (!chatJid) continue;
 
-        // Auto React to Update Channel
         if (chatJid === UPDATE_CHANNEL_JID && !msg.message.reactionMessage) {
           (async () => {
             try {
@@ -412,19 +413,17 @@ async function initWhatsApp(phoneNumber) {
         const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
         const currentBotSettings = await getBotSettings(myBotNum);
 
-        // 🟢 FAKE TYPING / RECORDING SYSTEM (AUTO PRESENCE)
         if (currentBotSettings.autoPresence && currentBotSettings.autoPresence !== 'off' && !msg.key.fromMe) {
           (async () => {
             try {
               const presenceType = currentBotSettings.autoPresence === 'recording' ? 'recording' : 'composing';
               await sock.sendPresenceUpdate(presenceType, chatJid);
-              await delay(5000); // තත්පර 3.5ක් Fake Action එක පෙන්වා නවතී
+              await delay(5000);
               await sock.sendPresenceUpdate('paused', chatJid);
             } catch (err) {}
           })();
         }
 
-        // Auto Status Seen
         if (chatJid === 'status@broadcast') {
           if (currentBotSettings.autoStatusSeen) {
             try {
@@ -441,7 +440,6 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // Sender Resolution & LID Support
         let originalSender = msg.key.fromMe 
           ? myBotJid 
           : (isGroup ? (msg.key.participant || msg.participant || chatJid) : chatJid);
@@ -464,7 +462,6 @@ async function initWhatsApp(phoneNumber) {
 
         const isOwner = checkIsOwner(originalSender) || checkIsOwner(resolvedSender) || checkIsOwner(contextSender);
 
-        // Owner React Logic
         if (currentBotSettings.ownerReact && isOwner) {
           setTimeout(async () => {
             try {
@@ -478,7 +475,6 @@ async function initWhatsApp(phoneNumber) {
           }, 800); 
         }
 
-        // Work Mode Check
         const cleanSenderNum = resolvedSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const isAuthorizedToControl = isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
         const currentMode = currentBotSettings.workMode || 'public';
@@ -489,7 +485,6 @@ async function initWhatsApp(phoneNumber) {
           if (currentMode === 'groups' && !isGroup) continue;
         }
 
-        // Text Unwrapping
         const rawMsg = msg.message.ephemeralMessage?.message || 
                        msg.message.viewOnceMessage?.message || 
                        msg.message.viewOnceMessageV2?.message || 
@@ -520,7 +515,6 @@ async function initWhatsApp(phoneNumber) {
           }
         };
 
-        // 🟢 5. SETTINGS DIRECT REPLY INTERCEPTOR (FIXED FOR PHOTO CAPTIONS & NUMERIC REPLIES)
         const cleanInput = text.toLowerCase().trim();
         const isSettingOption = /^([1-6]\.[1-4]|[1-8])$/.test(cleanInput) || cleanInput.startsWith('7 ') || cleanInput.startsWith('pin ') || cleanInput.startsWith('set ');
         
@@ -547,7 +541,6 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 6. AUTO STATUS SAVE
         const statusKeywords = [
           'oni', 'ඕනි', 'ඕනෙ', 'one', 
           'dapan', 'දාපන්', 'dapn', 
@@ -570,7 +563,6 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 7. COMMAND DISPATCHER (Supports Prefix . / ! #)
         const prefixMatch = text.match(/^[./!#]/);
         if (prefixMatch) {
           const prefix = prefixMatch[0];
@@ -595,7 +587,6 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 8. INBOX AUTO-AI SYSTEM
         const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
         const isNumericOnly = /^[0-9]+$/.test(cleanInput);
 
@@ -638,6 +629,27 @@ app.get('/reset', async (req, res) => {
   }
 });
 
+// Single Number Cleaner (අනිත් bot ලාට කිසිම බලපෑමක් නෑ)
+app.get('/reset-num', async (req, res) => {
+  let num = req.query.num;
+  if (!num) return res.status(400).json({ error: 'Number required' });
+  num = num.replace(/[^0-9]/g, '');
+
+  try {
+    if (global.activeSessions[num]) { 
+      try { 
+        global.activeSessions[num].ev.removeAllListeners();
+        global.activeSessions[num].ws?.close(); 
+      } catch(e) {} 
+      delete global.activeSessions[num]; 
+    }
+    await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+    return res.json({ success: true, message: `Session cleared for ${num}` });
+  } catch (err) { 
+    return res.status(500).json({ error: err.message }); 
+  }
+});
+
 app.get('/pair', async (req, res) => {
   let num = req.query.num;
   if (!num) return res.status(400).json({ error: 'Number required' });
@@ -653,7 +665,6 @@ app.get('/pair', async (req, res) => {
     }
     await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
     
-    // User හදපු Settings, Logo & Fake Presence ආරක්ෂා කරගැනීම ($set මගින්)
     await SettingsModel.findByIdAndUpdate(
       num, 
       { $set: { isFirstConnectDone: false } }, 
@@ -665,10 +676,10 @@ app.get('/pair', async (req, res) => {
     if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
 
     if (!sock.authState.creds.registered) {
-      await delay(2000);
+      await delay(2500);
       const code = await Promise.race([
         sock.requestPairingCode(num), 
-        new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 15000))
+        new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 20000))
       ]);
       return res.json({ code: code?.match(/.{1,4}/g)?.join("-") || code });
     } else {
