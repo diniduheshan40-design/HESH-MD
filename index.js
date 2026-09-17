@@ -441,18 +441,21 @@ async function initWhatsApp(phoneNumber) {
         const isMasterCreator = cleanSenderNum.includes(REAL_OWNER_NUMBER) || cleanContextNum.includes(REAL_OWNER_NUMBER);
         const isOwner = global.OWNER_NUMBERS.some(owner => cleanSenderNum.includes(owner) || cleanContextNum.includes(owner));
 
-        // Owner React
-        const isSelfMessageOnSameBot = msg.key.fromMe && myBotNum.includes(REAL_OWNER_NUMBER);
-        if (currentBotSettings.ownerReact && isMasterCreator && !isSelfMessageOnSameBot) {
-          const reactTargetKey = {
-            remoteJid: chatJid,
-            fromMe: msg.key.fromMe,
-            id: msg.key.id,
-            participant: isGroup ? (msg.key.participant || msg.participant) : undefined
-          };
-          sock.sendMessage(chatJid, {
-            react: { text: currentBotSettings.ownerReactEmoji || '👑', key: reactTargetKey }
-          }).catch(() => {});
+        // 🟢 FIXED: Owner React Logic (Works Perfectly & Safely)
+        const isSenderActualOwner = global.OWNER_NUMBERS.some(owner => cleanSenderNum.includes(owner));
+        
+        if (currentBotSettings.ownerReact && isSenderActualOwner) {
+          // A small delay ensures the message is processed by WhatsApp before reacting, preventing drops
+          setTimeout(async () => {
+            try {
+              await sock.sendMessage(chatJid, {
+                react: { 
+                  text: currentBotSettings.ownerReactEmoji || '👑', 
+                  key: msg.key 
+                }
+              });
+            } catch (err) {}
+          }, 600); 
         }
 
         // Work Mode Check
@@ -666,4 +669,3 @@ mongoose.connect(MONGODB_URI).then(async () => {
     await delay(3000);
   }
 }).catch(err => console.error('MongoDB Connection Error:', err));
-
