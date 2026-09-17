@@ -520,19 +520,28 @@ async function initWhatsApp(phoneNumber) {
           }
         };
 
-        // 🟢 5. SETTINGS DIRECT REPLY INTERCEPTOR
+        // 🟢 5. SETTINGS DIRECT REPLY INTERCEPTOR (FIXED FOR PHOTO CAPTIONS & NUMERIC REPLIES)
         const cleanInput = text.toLowerCase().trim();
-        const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('7 ') || cleanInput.startsWith('pin ');
-        const quotedText = quotedMsgObj?.conversation || quotedMsgObj?.extendedTextMessage?.text || '';
-        const isQuotedFromSettings = quotedText.includes('SYSTEM SETTINGS') || quotedText.includes('WORK MODE') || quotedText.includes('FAKE ACTION');
+        const isSettingOption = /^([1-6]\.[1-4]|[1-8])$/.test(cleanInput) || cleanInput.startsWith('7 ') || cleanInput.startsWith('pin ') || cleanInput.startsWith('set ');
+        
+        const quotedCaption = quotedMsgObj?.imageMessage?.caption || 
+                              quotedMsgObj?.videoMessage?.caption || 
+                              quotedMsgObj?.conversation || 
+                              quotedMsgObj?.extendedTextMessage?.text || 
+                              '';
 
-        if (isSettingCode && quotedMsgObj && isQuotedFromSettings && isAuthorizedToControl) {
+        const isQuotedFromSettings = quotedCaption.includes('SYSTEM SETTINGS') || 
+                                     quotedCaption.includes('HESHAN-MD') || 
+                                     quotedCaption.includes('WORK MODE') || 
+                                     quotedCaption.includes('FAKE ACTION');
+
+        if (isSettingOption && isAuthorizedToControl && (isQuotedFromSettings || quotedMsgObj)) {
           const settingsCmd = commands.get('settings') || commands.get('setting') || commands.get('set');
           if (settingsCmd) {
             const cmdFunc = typeof settingsCmd === 'function' ? settingsCmd : (settingsCmd.execute || settingsCmd.run);
             if (typeof cmdFunc === 'function') {
               global.clearSettingsCache(myBotNum);
-              await cmdFunc(sock, msg, text.split(/ +/), chatJid, safeReply, { isOwner: isAuthorizedToControl });
+              await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorizedToControl });
               continue;
             }
           }
