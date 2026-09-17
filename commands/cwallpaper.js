@@ -2,25 +2,21 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const { generateWAMessageContent, generateWAMessageFromContent } = require('@whiskeysockets/baileys');
 
 const CONFIG_PATH = path.join(__dirname, '../temp/channel_config.json');
 const API_KEY = 'supun-tvo5olfxylo98b8l6b9lq174';
 
-// Backup 4K Wallpaper Sources (API එක හිස් උනොත් Fail නොවී යැවීම සඳහා)
 const BACKUP_WALLPAPERS = [
     'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80',
     'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?w=1920&q=80',
     'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=1920&q=80',
     'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1920&q=80',
-    'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1920&q=80',
-    'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=1920&q=80',
-    'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=1920&q=80',
-    'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1920&q=80'
+    'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1920&q=80'
 ];
 
 let autoInterval = null;
 
-// Channel Config එක Load කිරීම
 function loadConfig() {
     try {
         if (fs.existsSync(CONFIG_PATH)) {
@@ -30,18 +26,14 @@ function loadConfig() {
     return { targetChannel: null };
 }
 
-// Channel Config එක Save කිරීම
 function saveConfig(data) {
     try {
         const dir = path.dirname(CONFIG_PATH);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2));
-    } catch (e) {
-        console.error('Config Save Error:', e.message);
-    }
+    } catch (e) {}
 }
 
-// Wallpaper API එකෙන් URL එකක් ගැනීම
 async function fetchWallpaperUrl() {
     try {
         const randomPage = Math.floor(Math.random() * 8) + 1;
@@ -52,16 +44,11 @@ async function fetchWallpaperUrl() {
             if (url) return url;
         }
     } catch (e) {}
-
-    // Supun API එකේ data නැතිනම් Backup Array එකෙන් එකක් තෝරා ගැනීම
     return BACKUP_WALLPAPERS[Math.floor(Math.random() * BACKUP_WALLPAPERS.length)];
 }
 
-// Wallpaper එක Channel එකට Post කිරීම
-async function postToChannel(sock) {
-    const config = loadConfig();
-    if (!config.targetChannel) return;
-
+// 🟢 WhatsApp Newsletter Protocol එක හරහා Post කරන නියම Function එක
+async function sendToNewsletter(sock, channelJid) {
     try {
         const imgUrl = await fetchWallpaperUrl();
         const caption = `┏━━━〔 🖼️ 𝟰𝗞 𝗪𝗔𝗟𝗟𝗣𝗔𝗣𝗘𝗥 〕━━━┓\n` +
@@ -72,30 +59,45 @@ async function postToChannel(sock) {
                         `┗━━━━━━━━━━━━━━━━━━━━━━┛\n` +
                         `> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
 
-        // Direct Buffer එකක් ලෙස download කර යැවීම (Block නොවී සාර්ථකව Send වීමට)
+        // 1. Image එක Buffer එකක් ලෙස ගැනීම
         const response = await axios.get(imgUrl, { responseType: 'arraybuffer', timeout: 20000 });
+        const imgBuffer = Buffer.from(response.data);
 
-        await sock.sendMessage(config.targetChannel, {
-            image: Buffer.from(response.data),
+        // 2. Newsletter Media Node එක සෑදීම
+        const mediaContent = await generateWAMessageContent({
+            image: imgBuffer,
             caption: caption
+        }, { upload: sock.waUploadToServer });
+
+        const newsletterMsg = generateWAMessageFromContent(channelJid, {
+            imageMessage: mediaContent.imageMessage
+        }, {});
+
+        // 3. RelayMessage හරහා Newsletter එකට යැවීම
+        await sock.relayMessage(channelJid, newsletterMsg.message, {
+            messageId: newsletterMsg.key.id
         });
 
-        console.log(`✅ [AUTO-WALLPAPER] Successfully posted to ${config.targetChannel}`);
+        console.log(`✅ [NEWSLETTER] Posted image successfully to: ${channelJid}`);
+        return { success: true };
     } catch (err) {
-        console.error('❌ [AUTO-WALLPAPER] Post Error:', err.message);
+        console.error(`❌ [NEWSLETTER-ERROR]:`, err);
+        return { success: false, error: err.message };
     }
 }
 
-// Auto Task එක පටන් ගැනීම
 function startAutoPosting(sock) {
     if (autoInterval) clearInterval(autoInterval);
 
-    // පටන් ගත් සැනින් පළමු පින්තූරය යැවීම
-    postToChannel(sock);
+    const config = loadConfig();
+    if (!config.targetChannel) return;
 
-    // සෑම විනාඩි 5කට වරක් (5 * 60 * 1000)
-    autoInterval = setInterval(() => {
-        postToChannel(sock);
+    // විනාඩි 5න් 5ට
+    autoInterval = setInterval(async () => {
+        const currentCfg = loadConfig();
+        if (currentCfg.targetChannel) {
+            await sendToNewsletter(sock, currentCfg.targetChannel);
+        }
     }, 5 * 60 * 1000);
 }
 
@@ -103,13 +105,13 @@ module.exports = {
     name: 'setchannel',
     alias: ['autowp', 'wallchannel'],
     category: 'admin',
-    desc: 'Set channel JID for auto wallpaper posting every 5 minutes',
+    desc: 'Set channel JID for auto wallpaper posting',
 
     async execute(sock, msg, args, chatJid) {
         const targetChat = chatJid || msg.key.remoteJid;
         const input = args[0] ? args[0].trim() : '';
 
-        // 1. Auto Post නැවැත්වීමට
+        // Stop කිරීම
         if (input.toLowerCase() === 'stop' || input.toLowerCase() === 'off') {
             if (autoInterval) {
                 clearInterval(autoInterval);
@@ -121,30 +123,36 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        // 2. Channel JID එක Validation කිරීම
+        // Validation
         if (!input || !input.includes('@newsletter')) {
             const config = loadConfig();
             return await sock.sendMessage(targetChat, {
-                text: `⚠️ *කරුණාකර නිවැරදි Channel JID එකක් ඇතුළත් කරන්න!*\n\n` +
-                      `📌 *භාවිතය:*\n` +
-                      `• .setchannel 120363420419246945@newsletter\n` +
-                      `• .setchannel stop _(Auto post නැවැත්වීමට)_\n\n` +
-                      `⚙️ *දැනට Set කර ඇති Channel:* ${config.targetChannel || 'නැත'}`
+                text: `⚠️ *කරුණාකර Channel JID එක ලබා දෙන්න!*\n\n` +
+                      `📌 *උදාහරණ:*\n• .setchannel 120363420419246945@newsletter\n` +
+                      `• .setchannel stop\n\n` +
+                      `⚙️ *දැනට ඇති Channel:* ${config.targetChannel || 'නැත'}`
             }, { quoted: msg });
         }
 
-        // 3. JID එක Save කර Task එක ආරම්භ කිරීම
-        saveConfig({ targetChannel: input });
-
-        await sock.sendMessage(targetChat, {
-            text: `✅ *Auto Wallpaper Channel සාර්ථකව සකසන ලදී!*\n\n` +
-                  `📢 *Channel JID:* ${input}\n` +
-                  `⏱️ *කාල පරතරය:* සෑම විනාඩි 5කට වරක්\n\n` +
-                  `> ⚡ පළමු Wallpaper එක දැන් Channel එකට යවනු ලැබේ...`
+        // Channel එකට Test Post එකක් යවලා බැලීම
+        await sock.sendMessage(targetChat, { 
+            text: `⏳ *Channel එකට සම්බන්ධ වෙමින් පවතී...*\nපළමු පින්තූරය යවමින් පරීක්ෂා කෙරේ.` 
         }, { quoted: msg });
 
-        // Auto posting ආරම්භ කිරීම
-        startAutoPosting(sock);
+        const testResult = await sendToNewsletter(sock, input);
+
+        if (testResult.success) {
+            saveConfig({ targetChannel: input });
+            startAutoPosting(sock);
+
+            await sock.sendMessage(targetChat, {
+                text: `✅ *සාර්ථකයි! පළමු පින්තූරය Channel එකට Post විය.*\n\n📢 *Channel:* ${input}\n⏱️ *කාලය:* සෑම විනාඩි 5කට වරක් ස්වයංක්‍රීයව පින්තූර වැටෙනු ඇත.`
+            }, { quoted: msg });
+        } else {
+            await sock.sendMessage(targetChat, {
+                text: `❌ *Channel එකට Post කිරීමට නොහැකි විය!*\n\n*හේතුව:* ${testResult.error}\n\n⚠️ *විසඳුම:* මෙම බොට් අංකය අදාළ Channel එකේ Admin කෙනෙක් බවට පත් කර ඇත්දැයි නැවත තහවුරු කරගන්න!`
+            }, { quoted: msg });
+        }
     }
 };
 
