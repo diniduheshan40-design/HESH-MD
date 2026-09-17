@@ -1,4 +1,6 @@
 // commands/owner.js
+const fs = require('fs');
+const path = require('path');
 const fetch = require('node-fetch');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -15,15 +17,12 @@ module.exports = {
       : msg.key.remoteJid;
 
     try {
-      // 1. Initial State Reaction
       await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
       const ownerNumber = '94719845166';
-      const ownerPhotoUrl = 'https://files.catbox.moe/qlulrw.jpeg';
       const ownerName = '𝐃𝐈𝐍𝐈𝐃𝐔 𝐇𝐄𝐒𝐇𝐀𝐍';
       const ownerCrown = '🤴';
 
-      // 2. High-Tech Glassmorphic Identity Poster Caption
       const profileCaption = `╭─── ⚡ *CORE SYSTEM ARCHITECT* ⚡ ───╮
 │
 ├ 👑 *Developer :* ${ownerName} ${ownerCrown}
@@ -40,28 +39,31 @@ module.exports = {
 ╰──────────────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
 
-      // 3. Photo එක Download කර ආරක්ෂිතව යැවීම (ECONNREFUSED වැළැක්වීමේ fallback එක සහිතයි)
-      let photoSent = false;
-      try {
-        const res = await fetch(ownerPhotoUrl, { timeout: 8000 });
-        if (res.ok) {
-          const imgBuffer = await res.buffer();
-          await sock.sendMessage(targetChat, {
-            image: imgBuffer,
-            caption: profileCaption
-          }, { quoted: msg });
-          photoSent = true;
-        }
-      } catch (e) {
-        console.error('Image fetch error, falling back to direct url or text:', e.message);
+      // 1. Photo එක local storage එකෙන් හෝ external link එකකින් ආරක්ෂිතව ලබාගැනීම
+      let imgPayload = null;
+      const localPhotoPath = path.join(process.cwd(), 'owner.jpg');
+
+      if (fs.existsSync(localPhotoPath)) {
+        imgPayload = fs.readFileSync(localPhotoPath);
+      } else {
+        // Local file එක නැත්නම් විකල්ප CDN එකකින් Buffer එකක් ලබා ගැනීම
+        try {
+          const res = await fetch('https://files.catbox.moe/qlulrw.jpeg', { timeout: 5000 });
+          if (res.ok) imgPayload = await res.buffer();
+        } catch (e) {}
       }
 
-      // Image server එක down නම් text විතරක් යවයි (command එක crash නොවී run වේ)
-      if (!photoSent) {
+      // 2. Photo එක Caption එක සමඟ යැවීම
+      if (imgPayload) {
+        await sock.sendMessage(targetChat, {
+          image: imgPayload,
+          caption: profileCaption
+        }, { quoted: msg });
+      } else {
         await sock.sendMessage(targetChat, { text: profileCaption }, { quoted: msg });
       }
 
-      // 4. Ultra-Smooth Typewriter Animation (Crash Proof)
+      // 3. Typewriter Animation එක
       const chars = Array.from(ownerName);
       let animatedText = chars[0];
 
@@ -80,7 +82,7 @@ module.exports = {
         }).catch(() => {});
       }
 
-      // 5. Clean Structured Contact Card (Zero-Comma Structured format)
+      // 4. Clean Contact Card එක
       const vcard = 'BEGIN:VCARD\n'
         + 'VERSION:3.0\n'
         + `FN:${ownerName} ${ownerCrown}\n`
@@ -93,7 +95,6 @@ module.exports = {
 
       await sleep(350);
 
-      // Contact Box එක යැවීම
       await sock.sendMessage(targetChat, {
         contacts: {
           displayName: `${ownerName} ${ownerCrown}`,
@@ -101,7 +102,6 @@ module.exports = {
         }
       }, { quoted: msg });
 
-      // 6. Crown Reaction
       await sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
 
     } catch (err) {
