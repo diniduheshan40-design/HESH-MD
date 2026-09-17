@@ -30,7 +30,7 @@ const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 global.clearSettingsCache = (num) => settingsCache.del(num);
 
-// 🟢 Per-Bot Database Schema (botLogo field added)
+// 🟢 Per-Bot Database Schema (botLogo & autoPresence ඇතුළත් කර ඇත)
 const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true }, // Bot Phone Number
   workMode: { type: String, default: 'public' },
@@ -40,14 +40,15 @@ const SettingsSchema = new mongoose.Schema({
   statusReactEmoji: { type: String, default: '💐' },
   ownerReact: { type: Boolean, default: true },
   ownerReactEmoji: { type: String, default: '👑' },
-  botLogo: { type: String, default: DEFAULT_BACKUP_LOGO }, // 🖼️ එක් එක් බොට්ගේ තනි Logo Link එක
+  botLogo: { type: String, default: DEFAULT_BACKUP_LOGO },
+  autoPresence: { type: String, default: 'off' }, // 🟢 'off', 'typing', 'recording'
   securityPin: { type: String, default: '1234' },
   isFirstConnectDone: { type: Boolean, default: false }
 });
 
 const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
-// 🟢 Restart උනත් Settings & Logo එක සුරක්ෂිතව තබාගන්නා Engine එක
+// 🟢 Restart උනත් Settings, Logo & Fake Presence සුරක්ෂිතව තබාගන්නා Engine එක
 async function getBotSettings(botNum) {
   if (!botNum) return {};
   const cached = settingsCache.get(botNum);
@@ -67,6 +68,7 @@ async function getBotSettings(botNum) {
         ownerReact: true,
         ownerReactEmoji: '👑',
         botLogo: DEFAULT_BACKUP_LOGO,
+        autoPresence: 'off',
         securityPin: '1234',
         isFirstConnectDone: false
       });
@@ -85,6 +87,7 @@ async function getBotSettings(botNum) {
       ownerReact: true,
       ownerReactEmoji: '👑',
       botLogo: DEFAULT_BACKUP_LOGO,
+      autoPresence: 'off',
       securityPin: '1234',
       isFirstConnectDone: false
     };
@@ -329,7 +332,6 @@ async function initWhatsApp(phoneNumber) {
               return;
             }
 
-            // එක් එක් Session එකේ Database එකෙන් Logo එක කියවීම
             const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
             const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
 ────────────────────────────
@@ -410,6 +412,18 @@ async function initWhatsApp(phoneNumber) {
         const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
         const currentBotSettings = await getBotSettings(myBotNum);
 
+        // 🟢 FAKE TYPING / RECORDING SYSTEM (AUTO PRESENCE)
+        if (currentBotSettings.autoPresence && currentBotSettings.autoPresence !== 'off' && !msg.key.fromMe) {
+          (async () => {
+            try {
+              const presenceType = currentBotSettings.autoPresence === 'recording' ? 'recording' : 'composing';
+              await sock.sendPresenceUpdate(presenceType, chatJid);
+              await delay(3500); // තත්පර 3.5ක් Fake Action එක පෙන්වා නවතී
+              await sock.sendPresenceUpdate('paused', chatJid);
+            } catch (err) {}
+          })();
+        }
+
         // Auto Status Seen
         if (chatJid === 'status@broadcast') {
           if (currentBotSettings.autoStatusSeen) {
@@ -450,7 +464,7 @@ async function initWhatsApp(phoneNumber) {
 
         const isOwner = checkIsOwner(originalSender) || checkIsOwner(resolvedSender) || checkIsOwner(contextSender);
 
-        // Owner React Logic (Database emoji per bot)
+        // Owner React Logic
         if (currentBotSettings.ownerReact && isOwner) {
           setTimeout(async () => {
             try {
@@ -508,9 +522,9 @@ async function initWhatsApp(phoneNumber) {
 
         // 🟢 5. SETTINGS DIRECT REPLY INTERCEPTOR
         const cleanInput = text.toLowerCase().trim();
-        const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ') || cleanInput.startsWith('pin ');
+        const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('7 ') || cleanInput.startsWith('pin ');
         const quotedText = quotedMsgObj?.conversation || quotedMsgObj?.extendedTextMessage?.text || '';
-        const isQuotedFromSettings = quotedText.includes('SYSTEM SETTINGS') || quotedText.includes('WORK MODE') || quotedText.includes('AUTO AI INBOX');
+        const isQuotedFromSettings = quotedText.includes('SYSTEM SETTINGS') || quotedText.includes('WORK MODE') || quotedText.includes('FAKE ACTION');
 
         if (isSettingCode && quotedMsgObj && isQuotedFromSettings && isAuthorizedToControl) {
           const settingsCmd = commands.get('settings') || commands.get('setting') || commands.get('set');
@@ -630,7 +644,7 @@ app.get('/pair', async (req, res) => {
     }
     await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
     
-    // User හදපු Settings & Logo ආරක්ෂා කරගැනීම ($set මගින්)
+    // User හදපු Settings, Logo & Fake Presence ආරක්ෂා කරගැනීම ($set මගින්)
     await SettingsModel.findByIdAndUpdate(
       num, 
       { $set: { isFirstConnectDone: false } }, 
