@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-// 🟢 Per-Bot MongoDB Schema
+// Per-Bot MongoDB Schema
 const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   workMode: { type: String, default: 'public' },
@@ -10,14 +10,14 @@ const SettingsSchema = new mongoose.Schema({
   statusReactEmoji: { type: String, default: '💐' },
   ownerReact: { type: Boolean, default: true },
   ownerReactEmoji: { type: String, default: '👑' },
-  securityPin: { type: String, default: '1234' }
+  securityPin: { type: String, default: '1234' },
+  isFirstConnectDone: { type: Boolean, default: false }
 });
 
 const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// 🟢 Visual Progress Bar Animation
 async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
   try {
     const loadingFrames = [
@@ -52,9 +52,10 @@ module.exports = {
       return await safeReply('⛔ *Access Denied!* Only Owner can modify settings.');
     }
 
-    const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || 'default';
-    
-    // DB Settings Load / Create
+    // අදාළ Session එකේ Bot Number එක හරියටම වෙන් කර හඳුනාගැනීම
+    const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    if (!botNumber) return await safeReply('⚠️ Bot Number හඳුනාගත නොහැකි විය.');
+
     let settings = await SettingsModel.findById(botNumber);
     if (!settings) {
       settings = await SettingsModel.create({ _id: botNumber });
@@ -66,97 +67,66 @@ module.exports = {
       input = rawText.trim().toLowerCase();
     }
 
-    // 🟢 1. WORK MODE
-    if (input === '1.1') {
-      settings.workMode = 'private';
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Mode set to: *PRIVATE 🔒*`);
-    }
-    if (input === '1.2') {
-      settings.workMode = 'public';
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Mode set to: *PUBLIC 🌐*`);
-    }
-    if (input === '1.3') {
-      settings.workMode = 'inbox';
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Mode set to: *INBOX ONLY 📥*`);
-    }
-    if (input === '1.4') {
-      settings.workMode = 'groups';
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Mode set to: *GROUPS ONLY 👥*`);
-    }
+    let isUpdated = false;
 
-    // 🟢 2. AUTO AI INBOX
-    if (input === '2.1') {
-      settings.autoAiInbox = true;
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `🤖 *[+${botNumber}]* Auto AI: *ENABLED 🟢*`);
-    }
-    if (input === '2.2') {
-      settings.autoAiInbox = false;
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `🤖 *[+${botNumber}]* Auto AI: *DISABLED 🔴*`);
-    }
+    // 1. WORK MODE
+    if (input === '1.1') { settings.workMode = 'private'; isUpdated = true; }
+    else if (input === '1.2') { settings.workMode = 'public'; isUpdated = true; }
+    else if (input === '1.3') { settings.workMode = 'inbox'; isUpdated = true; }
+    else if (input === '1.4') { settings.workMode = 'groups'; isUpdated = true; }
 
-    // 🟢 3. AUTO STATUS SEEN
-    if (input === '3.1') {
-      settings.autoStatusSeen = true;
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `👁️ *[+${botNumber}]* Status Seen: *ENABLED 🟢*`);
-    }
-    if (input === '3.2') {
-      settings.autoStatusSeen = false;
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `👁️ *[+${botNumber}]* Status Seen: *DISABLED 🔴*`);
-    }
+    // 2. AUTO AI INBOX
+    else if (input === '2.1') { settings.autoAiInbox = true; isUpdated = true; }
+    else if (input === '2.2') { settings.autoAiInbox = false; isUpdated = true; }
 
-    // 🟢 4. STATUS REACT
-    if (input === '4.1') {
-      settings.statusReact = true;
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `💐 *[+${botNumber}]* Status React: *ENABLED 🟢*`);
-    }
-    if (input === '4.2') {
-      settings.statusReact = false;
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `💐 *[+${botNumber}]* Status React: *DISABLED 🔴*`);
-    }
+    // 3. AUTO STATUS SEEN
+    else if (input === '3.1') { settings.autoStatusSeen = true; isUpdated = true; }
+    else if (input === '3.2') { settings.autoStatusSeen = false; isUpdated = true; }
 
-    // 🟢 5. OWNER REACT
-    if (input === '5.1') {
-      settings.ownerReact = true;
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `👑 *[+${botNumber}]* Owner React: *ENABLED 🟢*`);
-    }
-    if (input === '5.2') {
-      settings.ownerReact = false;
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `👑 *[+${botNumber}]* Owner React: *DISABLED 🔴*`);
-    }
+    // 4. STATUS REACT
+    else if (input === '4.1') { settings.statusReact = true; isUpdated = true; }
+    else if (input === '4.2') { settings.statusReact = false; isUpdated = true; }
 
-    // 🟢 6. CHANGE EMOJI (.set 6 🔥)
-    if (input.startsWith('6')) {
+    // 5. OWNER REACT
+    else if (input === '5.1') { settings.ownerReact = true; isUpdated = true; }
+    else if (input === '5.2') { settings.ownerReact = false; isUpdated = true; }
+
+    // 6. CHANGE EMOJI (.set 6 🔥)
+    else if (input.startsWith('6')) {
       const parts = args.join(' ').split(/ +/);
       const emoji = parts[1];
       if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 6 🔥`)');
       settings.ownerReactEmoji = emoji;
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `🎨 *[+${botNumber}]* New Owner Emoji: *${emoji}*`);
+      isUpdated = true;
     }
 
-    // 🟢 7. CHANGE PIN (.set pin 5566)
-    if (input.startsWith('pin')) {
+    // 7. CHANGE PIN (.set pin 5566)
+    else if (input.startsWith('pin')) {
       const parts = args.join(' ').split(/ +/);
       const newPin = parts[1];
       if (!newPin || newPin.length < 4) return await safeReply('⚠️ අවම අංක 4ක PIN එකක් දෙන්න! (උදා: `.set pin 7788`)');
       settings.securityPin = newPin;
-      await settings.save();
-      return await applyWithLoader(sock, chatJid, msg, `🔐 *[+${botNumber}]* PIN Updated to: *${newPin}*`);
+      isUpdated = true;
     }
 
-    // 🟢 PREMIUM CYBER-AESTHETIC MENU CARD
+    // MongoDB Database එකට Save කර Cache එක Clear කිරීම
+    if (isUpdated) {
+      await settings.save();
+      
+      // Cache එක Clear කරනවා අලුත් setting එක එසැනින් ක්‍රියාත්මක වෙන්න
+      if (global.clearSettingsCache) global.clearSettingsCache(botNumber);
+
+      const modeBadge = {
+        public: 'PUBLIC 🌐',
+        private: 'PRIVATE 🔒',
+        inbox: 'INBOX 📥',
+        groups: 'GROUPS 👥'
+      }[settings.workMode || 'public'];
+
+      return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n• Mode: *${modeBadge}*\n• AI Inbox: *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*\n• Status Seen: *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n• Owner Emoji: *${settings.ownerReactEmoji || '👑'}*`);
+    }
+
+    // MENU UI
     const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
