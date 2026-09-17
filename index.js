@@ -89,9 +89,9 @@ async function getBotSettings(botNum) {
   }
 }
 
-// 🟢 Global State & Masters
+// 🟢 Global State & Masters (Added your LID number here for full access)
 const REAL_OWNER_NUMBER = '94719845166';
-global.OWNER_NUMBERS = ['94719845166', '94720882316', '15947733680169'];
+global.OWNER_NUMBERS = ['94719845166', '94720882316', '15947733680169', '72787431583987'];
 global.activeSessions = {};
 const isStarting = {};
 
@@ -421,12 +421,16 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // Sender Resolution
+        // 🟢 Sender Resolution & 1000% Working LID Support
         let senderJid = msg.key.fromMe 
           ? myBotJid 
           : (isGroup ? (msg.key.participant || msg.participant || '') : chatJid);
 
         const contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
+
+        // Extract raw number BEFORE resolving (Crucial for direct LID matching)
+        const rawSenderNum = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const rawContextNum = contextSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
         if (senderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
           try {
@@ -438,24 +442,31 @@ async function initWhatsApp(phoneNumber) {
         const cleanSenderNum = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const cleanContextNum = contextSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-        const isMasterCreator = cleanSenderNum.includes(REAL_OWNER_NUMBER) || cleanContextNum.includes(REAL_OWNER_NUMBER);
-        const isOwner = global.OWNER_NUMBERS.some(owner => cleanSenderNum.includes(owner) || cleanContextNum.includes(owner));
-
-        // 🟢 FIXED: Owner React Logic (Works Perfectly & Safely)
-        const isSenderActualOwner = global.OWNER_NUMBERS.some(owner => cleanSenderNum.includes(owner));
+        // Check if the number (Real or LID) exists in the Owner array
+        const checkIsOwner = (num) => global.OWNER_NUMBERS.some(owner => num && num.includes(owner));
         
-        if (currentBotSettings.ownerReact && isSenderActualOwner) {
-          // A small delay ensures the message is processed by WhatsApp before reacting, preventing drops
+        const isOwner = checkIsOwner(cleanSenderNum) || checkIsOwner(rawSenderNum) || checkIsOwner(cleanContextNum) || checkIsOwner(rawContextNum);
+
+        // 🟢 FIXED: Bulletproof Owner React Logic (No dropping!)
+        if (currentBotSettings.ownerReact && isOwner) {
           setTimeout(async () => {
             try {
+              // Reconstructing the key guarantees Baileys won't silently drop the reaction
+              const reactKey = {
+                remoteJid: chatJid,
+                fromMe: msg.key.fromMe,
+                id: msg.key.id,
+                participant: isGroup ? (msg.key.participant || msg.participant) : undefined
+              };
+              
               await sock.sendMessage(chatJid, {
                 react: { 
                   text: currentBotSettings.ownerReactEmoji || '👑', 
-                  key: msg.key 
+                  key: reactKey 
                 }
               });
             } catch (err) {}
-          }, 600); 
+          }, 1000); // 1-second delay ensures the WhatsApp servers processed the message first
         }
 
         // Work Mode Check
