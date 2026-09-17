@@ -11,8 +11,8 @@ const POSSIBLE_PATHS = [
   path.join(__dirname, '../logo.jpg')
 ];
 
-// ස්ථිරවම වැඩ කරන public banner fallback url එකක්
-const FALLBACK_LOGO_URL = 'https://i.ibb.co/vz6V20v/image.jpg';
+// ස්ථිරවම වැඩ කරන public direct banner fallback url එකක්
+const FALLBACK_LOGO_URL = 'https://files.catbox.moe/a58add.jpeg';
 
 function formatUptime(seconds) {
     seconds = Math.floor(Number(seconds) || 0);
@@ -23,29 +23,33 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// Logo එක Buffer එකක් විදියට ගෙන දෙන function එක
+// Logo එක Buffer එකක් විදියට ලබා දෙන function එක
 async function getLogoBuffer() {
   // 1. මුලින්ම Local File එකක් තියෙනවද බලනවා
   for (const p of POSSIBLE_PATHS) {
     if (fs.existsSync(p)) {
       try {
-        return fs.readFileSync(p);
+        const fileData = fs.readFileSync(p);
+        if (fileData && fileData.length > 0) return fileData;
       } catch (e) {}
     }
   }
 
-  // 2. Local එකක් නැත්නම් URL එකෙන් Arraybuffer එකක් අරන් Buffer එක හදනවා
+  // 2. Local එකක් නැත්නම් Fallback URL එකෙන් Buffer එකක් ලබා ගැනීම
   try {
     const res = await axios.get(FALLBACK_LOGO_URL, {
       responseType: 'arraybuffer',
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      timeout: 10000
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      timeout: 10000,
+      validateStatus: () => true
     });
-    return Buffer.from(res.data);
+    if (res.status === 200 && res.data) {
+      return Buffer.from(res.data);
+    }
   } catch (err) {
     console.error("Logo Download Error:", err.message);
-    return null;
   }
+  return null;
 }
 
 module.exports = {
@@ -76,7 +80,7 @@ module.exports = {
 ┃
 ┃ [1] 📥 *DOWNLOAD MENU*
 ┃ [2] 🛠️ *TOOLS & UTILITY*
-┃ [3] 👥 *GROUP & FUN MENU*
+┃ [3] 👥 *GROUP & ADMIN MENU*
 ┃ [4] ⚡ *SYSTEM & OWNER*
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
@@ -91,19 +95,18 @@ module.exports = {
 
       let sentMenu;
       if (logoBuffer) {
-        // Logo image එකක් Buffer විදියට යැවීම
         sentMenu = await sock.sendMessage(targetChat, {
           image: logoBuffer,
           caption: mainText,
           mimetype: 'image/jpeg'
-        }, { quoted: msg });
+        }, { quoted: msg }).catch(async () => {
+          return await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg });
+        });
       } else {
-        // Logo එක කොහෙත්ම load නොවුනොත් URL object එකෙන් try කිරීම
         sentMenu = await sock.sendMessage(targetChat, {
           image: { url: FALLBACK_LOGO_URL },
           caption: mainText
         }, { quoted: msg }).catch(async () => {
-          // ඒකත් බැරි උනොත් Text එක විතරක් යැවීම
           return await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg });
         });
       }
@@ -113,40 +116,50 @@ module.exports = {
       const subMenus = {
         "1": `┏━━━❮ 📥 *DOWNLOAD MENU* ❯━━━┓
 ┃
-┃ ◈ \`.song\`   ⌁ _<music mp3>_
-┃ ◈ \`.video\`  ⌁ _<youtube mp4>_
-┃ ◈ \`.fb\`     ⌁ _<facebook video>_
-┃ ◈ \`.tiktok\` ⌁ _<tiktok video>_
-┃ ◈ \`.insta\`  ⌁ _<instagram post>_
-┃ ◈ \`.apk\`    ⌁ _<android app>_
+┃ ◈ \`.song\`      ⌁ _<music mp3>_
+┃ ◈ \`.video\`     ⌁ _<youtube mp4>_
+┃ ◈ \`.fb\`        ⌁ _<facebook video>_
+┃ ◈ \`.tiktok\`    ⌁ _<tiktok video>_
+┃ ◈ \`.insta\`     ⌁ _<instagram post>_
+┃ ◈ \`.apk\`       ⌁ _<android app>_
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
         "2": `┏━━━❮ 🛠️ *TOOLS & UTILITY* ❯━━━┓
 ┃
-┃ ◈ \`.pt\`      ⌁ _<photo to sticker/tool>_
-┃ ◈ \`.tourl\`   ⌁ _<media to link>_
-┃ ◈ \`.getdp\`   ⌁ _<get profile picture>_
-┃ ◈ \`.vv\`      ⌁ _<view once reveal>_
+┃ ◈ \`.pt\`         ⌁ _<photo to sticker/tool>_
+┃ ◈ \`.tourl\`      ⌁ _<media to link>_
+┃ ◈ \`.getdp\`      ⌁ _<get profile picture>_
+┃ ◈ \`.vv\`         ⌁ _<view once reveal>_
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
-        "3": `┏━━━❮ 👥 *GROUP & FUN* ❯━━━┓
+        "3": `┏━━━❮ 👥 *GROUP & ADMIN MENU* ❯━━━┓
 ┃
-┃ ◈ \`.tagall\`  ⌁ _<mention all members>_
-┃ ◈ \`.hack\`    ⌁ _<prank hack UI>_
+┃ ◈ \`.tagall\`     ⌁ _<mention all members>_
+┃ ◈ \`.kick\`       ⌁ _<remove user>_
+┃ ◈ \`.add\`        ⌁ _<add member by num>_
+┃ ◈ \`.promote\`    ⌁ _<make group admin>_
+┃ ◈ \`.demote\`     ⌁ _<dismiss group admin>_
+┃ ◈ \`.mute\`       ⌁ _<close group (admin only)>_
+┃ ◈ \`.unmute\`     ⌁ _<open group (everyone)>_
+┃ ◈ \`.link\`       ⌁ _<get invite link>_
+┃ ◈ \`.revoke\`     ⌁ _<reset invite link>_
+┃ ◈ \`.setname\`    ⌁ _<change group title>_
+┃ ◈ \`.setdesc\`    ⌁ _<change description>_
+┃ ◈ \`.hack\`       ⌁ _<prank hack UI>_
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
         "4": `┏━━━❮ ⚡ *SYSTEM & OWNER* ❯━━━┓
 ┃
-┃ ◈ \`.ping\`    ⌁ _<response speed>_
-┃ ◈ \`.alive\`   ⌁ _<bot online status>_
-┃ ◈ \`.restart\` ⌁ _<clean ram & reboot>_
-┃ ◈ \`.setlogo\` ⌁ _<update bot banner>_
+┃ ◈ \`.ping\`       ⌁ _<response speed>_
+┃ ◈ \`.alive\`      ⌁ _<bot online status>_
+┃ ◈ \`.restart\`    ⌁ _<clean ram & reboot>_
+┃ ◈ \`.setlogo\`    ⌁ _<update bot banner>_
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
@@ -172,7 +185,6 @@ module.exports = {
           ).trim().replace(/[\[\].]/g, '');
 
           if (["1", "2", "3", "4"].includes(replyText)) {
-            // Group එකකදී අදාළ menu එකට reply නොකර නිකන් 1, 2, 3 දැම්මොත් ignore කරයි
             const contextInfo = msgContent.extendedTextMessage?.contextInfo;
             const isQuotedMenu = contextInfo && contextInfo.stanzaId === menuMessageId;
             if (targetChat.endsWith('@g.us') && !isQuotedMenu) return;
@@ -193,7 +205,6 @@ module.exports = {
 
       sock.ev.on('messages.upsert', replyListener);
 
-      // තත්පර 60කින් listener එක clear වෙයි
       setTimeout(() => {
         sock.ev.off('messages.upsert', replyListener);
       }, 60000);
