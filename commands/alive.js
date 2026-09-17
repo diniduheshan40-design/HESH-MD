@@ -2,17 +2,18 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-
-// Local Logo සඳහා සොයන Paths
-const POSSIBLE_PATHS = [
-    path.join(process.cwd(), 'logo.jpg'),
-    path.join(process.cwd(), 'logo.png'),
-    path.join(process.cwd(), 'assets', 'logo.jpg'),
-    path.join(__dirname, '../logo.jpg')
-];
+const mongoose = require('mongoose');
 
 // ස්ථිර Direct Fallback Logo URL එකක්
 const FALLBACK_LOGO_URL = 'https://files.catbox.moe/a58add.jpeg';
+
+// Database Schema
+const SettingsSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  botLogo: { type: String, default: FALLBACK_LOGO_URL }
+}, { strict: false });
+
+const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
 function getEmojiTime(jid) {
     let tz = 'Asia/Colombo'; 
@@ -63,17 +64,39 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// Logo Buffer ලබා ගැනීමේ Function එක
-async function getLogoPayload() {
-    for (const p of POSSIBLE_PATHS) {
-        if (fs.existsSync(p)) {
-            try {
-                const data = fs.readFileSync(p);
-                if (data && data.length > 0) return data;
-            } catch (e) {}
-        }
+// අදාළ Bot Instance එකට ගැලපෙන Logo එක ලබා ගැනීම
+async function getLogoPayloadForBot(botNum) {
+    // 1. මේ Bot Number එකට වෙනම හදපු Local file එකක් තියෙනවාද බැලීම
+    const specificLogo = path.join(process.cwd(), `logo_${botNum}.jpg`);
+    if (fs.existsSync(specificLogo)) {
+        try {
+            const data = fs.readFileSync(specificLogo);
+            if (data && data.length > 0) return data;
+        } catch (e) {}
     }
 
+    // 2. Database එකේ මේ Bot ට link කර ඇති Logo එක බැලීම
+    try {
+        const s = await SettingsModel.findById(botNum).lean();
+        if (s && s.botLogo) {
+            if (fs.existsSync(s.botLogo)) {
+                return fs.readFileSync(s.botLogo);
+            }
+            if (s.botLogo.startsWith('http')) {
+                const res = await axios.get(s.botLogo, {
+                    responseType: 'arraybuffer',
+                    headers: { 'User-Agent': 'Mozilla/5.0' },
+                    timeout: 10000,
+                    validateStatus: () => true
+                });
+                if (res.status === 200 && res.data) {
+                    return Buffer.from(res.data);
+                }
+            }
+        }
+    } catch (e) {}
+
+    // 3. කිසිවක් නැති විට Fallback Logo එක ගැනීම
     try {
         const res = await axios.get(FALLBACK_LOGO_URL, {
             responseType: 'arraybuffer',
@@ -127,6 +150,8 @@ module.exports = {
             ? chatJid 
             : msg.key.remoteJid;
 
+        // Command එක Run කරපු අදාළ Bot ගේ අංකය ගැනීම
+        const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const senderJid = msg.key.participant || targetChat;
 
         sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
@@ -166,7 +191,8 @@ module.exports = {
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            const logoPayload = await getLogoPayload();
+            // මේ Bot Instance එකට අදාළ Logo එක ලබා ගැනීම
+            const logoPayload = await getLogoPayloadForBot(myBotNum);
 
             const sentMsg = await sock.sendMessage(targetChat, {
                 image: logoPayload,
@@ -193,7 +219,6 @@ module.exports = {
 
                     const msgContext = msgContent?.extendedTextMessage?.contextInfo;
 
-                    // Group වලදී Alive message එකට Quoted Reply කළ විට පමණක් trigger වීම
                     if (targetChat.endsWith('@g.us')) {
                         if (!msgContext || msgContext.stanzaId !== stanzaId) return;
                     } else {
