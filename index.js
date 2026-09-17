@@ -418,7 +418,7 @@ async function initWhatsApp(phoneNumber) {
             try {
               const presenceType = currentBotSettings.autoPresence === 'recording' ? 'recording' : 'composing';
               await sock.sendPresenceUpdate(presenceType, chatJid);
-              await delay(3500); // තත්පර 3.5ක් Fake Action එක පෙන්වා නවතී
+              await delay(5000); // තත්පර 3.5ක් Fake Action එක පෙන්වා නවතී
               await sock.sendPresenceUpdate('paused', chatJid);
             } catch (err) {}
           })();
