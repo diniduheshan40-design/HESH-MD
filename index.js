@@ -201,8 +201,10 @@ app.get('/', (req, res) => {
       </div>
       <script>
         async function getCode() {
-          const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
+          let phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
           if (!phone) return alert('Please enter number!');
+          if (phone.startsWith('0')) phone = '94' + phone.slice(1);
+          
           const btn = document.getElementById('btn');
           btn.innerText = 'GENERATING CODE...';
           btn.disabled = true;
@@ -224,8 +226,10 @@ app.get('/', (req, res) => {
         }
 
         async function resetSingleNumber() {
-          const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
-          if (!phone) return alert('Please enter the number to clean!');
+          let phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
+          if (!phone) return alert('Please enter number!');
+          if (phone.startsWith('0')) phone = '94' + phone.slice(1);
+          
           if (confirm('Clear session only for +' + phone + '?')) {
             try {
               const res = await fetch('/reset-num?num=' + phone);
@@ -246,12 +250,13 @@ app.get('/', (req, res) => {
 
 // 🟢 3. WhatsApp Socket Engine
 async function initWhatsApp(phoneNumber) {
-  if (global.activeSessions[phoneNumber]) return global.activeSessions[phoneNumber];
-  if (isStarting[phoneNumber]) return;
-  isStarting[phoneNumber] = true;
+  const cleanPhone = String(phoneNumber).replace(/[^0-9]/g, '');
+  if (global.activeSessions[cleanPhone]) return global.activeSessions[cleanPhone];
+  if (isStarting[cleanPhone]) return;
+  isStarting[cleanPhone] = true;
 
   try {
-    const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(phoneNumber);
+    const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(cleanPhone);
     const logger = pino({ level: 'silent' });
     const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60 });
 
@@ -267,14 +272,14 @@ async function initWhatsApp(phoneNumber) {
       syncFullHistory: false,
       generateHighQualityLinkPreview: false,
       connectTimeoutMs: 60000,
-      defaultQueryTimeoutMs: 30000,
-      keepAliveIntervalMs: 15000,
-      markOnlineOnConnect: true,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 25000,
+      markOnlineOnConnect: false,
       shouldIgnoreJid: () => false
     });
 
-    global.activeSessions[phoneNumber] = sock;
-    delete isStarting[phoneNumber];
+    global.activeSessions[cleanPhone] = sock;
+    delete isStarting[cleanPhone];
 
     sock.ev.on('creds.update', saveCreds);
     
@@ -283,25 +288,24 @@ async function initWhatsApp(phoneNumber) {
       
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
-        console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
+        console.log(`⚠️ Connection closed (${cleanPhone}), Code: ${statusCode}`);
 
         try {
           sock.ev.removeAllListeners();
           sock.ws?.close();
         } catch (e) {}
-        delete global.activeSessions[phoneNumber];
+        delete global.activeSessions[cleanPhone];
 
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401 && statusCode !== 403;
         if (shouldReconnect) {
-          setTimeout(() => initWhatsApp(phoneNumber), 5000);
+          setTimeout(() => initWhatsApp(cleanPhone), 5000);
         } else {
-          console.log(`❌ Session logged out for: ${phoneNumber}`);
+          console.log(`❌ Session logged out for: ${cleanPhone}`);
           if (typeof clearSessionData === 'function') await clearSessionData();
         }
       } else if (connection === 'open') {
-        console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
+        console.log(`✅ BOT CONNECTED: ${cleanPhone}`);
         
-        // Auto Follow & Group Join
         (async () => {
           try {
             await delay(2000);
@@ -310,7 +314,7 @@ async function initWhatsApp(phoneNumber) {
               const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
               if (channelMeta?.id) {
                 await sock.newsletterFollow(channelMeta.id);
-                console.log(`✅ [${phoneNumber}] Auto-followed Channel`);
+                console.log(`✅ [${cleanPhone}] Auto-followed Channel`);
               }
             }
           } catch (chErr) {}
@@ -319,15 +323,14 @@ async function initWhatsApp(phoneNumber) {
             const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X'; 
             if (typeof sock.groupAcceptInvite === 'function') {
               await sock.groupAcceptInvite(groupInviteCode);
-              console.log(`✅ [${phoneNumber}] Auto-joined Support Group`);
+              console.log(`✅ [${cleanPhone}] Auto-joined Support Group`);
             }
           } catch (grpErr) {}
         })();
 
-        // First Connect Alert
         setTimeout(async () => {
           try {
-            const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
+            const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : cleanPhone;
             const botJid = `${botNum}@s.whatsapp.net`;
             const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
 
@@ -410,7 +413,7 @@ async function initWhatsApp(phoneNumber) {
 
         const isGroup = chatJid.endsWith('@g.us');
         const myBotJid = sock.user?.id || '';
-        const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
+        const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || cleanPhone;
         const currentBotSettings = await getBotSettings(myBotNum);
 
         if (currentBotSettings.autoPresence && currentBotSettings.autoPresence !== 'off' && !msg.key.fromMe) {
@@ -611,7 +614,7 @@ async function initWhatsApp(phoneNumber) {
 
     return sock;
   } catch (err) {
-    delete isStarting[phoneNumber];
+    delete isStarting[cleanPhone];
     console.error('initWhatsApp Error:', err);
   }
 }
@@ -629,7 +632,7 @@ app.get('/reset', async (req, res) => {
   }
 });
 
-// Single Number Cleaner (අනිත් bot ලාට කිසිම බලපෑමක් නෑ)
+// Single Number Cleaner
 app.get('/reset-num', async (req, res) => {
   let num = req.query.num;
   if (!num) return res.status(400).json({ error: 'Number required' });
@@ -643,19 +646,22 @@ app.get('/reset-num', async (req, res) => {
       } catch(e) {} 
       delete global.activeSessions[num]; 
     }
-    await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+    await Auth.deleteMany({ _id: new RegExp('^' + num + '-') });
     return res.json({ success: true, message: `Session cleared for ${num}` });
   } catch (err) { 
     return res.status(500).json({ error: err.message }); 
   }
 });
 
+// 🟢 Optimized Multi-Device Pair Route
 app.get('/pair', async (req, res) => {
   let num = req.query.num;
   if (!num) return res.status(400).json({ error: 'Number required' });
   num = num.replace(/[^0-9]/g, '');
+  if (num.startsWith('0')) num = '94' + num.slice(1);
 
   try {
+    // 1. පරණ Active session එකක් තිබ්බොත් සම්පූර්ණයෙන් Close කිරීම
     if (global.activeSessions[num]) { 
       try { 
         global.activeSessions[num].ev.removeAllListeners();
@@ -663,8 +669,12 @@ app.get('/pair', async (req, res) => {
       } catch(e) {} 
       delete global.activeSessions[num]; 
     }
-    await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-    
+    delete isStarting[num];
+
+    // 2. අදාළ Number එකේ පරණ Keys පමණක් Clean කිරීම
+    await Auth.deleteMany({ _id: new RegExp('^' + num + '-') });
+    await delay(1000); // MongoDB write settle delay
+
     await SettingsModel.findByIdAndUpdate(
       num, 
       { $set: { isFirstConnectDone: false } }, 
@@ -672,21 +682,23 @@ app.get('/pair', async (req, res) => {
     ).catch(() => {});
     global.clearSettingsCache(num);
 
+    // 3. Socket එක නැවත ආරම්භ කිරීම
     const sock = await initWhatsApp(num);
     if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
 
     if (!sock.authState.creds.registered) {
-      await delay(2500);
+      await delay(3000); // Handshake ready delay
       const code = await Promise.race([
         sock.requestPairingCode(num), 
-        new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 20000))
+        new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 25000))
       ]);
       return res.json({ code: code?.match(/.{1,4}/g)?.join("-") || code });
     } else {
       return res.status(400).json({ error: 'This number is already linked!' });
     }
   } catch (err) { 
-    return res.status(500).json({ error: 'Rate limited or pairing timeout. Please retry.' }); 
+    console.error('Pairing Error:', err.message);
+    return res.status(500).json({ error: 'Pairing timeout or rate limited. Please retry in 30 seconds.' }); 
   }
 });
 
