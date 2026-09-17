@@ -3,8 +3,16 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 
-const LOCAL_LOGO = path.join(process.cwd(), 'logo.jpg');
-const FALLBACK_LOGO_URL = 'https://files.catbox.moe/gs150o.jpg';
+// Local Logo සඳහා සොයන Paths
+const POSSIBLE_PATHS = [
+    path.join(process.cwd(), 'logo.jpg'),
+    path.join(process.cwd(), 'logo.png'),
+    path.join(process.cwd(), 'assets', 'logo.jpg'),
+    path.join(__dirname, '../logo.jpg')
+];
+
+// ස්ථිර Direct Fallback Logo URL එකක්
+const FALLBACK_LOGO_URL = 'https://files.catbox.moe/a58add.jpeg';
 
 function getEmojiTime(jid) {
     let tz = 'Asia/Colombo'; 
@@ -55,20 +63,53 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
+// Logo Buffer ලබා ගැනීමේ Function එක
+async function getLogoPayload() {
+    for (const p of POSSIBLE_PATHS) {
+        if (fs.existsSync(p)) {
+            try {
+                const data = fs.readFileSync(p);
+                if (data && data.length > 0) return data;
+            } catch (e) {}
+        }
+    }
+
+    try {
+        const res = await axios.get(FALLBACK_LOGO_URL, {
+            responseType: 'arraybuffer',
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 10000,
+            validateStatus: () => true
+        });
+        if (res.status === 200 && res.data) {
+            return Buffer.from(res.data);
+        }
+    } catch (err) {
+        console.error("Alive Logo Buffer Error:", err.message);
+    }
+    return { url: FALLBACK_LOGO_URL };
+}
+
 const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg) => {
     try {
         const cmdPath = path.join(__dirname, `${cmdName}.js`);
         if (fs.existsSync(cmdPath)) {
+            delete require.cache[require.resolve(cmdPath)]; // Fresh load
             const cmdModule = require(cmdPath);
             const remoteJid = replyMsg.key.remoteJid;
             const args = fakeUserText.trim().split(/\s+/).slice(1);
 
+            const safeReply = async (content) => {
+                const payload = typeof content === 'string' ? { text: content } : content;
+                return await sock.sendMessage(remoteJid, payload, { quoted: replyMsg });
+            };
+
             if (typeof cmdModule.execute === 'function') {
-                await cmdModule.execute(sock, replyMsg, args, remoteJid);
+                await cmdModule.execute(sock, replyMsg, args, remoteJid, safeReply);
             } else if (typeof cmdModule.run === 'function') {
-                await cmdModule.run({ sock, msg: replyMsg, args, from: remoteJid });
+                await cmdModule.run({ sock, msg: replyMsg, args, from: remoteJid, reply: safeReply });
             } else if (typeof cmdModule === 'function') {
-                await cmdModule({ sock, msg: replyMsg, args, from: remoteJid });
+                await cmdModule(sock, replyMsg, args, remoteJid, safeReply);
             }
         }
     } catch (e) {
@@ -94,7 +135,11 @@ module.exports = {
         let firstName = pushName.split(/[\s_+-]+/)[0] || "User"; 
         if (firstName.length > 15) firstName = firstName.substring(0, 15);  
 
-        const rawText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
+        const rawText = msg.message?.conversation || 
+                        msg.message?.extendedTextMessage?.text || 
+                        msg.message?.imageMessage?.caption || 
+                        msg.message?.videoMessage?.caption || "";
+                        
         const currentPrefix = (rawText && /^[.#/!]/.test(rawText.charAt(0))) ? rawText.charAt(0) : '.';
 
         const uptime = formatUptime(process.uptime());
@@ -121,14 +166,12 @@ module.exports = {
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            let imagePayload = { url: FALLBACK_LOGO_URL };
-            if (fs.existsSync(LOCAL_LOGO)) {
-                imagePayload = fs.readFileSync(LOCAL_LOGO);
-            }
+            const logoPayload = await getLogoPayload();
 
             const sentMsg = await sock.sendMessage(targetChat, {
-                image: imagePayload,
-                caption: aliveMsg
+                image: logoPayload,
+                caption: aliveMsg,
+                mimetype: 'image/jpeg'
             }, { quoted: msg }).catch(async () => {
                 return await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg });
             });
@@ -139,25 +182,30 @@ module.exports = {
             const replyListener = async (m) => {  
                 try {  
                     const replyMsg = m.messages?.[0];  
-                    if (!replyMsg || !replyMsg.message) return; 
+                    if (!replyMsg || !replyMsg.message || replyMsg.key.fromMe) return; 
+
+                    const replyChat = replyMsg.key.remoteJid;
+                    if (replyChat !== targetChat) return;
 
                     let msgContent = replyMsg.message;
                     if (msgContent.ephemeralMessage) msgContent = msgContent.ephemeralMessage.message;
                     if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
 
-                    const msgContext = msgContent?.extendedTextMessage?.contextInfo ||
-                                       msgContent?.imageMessage?.contextInfo ||
-                                       msgContent?.videoMessage?.contextInfo;
+                    const msgContext = msgContent?.extendedTextMessage?.contextInfo;
 
-                    if (stanzaId && msgContext?.stanzaId !== stanzaId) return;  
+                    // Group වලදී Alive message එකට Quoted Reply කළ විට පමණක් trigger වීම
+                    if (targetChat.endsWith('@g.us')) {
+                        if (!msgContext || msgContext.stanzaId !== stanzaId) return;
+                    } else {
+                        if (stanzaId && msgContext && msgContext.stanzaId !== stanzaId) return;
+                    }
 
                     let replyText = msgContent.conversation || 
                                     msgContent.extendedTextMessage?.text || 
                                     msgContent.imageMessage?.caption || 
                                     msgContent.videoMessage?.caption || "";
 
-                    replyText = replyText.trim().replace(/[\[\]]/g, ''); // User '1' හෝ '[1]' දැම්මත් handle කරයි 
-                    const replyChat = replyMsg.key.remoteJid;
+                    replyText = replyText.trim().replace(/[\[\].]/g, '');
 
                     if (["1", "2", "3"].includes(replyText)) {
                         sock.ev.off('messages.upsert', replyListener);
