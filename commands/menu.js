@@ -2,10 +2,17 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const mongoose = require('mongoose');
 
-// Local logo path
-const LOCAL_LOGO = path.join(process.cwd(), 'logo.jpg');
 const FALLBACK_LOGO_URL = 'https://files.catbox.moe/a58add.jpeg';
+
+// Database Model
+const SettingsSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  botLogo: { type: String, default: FALLBACK_LOGO_URL }
+}, { strict: false });
+
+const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
 function formatUptime(seconds) {
     seconds = Math.floor(Number(seconds) || 0);
@@ -16,13 +23,31 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// Logo image එක buffer එකක් බවට පත් කර ගැනීම
-async function fetchLogo() {
-    if (fs.existsSync(LOCAL_LOGO)) {
+// එක් එක් Bot Instance එකට ගැලපෙන Logo එක කියවා ගැනීම
+async function fetchLogoForBot(botNum) {
+    // 1. මේ Bot Number එකට වෙනම හදපු Local file එකක් තියෙනවාද බැලීම
+    const specificLogo = path.join(process.cwd(), `logo_${botNum}.jpg`);
+    if (fs.existsSync(specificLogo)) {
         try {
-            return fs.readFileSync(LOCAL_LOGO);
+            return fs.readFileSync(specificLogo);
         } catch (e) {}
     }
+
+    // 2. Database එකෙන් Bot Logo එක check කිරීම
+    try {
+        const s = await SettingsModel.findById(botNum).lean();
+        if (s && s.botLogo) {
+            if (fs.existsSync(s.botLogo)) {
+                return fs.readFileSync(s.botLogo);
+            }
+            if (s.botLogo.startsWith('http')) {
+                const response = await axios.get(s.botLogo, { responseType: 'arraybuffer', timeout: 10000 });
+                return Buffer.from(response.data);
+            }
+        }
+    } catch (e) {}
+
+    // 3. Fallback Default Logo
     try {
         const response = await axios.get(FALLBACK_LOGO_URL, { 
             responseType: 'arraybuffer',
@@ -43,6 +68,9 @@ module.exports = {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
       ? chatJid 
       : msg.key.remoteJid;
+
+    // Active Bot ගේ අංකය ලබාගැනීම
+    const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
     let pushName = msg.pushName || "User";
     let firstName = pushName.split(/[\s_+-]+/)[0] || "User";
@@ -72,7 +100,8 @@ module.exports = {
     try {
       await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
-      const logoImg = await fetchLogo();
+      // මේ Bot Instance එකට විතරක් අදාළ Logo එක ලබාගැනීම
+      const logoImg = await fetchLogoForBot(myBotNum);
 
       const sentMenu = await sock.sendMessage(targetChat, {
           image: logoImg,
