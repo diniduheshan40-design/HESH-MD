@@ -35,7 +35,8 @@ const SettingsSchema = new mongoose.Schema({
   statusReactEmoji: { type: String, default: '💐' },
   ownerReact: { type: Boolean, default: true },
   ownerReactEmoji: { type: String, default: '👑' },
-  securityPin: { type: String, default: '1234' }
+  securityPin: { type: String, default: '1234' },
+  isFirstConnectDone: { type: Boolean, default: false } // 🟢 පළමු වර සම්බන්ධ වූ බව සටහන් කරගැනීමට
 });
 
 const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
@@ -61,7 +62,8 @@ async function getBotSettings(botNum) {
       statusReactEmoji: '💐',
       ownerReact: true,
       ownerReactEmoji: '👑',
-      securityPin: '1234'
+      securityPin: '1234',
+      isFirstConnectDone: false
     };
   }
 }
@@ -287,14 +289,21 @@ async function initWhatsApp(phoneNumber) {
           } catch (grpErr) {}
         })();
 
-        // ─── 🟢 3. INITIALIZATION CARD & OWNER ALERT (100% Guaranteed Delivery) ───
+        // ─── 🟢 3. INITIALIZATION CARD & OWNER ALERT (Only on First Linked Device) ───
         setTimeout(async () => {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
             const botJid = `${botNum}@s.whatsapp.net`;
             const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
-            const welcomeImg = 'https://files.catbox.moe/a58add.jpeg';
 
+            // පරීක්ෂා කිරීම: මෙම අංකයට පළමු වර Connecting message එක කලින් ගොස් ඇත්දැයි බැලීම
+            const currentSettings = await getBotSettings(botNum);
+            if (currentSettings.isFirstConnectDone) {
+              console.log(`ℹ️ [RESTART / DEPLOY] +${botNum} reconnect detected. Connecting message skipped.`);
+              return;
+            }
+
+            const welcomeImg = 'https://files.catbox.moe/a58add.jpeg';
             const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
 ────────────────────────────
 *🟢 Status   :* Online Operational
@@ -305,7 +314,6 @@ async function initWhatsApp(phoneNumber) {
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-            // Image එක යවන්න බැරි උනත් Text එක අනිවාර්යයෙන්ම යන්න try-catch හැදුවා
             try {
               await sock.sendMessage(botJid, { 
                 image: { url: welcomeImg },
@@ -326,7 +334,11 @@ async function initWhatsApp(phoneNumber) {
               await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
             }
 
-            console.log(`📬 Connect message successfully sent to: +${botNum}`);
+            // Database එකේ සහ Cache එකේ Flag එක true කිරීම (මීළඟ restart වලදී නොයැවීමට)
+            await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
+            settingsCache.del(botNum);
+
+            console.log(`📬 First-time connect message successfully sent to: +${botNum}`);
           } catch (msgErr) {
             console.error('Initialization message error:', msgErr.message);
           }
@@ -592,6 +604,10 @@ app.get('/pair', async (req, res) => {
     }
     await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
     
+    // අලුතින් Pair කරන විට කලින් flag එක reset කිරීම (නැවත පළමු connection ලෙස හඳුනා ගැනීමට)
+    await SettingsModel.findByIdAndUpdate(num, { isFirstConnectDone: false }).catch(() => {});
+    settingsCache.del(num);
+
     const sock = await initWhatsApp(num);
     if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
 
