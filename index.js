@@ -23,31 +23,14 @@ const { askAI } = require('./ai');
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 
-// 🟢 Local Logo Verification & Auto-Download Engine
-const LOCAL_LOGO_PATH = path.join(process.cwd(), 'logo.jpg');
+// 🟢 Default Backup Logo
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
-
-async function ensureLocalLogo() {
-  try {
-    if (!fs.existsSync(LOCAL_LOGO_PATH)) {
-      console.log('🖼️ Local logo not found, downloading default asset...');
-      const res = await fetch(DEFAULT_BACKUP_LOGO);
-      if (res.ok) {
-        const buffer = await res.buffer();
-        fs.writeFileSync(LOCAL_LOGO_PATH, buffer);
-        console.log('✅ Default logo.jpg saved successfully.');
-      }
-    }
-  } catch (err) {
-    console.error('⚠️ Logo download check skipped:', err.message);
-  }
-}
-ensureLocalLogo();
 
 // 🟢 RAM Cache for Settings (Per-Bot)
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 global.clearSettingsCache = (num) => settingsCache.del(num);
 
+// 🟢 Per-Bot Database Schema (botLogo field added)
 const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true }, // Bot Phone Number
   workMode: { type: String, default: 'public' },
@@ -57,13 +40,14 @@ const SettingsSchema = new mongoose.Schema({
   statusReactEmoji: { type: String, default: '💐' },
   ownerReact: { type: Boolean, default: true },
   ownerReactEmoji: { type: String, default: '👑' },
+  botLogo: { type: String, default: DEFAULT_BACKUP_LOGO }, // 🖼️ එක් එක් බොට්ගේ තනි Logo Link එක
   securityPin: { type: String, default: '1234' },
   isFirstConnectDone: { type: Boolean, default: false }
 });
 
 const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
-// 🟢 Bot එක Restart උනත් පරණ Settings ආරක්ෂා කරගන්නා Loader එක
+// 🟢 Restart උනත් Settings & Logo එක සුරක්ෂිතව තබාගන්නා Engine එක
 async function getBotSettings(botNum) {
   if (!botNum) return {};
   const cached = settingsCache.get(botNum);
@@ -82,6 +66,7 @@ async function getBotSettings(botNum) {
         statusReactEmoji: '💐',
         ownerReact: true,
         ownerReactEmoji: '👑',
+        botLogo: DEFAULT_BACKUP_LOGO,
         securityPin: '1234',
         isFirstConnectDone: false
       });
@@ -99,6 +84,7 @@ async function getBotSettings(botNum) {
       statusReactEmoji: '💐',
       ownerReact: true,
       ownerReactEmoji: '👑',
+      botLogo: DEFAULT_BACKUP_LOGO,
       securityPin: '1234',
       isFirstConnectDone: false
     };
@@ -343,7 +329,8 @@ async function initWhatsApp(phoneNumber) {
               return;
             }
 
-            const welcomeImg = 'https://files.catbox.moe/a58add.jpeg';
+            // එක් එක් Session එකේ Database එකෙන් Logo එක කියවීම
+            const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
             const connectedMsg = `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
 ────────────────────────────
 *🟢 Status   :* Online Operational
@@ -355,12 +342,8 @@ async function initWhatsApp(phoneNumber) {
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
             try {
-              let logoPayload = fs.existsSync(LOCAL_LOGO_PATH) 
-                ? fs.readFileSync(LOCAL_LOGO_PATH) 
-                : { url: welcomeImg };
-
               await sock.sendMessage(botJid, { 
-                image: logoPayload,
+                image: { url: sessionLogo },
                 caption: connectedMsg
               });
             } catch (imgErr) {
@@ -467,7 +450,7 @@ async function initWhatsApp(phoneNumber) {
 
         const isOwner = checkIsOwner(originalSender) || checkIsOwner(resolvedSender) || checkIsOwner(contextSender);
 
-        // Owner React Logic (Reads custom emoji from database)
+        // Owner React Logic (Database emoji per bot)
         if (currentBotSettings.ownerReact && isOwner) {
           setTimeout(async () => {
             try {
@@ -647,7 +630,7 @@ app.get('/pair', async (req, res) => {
     }
     await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
     
-    // User හදපු settings reset නොවී තියාගැනීම
+    // User හදපු Settings & Logo ආරක්ෂා කරගැනීම ($set මගින්)
     await SettingsModel.findByIdAndUpdate(
       num, 
       { $set: { isFirstConnectDone: false } }, 
