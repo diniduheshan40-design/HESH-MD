@@ -4,22 +4,12 @@ const fs = require('fs');
 const path = require('path');
 const { generateWAMessageContent, generateWAMessageFromContent } = require('@whiskeysockets/baileys');
 
-const CONFIG_PATH = path.join(process.cwd(), 'temp', 'channel_config.json');
+const CONFIG_PATH = path.join(process.cwd(), 'temp', 'tiktok_channel_config.json');
+const API_KEY = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
 
-// 🟢 4K Wallpapers Fail-Proof Collection
-const WALLPAPER_COLLECTION = [
-    'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1920&q=80',
-    'https://images.unsplash.com/photo-1511447333015-45b65e60f6d5?w=1920&q=80',
-    'https://images.unsplash.com/photo-1518791841217-8f162f1e1131?w=1920&q=80',
-    'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=1920&q=80',
-    'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1920&q=80',
-    'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=1920&q=80',
-    'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=1920&q=80',
-    'https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=1920&q=80'
-];
-
-// Memory Leak හෝ Timer Loss වීම වැළැක්වීමට Global Timer එකක්
-global.channelWallpaperInterval = global.channelWallpaperInterval || null;
+// කලින් යැවූ වීඩියෝ නැවත නොයැවීමට memory cache එකක්
+const postedVideoUrls = new Set();
+global.tiktokChannelInterval = global.tiktokChannelInterval || null;
 
 function getConfig() {
     try {
@@ -27,7 +17,7 @@ function getConfig() {
             return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
         }
     } catch (e) {}
-    return { channelJid: null };
+    return { channelJid: null, query: 'mrbeast' };
 }
 
 function saveConfig(data) {
@@ -35,81 +25,110 @@ function saveConfig(data) {
         const dir = path.dirname(CONFIG_PATH);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(CONFIG_PATH, JSON.stringify(data, null, 2));
-    } catch (e) {}
-}
-
-async function getWallpaperBuffer() {
-    let imgUrl = null;
-    try {
-        const res = await axios.get('https://supunofc.site/api/image/4kwallpapers/home?apikey=supun-tvo5olfxylo98b8l6b9lq174', { timeout: 8000 });
-        if (res.data?.result && Array.isArray(res.data.result) && res.data.result.length > 0) {
-            const item = res.data.result[Math.floor(Math.random() * res.data.result.length)];
-            imgUrl = typeof item === 'string' ? item : (item.image || item.url || item.download);
-        }
-    } catch (e) {}
-
-    if (!imgUrl) {
-        imgUrl = WALLPAPER_COLLECTION[Math.floor(Math.random() * WALLPAPER_COLLECTION.length)];
+    } catch (e) {
+        console.error('Config Save Error:', e.message);
     }
-
-    const response = await axios.get(imgUrl, {
-        responseType: 'arraybuffer',
-        timeout: 20000,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-
-    return Buffer.from(response.data);
 }
 
-// 🟢 Channel එකට RelayMessage මඟින් Post කිරීම
-async function postWallpaper(sock, channelJid) {
+// 🟢 Chamindu API එකෙන් Random TikTok Video Buffer එකක් ලබා ගැනීම
+async function fetchTikTokVideo(query = 'mrbeast') {
     try {
-        const buffer = await getWallpaperBuffer();
-        const caption = `┏━━━〔 🖼️ 𝟰𝗞 𝗪𝗔𝗟𝗟𝗣𝗔𝗣𝗘𝗥 〕━━━┓\n` +
+        const searchUrl = `https://api.chamindu.site/api/v1/tiktok?q=${encodeURIComponent(query)}&api_key=${API_KEY}`;
+        const searchRes = await axios.get(searchUrl, { timeout: 15000 });
+
+        const results = searchRes.data?.data?.results || searchRes.data?.results || [];
+        // වීඩියෝ පමණක් සහ කලින් නොයැවූ ඒවා පෙරීම
+        let videoItems = results.filter(item => item.is_video && item.dl && !postedVideoUrls.has(item.url));
+
+        // සියල්ල යවා ඇත්නම් Cache එක reset කිරීම
+        if (videoItems.length === 0) {
+            postedVideoUrls.clear();
+            videoItems = results.filter(item => item.is_video && item.dl);
+        }
+
+        if (videoItems.length === 0) return null;
+
+        // Random Video එකක් තෝරා ගැනීම
+        const selected = videoItems[Math.floor(Math.random() * videoItems.length)];
+        postedVideoUrls.add(selected.url);
+
+        // Download API එකෙන් වීඩියෝ Binary Buffer එක ලබා ගැනීම
+        const dlResponse = await axios.get(selected.dl, {
+            responseType: 'arraybuffer',
+            timeout: 60000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+            }
+        });
+
+        return {
+            buffer: Buffer.from(dlResponse.data),
+            title: selected.title || 'Trending TikTok Video',
+            author: selected.author || '@tiktok'
+        };
+    } catch (err) {
+        console.error('❌ [TIKTOK-API-ERROR]:', err.message);
+        return null;
+    }
+}
+
+// 🟢 Channel එකට Video එක RelayMessage මඟින් Post කිරීම
+async function postTikTokToChannel(sock, channelJid, query = 'mrbeast') {
+    try {
+        const videoData = await fetchTikTokVideo(query);
+        if (!videoData || !videoData.buffer) {
+            console.log('⚠️ [TIKTOK-POST] Video data could not be retrieved.');
+            return false;
+        }
+
+        const caption = `┏━━━〔 🎬 𝗧𝗜𝗞𝗧𝗢𝗞 𝗩𝗜𝗗𝗘𝗢 〕━━━┓\n` +
                         `┃\n` +
-                        `┃  ✨ *Quality* ⌁ Ultra HD 4K\n` +
+                        `┃  📌 *Title* ⌁ ${videoData.title}\n` +
+                        `┃  👤 *Author* ⌁ ${videoData.author}\n` +
                         `┃  ⏰ *Auto Post* ⌁ Every 5 Mins\n` +
                         `┃\n` +
                         `┗━━━━━━━━━━━━━━━━━━━━━━┛\n` +
                         `> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
 
+        // 1. WhatsApp Video Media Object එක සෑදීම
         const media = await generateWAMessageContent({
-            image: buffer,
-            caption: caption
+            video: videoData.buffer,
+            caption: caption,
+            mimetype: 'video/mp4'
         }, { upload: sock.waUploadToServer });
 
+        // 2. Channel Newsletter Container එකට VideoMessage එක දැමීම
         const fullMsg = generateWAMessageFromContent(channelJid, {
-            imageMessage: media.imageMessage
+            videoMessage: media.videoMessage
         }, {});
 
+        // 3. RelayMessage මඟින් Channel එකට යැවීම
         await sock.relayMessage(channelJid, fullMsg.message, {
             messageId: fullMsg.key.id
         });
 
-        console.log(`✅ [AUTO-WALLPAPER] Successfully posted to ${channelJid} at ${new Date().toLocaleTimeString()}`);
+        console.log(`✅ [AUTO-TIKTOK] Successfully posted video to ${channelJid} at ${new Date().toLocaleTimeString()}`);
         return true;
     } catch (err) {
-        console.error('❌ [AUTO-WALLPAPER-POST-ERROR]:', err.message);
+        console.error('❌ [TIKTOK-POST-ERROR]:', err.message);
         return false;
     }
 }
 
-// 🟢 විනාඩි 5න් 5ට දුවන ස්ථිර Background Loop එක
-function startGlobalLoop(sock, channelJid) {
-    if (global.channelWallpaperInterval) {
-        clearInterval(global.channelWallpaperInterval);
-        global.channelWallpaperInterval = null;
+// 🟢 විනාඩි 5න් 5ට ක්‍රියාත්මක වන ස්ථිර Background Loop එක
+function startTikTokScheduler(sock, channelJid, query) {
+    if (global.tiktokChannelInterval) {
+        clearInterval(global.tiktokChannelInterval);
+        global.tiktokChannelInterval = null;
     }
 
-    console.log(`🚀 [AUTO-WALLPAPER] Background scheduler active for: ${channelJid}`);
+    console.log(`🚀 [AUTO-TIKTOK] Background loop started for ${channelJid} (Every 5 mins)`);
 
-    // විනාඩි 5කට වරක් (5 * 60 * 1000)
-    global.channelWallpaperInterval = setInterval(async () => {
+    global.tiktokChannelInterval = setInterval(async () => {
         const cfg = getConfig();
         const target = cfg.channelJid || channelJid;
         if (!target) return;
 
-        // Active Session එක නිවැරදිව ලබා ගැනීම
         let activeSock = sock;
         if (global.activeSessions) {
             const keys = Object.keys(global.activeSessions);
@@ -117,34 +136,37 @@ function startGlobalLoop(sock, channelJid) {
         }
 
         if (activeSock && activeSock.relayMessage) {
-            await postWallpaper(activeSock, target);
+            await postTikTokToChannel(activeSock, target, cfg.query || query);
         }
     }, 5 * 60 * 1000);
 }
 
 module.exports = {
     name: 'setchannel',
-    alias: ['autowallpaper', 'wallpost'],
+    alias: ['settiktok', 'autotiktok'],
     category: 'admin',
-    desc: 'Set channel JID or link for auto wallpaper posting',
+    desc: 'Set WhatsApp channel to post TikTok videos every 5 minutes',
 
     async execute(sock, msg, args, chatJid) {
         const targetChat = chatJid || msg.key.remoteJid;
         const input = args[0] ? args[0].trim() : '';
+        const searchKeyword = args.slice(1).join(' ') || 'mrbeast';
 
-        // Stop කිරීම
+        // 1. Auto Post නැවැත්වීම
         if (input.toLowerCase() === 'stop' || input.toLowerCase() === 'off') {
-            if (global.channelWallpaperInterval) {
-                clearInterval(global.channelWallpaperInterval);
-                global.channelWallpaperInterval = null;
+            if (global.tiktokChannelInterval) {
+                clearInterval(global.tiktokChannelInterval);
+                global.tiktokChannelInterval = null;
             }
             saveConfig({ channelJid: null });
-            return await sock.sendMessage(targetChat, { text: '🛑 *Auto Wallpaper Posting සේවාව නවත්වන ලදී.*' }, { quoted: msg });
+            return await sock.sendMessage(targetChat, { 
+                text: '🛑 *Auto TikTok Posting සේවාව නවත්වන ලදී.*' 
+            }, { quoted: msg });
         }
 
         let resolvedJid = null;
 
-        // Channel Link හෝ JID හඳුනා ගැනීම
+        // 2. Channel Link හෝ Direct JID හඳුනා ගැනීම
         if (input.includes('whatsapp.com/channel/')) {
             try {
                 const inviteCode = input.split('whatsapp.com/channel/')[1].split('/')[0].split('?')[0].trim();
@@ -161,30 +183,36 @@ module.exports = {
             const cfg = getConfig();
             return await sock.sendMessage(targetChat, {
                 text: `⚠️ *කරුණාකර වලංගු Channel Link එකක් හෝ JID එකක් ලබා දෙන්න!*\n\n` +
-                      `📌 *උදාහරණ:*\n• .setchannel 120363420419246945@newsletter\n` +
+                      `📌 *භාවිතය:*\n` +
+                      `• .setchannel 120363420419246945@newsletter\n` +
+                      `• .setchannel 120363420419246945@newsletter funny cats\n` +
                       `• .setchannel stop\n\n` +
                       `⚙️ *වත්මන් Channel:* ${cfg.channelJid || 'සකසා නැත'}`
             }, { quoted: msg });
         }
 
-        await sock.sendMessage(targetChat, { text: `⏳ *පළමු Wallpaper එක Channel එකට යවමින් සේවාව සක්‍රිය කෙරේ...*` }, { quoted: msg });
+        await sock.sendMessage(targetChat, { 
+            text: `⏳ *පළමු TikTok වීඩියෝව Channel එකට යවමින් සේවාව සක්‍රිය කෙරේ... (කරුණාකර මොහොතක් රැඳී සිටින්න)*` 
+        }, { quoted: msg });
 
-        // පළමු පින්තූරය යැවීම
-        const success = await postWallpaper(sock, resolvedJid);
+        // 3. පළමු වීඩියෝව යවා බැලීම
+        const success = await postTikTokToChannel(sock, resolvedJid, searchKeyword);
 
         if (success) {
-            saveConfig({ channelJid: resolvedJid });
-            startGlobalLoop(sock, resolvedJid);
+            saveConfig({ channelJid: resolvedJid, query: searchKeyword });
+            startTikTokScheduler(sock, resolvedJid, searchKeyword);
 
             await sock.sendMessage(targetChat, {
-                text: `✅ *Auto Wallpaper Posting සාර්ථකව සක්‍රිය විය!*\n\n` +
+                text: `✅ *Auto TikTok Posting සාර්ථකව සක්‍රිය විය!*\n\n` +
                       `📢 *Channel JID:* ${resolvedJid}\n` +
+                      `🔍 *Query:* ${searchKeyword}\n` +
                       `⏱️ *කාල පරතරය:* සෑම විනාඩි 5කට වරක්\n\n` +
-                      `> ⚡ පළමු Wallpaper එක Channel එකට Post විය. මෙතැන් සිට ස්වයංක්‍රීයව පින්තූර වැටෙනු ඇත.`
+                      `> ⚡ පළමු වීඩියෝව Channel එකට Post විය. මෙතැන් සිට ස්වයංක්‍රීයව වීඩියෝ වැටෙනු ඇත.`
             }, { quoted: msg });
         } else {
             await sock.sendMessage(targetChat, {
-                text: `❌ *පින්තූරය යැවීමට නොහැකි විය. Bot අංකයට Channel Admin බලතල ලබා දී ඇත්දැයි බලන්න.*`
+                text: `❌ *වීඩියෝව Channel එකට Post කිරීමට නොහැකි විය.*\n\n` +
+                      `📌 කරුණාකර Bot අංකය Channel එකේ Admin කෙනෙක් දැයි නැවත තහවුරු කරගන්න.`
             }, { quoted: msg });
         }
     }
