@@ -292,14 +292,6 @@ async function initWhatsApp(phoneNumber) {
           } catch (grpErr) {
             console.log(`[Auto-Join Info]: Group already joined or invite invalid`);
           }
-
-          // ─── 🟢 AUTO WALLPAPER POSTER START ───
-          try {
-            startAutoWallpaper(sock);
-          } catch (wpErr) {
-            console.error('Auto Wallpaper Init Error:', wpErr.message);
-          }
-
         })();
 
         // ─── 🟢 3. INITIALIZATION CARD & OWNER ALERT ───
@@ -628,6 +620,13 @@ mongoose.connect(MONGODB_URI).then(async () => {
   
   app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
+
+    // 🟢 Wallpaper Auto Service එක මෙතැනින් ආරම්භ වේ (Server එක run වෙද්දී එක් වතාවක් පමණක්)
+    try {
+      startAutoWallpaper();
+    } catch (e) {
+      console.error('Wallpaper service start error:', e.message);
+    }
 
     const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
     if (keepAliveUrl) {
