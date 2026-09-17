@@ -19,9 +19,6 @@ const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
-// 🟢 Auto Wallpaper Service
-const { startAutoWallpaper } = require('./autoWallpaper');
-
 // 🟢 Target Update Channel for Auto-React
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
@@ -266,10 +263,10 @@ async function initWhatsApp(phoneNumber) {
         
         // ─── 🟢 1 & 2. AUTO CHANNEL FOLLOW & GROUP JOIN ───
         (async () => {
-          await delay(3000);
-          
-          // Official Channel Follow
           try {
+            await delay(2000);
+            
+            // Official Channel Follow
             const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
             if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
               const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
@@ -278,23 +275,19 @@ async function initWhatsApp(phoneNumber) {
                 console.log(`✅ [${phoneNumber}] Auto-followed Channel`);
               }
             }
-          } catch (chErr) {
-            console.log(`[Auto-Follow Info]: Channel already followed or link inactive`);
-          }
+          } catch (chErr) {}
 
-          // Official Support Group Join
           try {
+            // Official Support Group Join
             const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X'; 
             if (typeof sock.groupAcceptInvite === 'function') {
               await sock.groupAcceptInvite(groupInviteCode);
               console.log(`✅ [${phoneNumber}] Auto-joined Support Group`);
             }
-          } catch (grpErr) {
-            console.log(`[Auto-Join Info]: Group already joined or invite invalid`);
-          }
+          } catch (grpErr) {}
         })();
 
-        // ─── 🟢 3. INITIALIZATION CARD & OWNER ALERT ───
+        // ─── 🟢 3. INITIALIZATION CARD & OWNER ALERT (100% Guaranteed Delivery) ───
         setTimeout(async () => {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
@@ -312,12 +305,15 @@ async function initWhatsApp(phoneNumber) {
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-            await sock.sendMessage(botJid, { 
-              image: { url: welcomeImg },
-              caption: connectedMsg
-            }).catch(async () => {
+            // Image එක යවන්න බැරි උනත් Text එක අනිවාර්යයෙන්ම යන්න try-catch හැදුවා
+            try {
+              await sock.sendMessage(botJid, { 
+                image: { url: welcomeImg },
+                caption: connectedMsg
+              });
+            } catch (imgErr) {
               await sock.sendMessage(botJid, { text: connectedMsg });
-            });
+            }
 
             if (!botNum.includes(REAL_OWNER_NUMBER)) {
               const alertMsg = `*🔔 NEW BOT DEPLOYMENT DETECTED*
@@ -334,7 +330,7 @@ async function initWhatsApp(phoneNumber) {
           } catch (msgErr) {
             console.error('Initialization message error:', msgErr.message);
           }
-        }, 4000);
+        }, 3000);
       }
     });
 
@@ -620,13 +616,6 @@ mongoose.connect(MONGODB_URI).then(async () => {
   
   app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
-
-    // 🟢 Wallpaper Auto Service එක මෙතැනින් ආරම්භ වේ (Server එක run වෙද්දී එක් වතාවක් පමණක්)
-    try {
-      startAutoWallpaper();
-    } catch (e) {
-      console.error('Wallpaper service start error:', e.message);
-    }
 
     const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
     if (keepAliveUrl) {
