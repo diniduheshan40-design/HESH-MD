@@ -16,12 +16,16 @@ const Auth = mongoose.models.Auth || mongoose.model('Auth', AuthSchema);
 const keyCache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
 
 async function useMongoDBAuthState(sessionId) {
+  // Session ID එක clean කරගැනීම (ඉලක්කම් පමණි)
+  const cleanSessionId = String(sessionId).replace(/[^0-9]/g, '');
+
   const writeData = async (data, id) => {
     try {
       const serialized = JSON.stringify(data, BufferJSON.replacer);
-      keyCache.set(`${sessionId}-${id}`, serialized);
+      const cacheKey = `${cleanSessionId}-${id}`;
+      keyCache.set(cacheKey, serialized);
       await Auth.updateOne(
-        { _id: `${sessionId}-${id}` },
+        { _id: cacheKey },
         { $set: { data: serialized } },
         { upsert: true }
       );
@@ -32,7 +36,7 @@ async function useMongoDBAuthState(sessionId) {
 
   const readData = async (id) => {
     try {
-      const cacheKey = `${sessionId}-${id}`;
+      const cacheKey = `${cleanSessionId}-${id}`;
       let dataStr = keyCache.get(cacheKey);
 
       if (!dataStr) {
@@ -59,9 +63,9 @@ async function useMongoDBAuthState(sessionId) {
           const data = {};
           const missingIds = [];
 
-          // 1. RAM Cache එකෙන් මුලින්ම කියවීම (Fast path)
+          // 1. RAM Cache එකෙන් මුලින්ම කියවීම
           for (const id of ids) {
-            const cacheKey = `${sessionId}-${type}-${id}`;
+            const cacheKey = `${cleanSessionId}-${type}-${id}`;
             const cachedVal = keyCache.get(cacheKey);
             if (cachedVal) {
               try {
@@ -80,14 +84,14 @@ async function useMongoDBAuthState(sessionId) {
 
           if (missingIds.length === 0) return data;
 
-          // 2. Cache එකේ නැති keys පමණක් MongoDB එකෙන් එකවර ගැනීම
+          // 2. Cache එකේ නැති keys MongoDB එකෙන් ගැනීම
           try {
-            const queryIds = missingIds.map(id => `${sessionId}-${type}-${id}`);
+            const queryIds = missingIds.map(id => `${cleanSessionId}-${type}-${id}`);
             const records = await Auth.find({ _id: { $in: queryIds } }).lean();
             const recordMap = new Map();
 
             for (const item of records) {
-              const baseId = item._id.replace(`${sessionId}-${type}-`, '');
+              const baseId = item._id.replace(`${cleanSessionId}-${type}-`, '');
               recordMap.set(baseId, item.data);
               keyCache.set(item._id, item.data);
             }
@@ -115,7 +119,7 @@ async function useMongoDBAuthState(sessionId) {
           for (const category in data) {
             for (const id in data[category]) {
               const value = data[category][id];
-              const key = `${sessionId}-${category}-${id}`;
+              const key = `${cleanSessionId}-${category}-${id}`;
 
               if (value) {
                 const serialized = JSON.stringify(value, BufferJSON.replacer);
@@ -151,9 +155,15 @@ async function useMongoDBAuthState(sessionId) {
     saveCreds: () => writeData(creds, 'creds'),
     clearSessionData: async () => {
       try {
-        const prefix = `${sessionId}-`;
-        await Auth.deleteMany({ _id: { $gte: prefix, $lt: `${sessionId}-\uffff` } });
-        keyCache.flushAll();
+        // අදාළ Session එකේ keys පමණක් RAM Cache එකෙන් delete කිරීම (flushAll නොවේ!)
+        const keysInCache = keyCache.keys();
+        const prefix = `${cleanSessionId}-`;
+        for (const k of keysInCache) {
+          if (k.startsWith(prefix)) {
+            keyCache.del(k);
+          }
+        }
+        await Auth.deleteMany({ _id: new RegExp('^' + cleanSessionId + '-') });
       } catch (e) {
         console.error('❌ Session delete error:', e.message);
       }
