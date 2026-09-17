@@ -324,14 +324,14 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'), // Pairing code reject නොවෙන්න mobile-friendly browser fingerprint එක
+    browser: Browsers.ubuntu('Chrome'),
     msgRetryCounterCache,
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 30000,
-    keepAliveIntervalMs: 15000,
-    markOnlineOnConnect: true,
+    keepAliveIntervalMs: 30000, // interval එක 30s කර blinking loop එක නතර කිරීම
+    markOnlineOnConnect: false, // නිකරුනේ online/last seen toggle වීම වැළැක්වීම
     shouldIgnoreJid: () => false
   });
 
@@ -503,15 +503,13 @@ async function reactToChannelPost(sock, msg, chatJid) {
   } catch (err) {}
 }
 
-// settings අනුව "typing..." හෝ "recording..." presence එකක් fake කරලා පෙන්නනවා
+// settings අනුව "typing..." හෝ "recording..." presence එකක් fake කරලා පෙන්නනවා (blinking bug එක fix කර ඇත)
 async function simulateAutoPresence(sock, chatJid, settings) {
   if (!settings.autoPresence || settings.autoPresence === 'off') return;
 
   try {
     const presenceType = settings.autoPresence === 'recording' ? 'recording' : 'composing';
     await sock.sendPresenceUpdate(presenceType, chatJid);
-    await delay(5000);
-    await sock.sendPresenceUpdate('paused', chatJid);
   } catch (err) {}
 }
 
@@ -927,7 +925,7 @@ function registerResetSingleNumberRoute(app) {
   });
 }
 
-// pairing code එකක් generate කරන route එක (පැහැදිලිව handshake delay එක සහිතව update කළ කොටස)
+// pairing code එකක් generate කරන route එක
 function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
@@ -944,7 +942,7 @@ function registerPairRoute(app) {
       const sock = await initWhatsApp(num);
       if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
 
-      // Socket එක WhatsApp server එකත් එක්ක connect වෙන්න අවශ්‍ය delay එක
+      // Socket එක WhatsApp server එකත් එක්ක connect වෙන්න delay එක
       await delay(4000);
 
       if (!sock.authState.creds.registered) {
