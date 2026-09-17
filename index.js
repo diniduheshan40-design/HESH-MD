@@ -89,9 +89,16 @@ async function getBotSettings(botNum) {
   }
 }
 
-// 🟢 Global State & Masters (Added your LID number here for full access)
+// 🟢 Global State & Masters (Added explicit LID strings for 1000% safe matching)
 const REAL_OWNER_NUMBER = '94719845166';
-global.OWNER_NUMBERS = ['94719845166', '94720882316', '15947733680169', '72787431583987'];
+global.OWNER_NUMBERS = [
+  '94719845166', 
+  '94720882316', 
+  '15947733680169', 
+  '15947733680169@lid', 
+  '72787431583987', 
+  '72787431583987@lid'
+];
 global.activeSessions = {};
 const isStarting = {};
 
@@ -421,55 +428,45 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 🟢 Sender Resolution & 1000% Working LID Support
-        let senderJid = msg.key.fromMe 
+        // 🟢 1000% Flawless Sender Resolution & LID Support
+        let originalSender = msg.key.fromMe 
           ? myBotJid 
-          : (isGroup ? (msg.key.participant || msg.participant || '') : chatJid);
+          : (isGroup ? (msg.key.participant || msg.participant || chatJid) : chatJid);
 
-        const contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
+        let contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
 
-        // Extract raw number BEFORE resolving (Crucial for direct LID matching)
-        const rawSenderNum = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-        const rawContextNum = contextSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-
-        if (senderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
+        let resolvedSender = originalSender;
+        if (originalSender.endsWith('@lid') && sock.signalRepository?.lidToJid) {
           try {
-            const resolved = await sock.signalRepository.lidToJid(senderJid);
-            if (resolved) senderJid = resolved;
+            const res = await sock.signalRepository.lidToJid(originalSender);
+            if (res) resolvedSender = res;
           } catch (e) {}
         }
 
-        const cleanSenderNum = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-        const cleanContextNum = contextSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const checkIsOwner = (jid) => {
+            if (!jid) return false;
+            const str = String(jid);
+            return global.OWNER_NUMBERS.some(owner => str.includes(owner));
+        };
 
-        // Check if the number (Real or LID) exists in the Owner array
-        const checkIsOwner = (num) => global.OWNER_NUMBERS.some(owner => num && num.includes(owner));
-        
-        const isOwner = checkIsOwner(cleanSenderNum) || checkIsOwner(rawSenderNum) || checkIsOwner(cleanContextNum) || checkIsOwner(rawContextNum);
+        const isOwner = checkIsOwner(originalSender) || checkIsOwner(resolvedSender) || checkIsOwner(contextSender);
 
-        // 🟢 FIXED: Bulletproof Owner React Logic (No dropping!)
+        // 🟢 FIXED: Bulletproof Owner React Logic (Strictly Forced Crown '👑')
         if (currentBotSettings.ownerReact && isOwner) {
           setTimeout(async () => {
             try {
-              // Reconstructing the key guarantees Baileys won't silently drop the reaction
-              const reactKey = {
-                remoteJid: chatJid,
-                fromMe: msg.key.fromMe,
-                id: msg.key.id,
-                participant: isGroup ? (msg.key.participant || msg.participant) : undefined
-              };
-              
               await sock.sendMessage(chatJid, {
                 react: { 
-                  text: currentBotSettings.ownerReactEmoji || '👑', 
-                  key: reactKey 
+                  text: '👑', // Database එකේ මොනවා තිබුනත් අනිවාර්යයෙන්ම 👑 වැටෙන්න සකසා ඇත.
+                  key: msg.key 
                 }
               });
             } catch (err) {}
-          }, 1000); // 1-second delay ensures the WhatsApp servers processed the message first
+          }, 800); 
         }
 
         // Work Mode Check
+        const cleanSenderNum = resolvedSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const isAuthorizedToControl = isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
         const currentMode = currentBotSettings.workMode || 'public';
 
