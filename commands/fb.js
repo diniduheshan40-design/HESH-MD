@@ -5,7 +5,7 @@ const path = require('path');
 
 module.exports = {
     name: 'fb',
-    alias: ['facebook'],
+    alias: ['facebook', 'fbdl'],
     category: 'download',
     desc: 'Download Facebook Videos Error-Free',
 
@@ -38,16 +38,43 @@ module.exports = {
             let finalDownloadUrl = null;
             let videoTitle = "Facebook Video";
 
-            // 🟢 Method 1: David Cyril Public Stable API
+            // 🟢 Method 1: SupunOFC API (ප්‍රධාන API එක)
             try {
-                const res = await axios.get(`https://api.davidcyriltech.my.id/facebook?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
-                if (res.data?.success && res.data?.result) {
-                    finalDownloadUrl = res.data.result.hd || res.data.result.sd;
-                    if (res.data.result.title) videoTitle = res.data.result.title;
-                }
-            } catch (e) {}
+                const apiKey = 'supun-tvo5olfxylo98b8l6b9lq174';
+                const apiUrl = `https://supunofc.site/api/download/facebook/dl?url=${encodeURIComponent(cleanUrl)}&apikey=${apiKey}`;
+                
+                const res = await axios.get(apiUrl, { timeout: 20000 });
+                if (res.data?.success && res.data?.result?.medias?.length > 0) {
+                    const medias = res.data.result.medias;
+                    
+                    // HD තිබේ නම් HD තෝරාගනී, නැතහොත් SD තෝරාගනී
+                    const hdVideo = medias.find(m => m.quality === 'hd' && m.videoAvailable);
+                    const sdVideo = medias.find(m => m.quality === 'sd' && m.videoAvailable);
+                    const selectedMedia = hdVideo || sdVideo || medias[0];
 
-            // 🟢 Method 2: NexOracle FB API
+                    if (selectedMedia?.url) {
+                        finalDownloadUrl = selectedMedia.url;
+                    }
+                    if (res.data.result.title) {
+                        videoTitle = res.data.result.title;
+                    }
+                }
+            } catch (e) {
+                console.log('SupunOFC API failed, trying fallbacks...');
+            }
+
+            // 🟡 Method 2: David Cyril Fallback API
+            if (!finalDownloadUrl) {
+                try {
+                    const res = await axios.get(`https://api.davidcyriltech.my.id/facebook?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
+                    if (res.data?.success && res.data?.result) {
+                        finalDownloadUrl = res.data.result.hd || res.data.result.sd;
+                        if (res.data.result.title) videoTitle = res.data.result.title;
+                    }
+                } catch (e) {}
+            }
+
+            // 🟡 Method 3: NexOracle FB API
             if (!finalDownloadUrl) {
                 try {
                     const res = await axios.get(`https://api.nexoracle.com/downloader/facebook?apikey=free_key@maher_apis&url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
@@ -58,11 +85,11 @@ module.exports = {
                 } catch (e) {}
             }
 
-            // 🟢 Method 3: Widipe API
+            // 🟡 Method 4: Widipe API
             if (!finalDownloadUrl) {
                 try {
                     const res = await axios.get(`https://widipe.com/download/fbdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 15000 });
-                    if (res.data?.status && res.data?.result) {
+                    if (res.data?.status === 200 && res.data?.result) {
                         finalDownloadUrl = res.data.result.hd || res.data.result.sd;
                     }
                 } catch (e) {}
@@ -72,7 +99,7 @@ module.exports = {
                 throw new Error('වීඩියෝ Link එක ලබා ගැනීමට නොහැකි විය. වීඩියෝව Private එකක් විය හැක.');
             }
 
-            // Temp directory එක හදාගැනීම
+            // Temp directory එක සකස් කිරීම
             const tempDir = path.join(__dirname, '../temp');
             if (!fs.existsSync(tempDir)) {
                 fs.mkdirSync(tempDir, { recursive: true });
@@ -80,7 +107,7 @@ module.exports = {
 
             tempFilePath = path.join(tempDir, `fb_${Date.now()}.mp4`);
 
-            // Stream එකක් විදිහට file එක write කිරීම (corrupt වීම සම්පූර්ණයෙන්ම වළකයි)
+            // වීඩියෝව Stream එකක් ලෙස download කිරීම
             const response = await axios({
                 method: 'GET',
                 url: finalDownloadUrl,
@@ -100,9 +127,9 @@ module.exports = {
                 writer.on('error', reject);
             });
 
-            // File size validation (නියම mp4 file එකක් බව තහවුරු කරගැනීම)
+            // File size validation (100KB ට වැඩිදැයි පරීක්ෂා කිරීම)
             const stats = fs.statSync(tempFilePath);
-            if (stats.size < 100000) { // 100KB ට වඩා අඩු නම් corrupt එකක්
+            if (stats.size < 100000) {
                 throw new Error('ලබාගත් වීඩියෝව වාදනය කළ නොහැකි ගොනුවකි (Corrupted File).');
             }
 
@@ -112,7 +139,7 @@ module.exports = {
 
             const caption = `*📘 𝗙𝗔𝗖𝗘𝗕𝗢𝗢𝗞 𝗩𝗜𝗗𝗘𝗢 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 📘*\n\n📌 *Title:* ${videoTitle}${DEFAULT_FOOTER}`;
 
-            // WhatsApp එකට Send කිරීම
+            // වීඩියෝව යැවීම
             await sock.sendMessage(targetChat, {
                 video: fs.readFileSync(tempFilePath),
                 caption: caption,
@@ -130,7 +157,7 @@ module.exports = {
                 text: `❌ *Facebook Download Error:* ${err.message}${DEFAULT_FOOTER}` 
             }, { quoted: msg });
         } finally {
-            // Memory safe: File එක send උනාට පසු temp එකෙන් delete කිරීම
+            // Temp file එක ඉවත් කිරීම
             if (tempFilePath && fs.existsSync(tempFilePath)) {
                 try {
                     fs.unlinkSync(tempFilePath);
