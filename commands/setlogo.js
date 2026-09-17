@@ -2,8 +2,6 @@
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
-const fetch = require('node-fetch');
-const FormData = require('form-data');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 // Database Model
@@ -14,35 +12,11 @@ const SettingsSchema = new mongoose.Schema({
 
 const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Catbox CDN එකට upload කර ස්ථිර Link එකක් ලබාගැනීමේ helper function එක
-async function uploadToCatbox(buffer) {
-  try {
-    const form = new FormData();
-    form.append('reqtype', 'fileupload');
-    form.append('fileToUpload', buffer, { filename: 'logo.jpg' });
-
-    const response = await fetch('https://catbox.moe/user/api.php', {
-      method: 'POST',
-      body: form
-    });
-
-    const url = await response.text();
-    if (url && url.startsWith('http')) {
-      return url.trim();
-    }
-  } catch (err) {
-    console.error('Catbox upload error:', err.message);
-  }
-  return null;
-}
-
 module.exports = {
   name: 'setlogo',
   alias: ['logo', 'setbotlogo'],
   category: 'owner',
-  desc: 'Set custom bot logo permanently without database freeze',
+  desc: 'Set custom bot logo image permanently',
 
   async execute(sock, msg, args, chatJid, safeReply, { isOwner }) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -59,8 +33,7 @@ module.exports = {
         return sock.sendMessage(targetChat, { text: '⚠️ Bot Number හඳුනාගත නොහැකි විය.' }, { quoted: msg });
       }
 
-      sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
-
+      // Photo එක direct එවපු එකක්ද නැත්නම් Quoted (Reply) කරපු එකක්ද කියා හඳුනාගැනීම
       const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
       const quotedMsg = quotedContext?.quotedMessage;
       let targetMsg = null;
@@ -92,13 +65,8 @@ module.exports = {
         return sock.sendMessage(targetChat, { text: helpText }, { quoted: msg });
       }
 
-      // Step 1: 30% Loader යැවීම
-      const initialText = `*⚡ HESHAN-MD LOGO SYNC ⚡*
-────────────────────────────
-🔄 [■■■░░░░░░░] 30%
-✦ Status: Downloading image stream...`;
-
-      let activeLoader = await sock.sendMessage(targetChat, { text: initialText }, { quoted: msg });
+      // Process වෙන බව පෙන්වීමට reaction එකක් දමයි
+      await sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
       // Image එක download කිරීම
       const buffer = await downloadMediaMessage(
@@ -112,70 +80,36 @@ module.exports = {
       );
 
       if (!buffer || buffer.length === 0) {
-        return sock.sendMessage(targetChat, { 
-          text: '❌ Image download fail විය! කරුණාකර නැවත උත්සාහ කරන්න.', 
-          edit: activeLoader.key 
-        }).catch(async () => {
-          await sock.sendMessage(targetChat, { text: '❌ Image download fail විය!' }, { quoted: msg });
-        });
+        await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+        return sock.sendMessage(targetChat, { text: '❌ Image එක download කරගැනීමට නොහැකි විය. නැවත උත්සාහ කරන්න.' }, { quoted: msg });
       }
 
-      // Step 2: 70% Loader Update
-      await sock.sendMessage(targetChat, { 
-        text: `*⚡ HESHAN-MD LOGO SYNC ⚡*
-────────────────────────────
-🔄 [■■■■■■■░░░] 70%
-✦ Status: Uploading to Cloud Vault...`, 
-        edit: activeLoader.key 
-      }).catch(() => {});
-
-      // 1. Local copy save කර තැබීම
+      // 1. Local copy එකක් Save කිරීම
       const botLogoPath = path.join(process.cwd(), `logo_${myBotNum}.jpg`);
       fs.writeFileSync(botLogoPath, buffer);
 
-      // 2. Cloud එකට upload කර direct URL ලබාගැනීම (Fail වුවහොත් local file path එක යොදයි)
-      let finalLogoUrl = await uploadToCatbox(buffer);
-      if (!finalLogoUrl) {
-        finalLogoUrl = botLogoPath;
-      }
-
-      // 3. Database එකට සැහැල්ලු URL එකක් ලෙස Save කිරීම (මිලි තත්පර 10කින් save වේ)
+      // 2. Database එකට local file path එක save කිරීම
       await SettingsModel.findByIdAndUpdate(
         myBotNum,
-        { $set: { botLogo: finalLogoUrl } },
+        { $set: { botLogo: botLogoPath } },
         { upsert: true, new: true }
       );
 
       // Cache flush කිරීම
       if (global.clearSettingsCache) global.clearSettingsCache(myBotNum);
 
-      // Step 3: 100% Completed Loader Update
-      await sock.sendMessage(targetChat, { 
-        text: `*⚡ HESHAN-MD LOGO SYNC ⚡*
-────────────────────────────
-✅ [■■■■■■■■■■] 100%
-✦ Status: Successfully Deployed!`, 
-        edit: activeLoader.key 
-      }).catch(() => {});
-
-      await sleep(600);
-
-      // Success Reaction
-      sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
-
-      // Loader එක delete කිරීම
-      await sock.sendMessage(targetChat, { delete: activeLoader.key }).catch(() => {});
+      // සාර්ථක වූ බව දැක්වීමට reaction මාරු කිරීම
+      await sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
 
       const successCaption = `*⚡ HESHAN-MD LOGO DEPLOYED ⚡*
 ────────────────────────────
 *🤖 Session :* +${myBotNum}
-*💎 Status  :* Permanent Sync Completed
-*🍃 Storage :* MongoDB Cloud Database
-*🔒 Security:* Auto-Reload Protected
+*💎 Status  :* Successfully Updated
+*🖼️ File    :* Saved to System
 ────────────────────────────
 *📢 SYSTEM NOTICE:*
-• Server restart වුවද වෙනස් නොවේ.
-• Cache storage එක සාර්ථකව reload විය.
+• Logo එක සාර්ථකව update විය.
+• \`.settings\` ගසා පරීක්ෂා කර බලන්න.
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
 
@@ -186,9 +120,8 @@ module.exports = {
 
     } catch (err) {
       console.error("Setlogo Error:", err);
-      return sock.sendMessage(targetChat, { 
-        text: `❌ *Execution Error:* ${err.message}` 
-      }, { quoted: msg });
+      await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+      return sock.sendMessage(targetChat, { text: `❌ *Error:* ${err.message}` }, { quoted: msg });
     }
   }
 };
