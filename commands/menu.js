@@ -41,51 +41,50 @@ module.exports = {
 ┃
 ┣━━『 📑 *SELECT CATEGORY* 』
 ┃
-┃ [10] 📥 *DOWNLOAD MENU*
-┃ [11] 🛠️ *TOOLS & UTILITY*
-┃ [12] 👥 *GROUP & FUN MENU*
-┃ [13] ⚡ *SYSTEM & OWNER*
+┃ [1] 📥 *DOWNLOAD MENU*
+┃ [2] 🛠️ *TOOLS & UTILITY*
+┃ [3] 👥 *GROUP & FUN MENU*
+┃ [4] ⚡ *SYSTEM & OWNER*
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
-*👉 Select a category by replying with (10, 11, 12, or 13)*
+*👉 Select a category by replying with (1, 2, 3, or 4)*
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
 
     try {
       await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
-      let imgBuffer = null;
+      // Logo එක Buffer එකක් ලෙස Load කර ගැනීම
+      let imgPayload = null;
       if (fs.existsSync(LOCAL_LOGO)) {
-        imgBuffer = fs.readFileSync(LOCAL_LOGO);
+        imgPayload = fs.readFileSync(LOCAL_LOGO);
       } else {
         try {
           const res = await axios.get(FALLBACK_LOGO_URL, { 
             responseType: 'arraybuffer',
-            timeout: 10000 
+            timeout: 8000 
           });
-          imgBuffer = Buffer.from(res.data, 'binary');
-        } catch (e) {
-          const res2 = await axios.get('https://files.catbox.moe/a58add.jpeg', {
-            responseType: 'arraybuffer',
-            timeout: 10000
-          }).catch(() => null);
-          if (res2) imgBuffer = Buffer.from(res2.data, 'binary');
+          imgPayload = Buffer.from(res.data);
+        } catch {
+          imgPayload = { url: FALLBACK_LOGO_URL };
         }
       }
 
-      if (imgBuffer) {
-        await sock.sendMessage(targetChat, {
-          image: imgBuffer,
+      // Logo image එක caption එක සමඟ යැවීම
+      let sentMenu;
+      try {
+        sentMenu = await sock.sendMessage(targetChat, {
+          image: imgPayload,
           caption: mainText
         }, { quoted: msg });
-      } else {
-        await sock.sendMessage(targetChat, {
-          image: { url: FALLBACK_LOGO_URL },
-          caption: mainText
-        }, { quoted: msg });
+      } catch (sendErr) {
+        console.error("Image send error, falling back to text:", sendErr.message);
+        sentMenu = await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg });
       }
 
+      const menuMessageId = sentMenu?.key?.id;
+
       const subMenus = {
-        "10": `┏━━━❮ 📥 *DOWNLOAD MENU* ❯━━━┓
+        "1": `┏━━━❮ 📥 *DOWNLOAD MENU* ❯━━━┓
 ┃
 ┃ ◈ \`.song\`   ⌁ _<music mp3>_
 ┃ ◈ \`.video\`  ⌁ _<youtube mp4>_
@@ -97,7 +96,7 @@ module.exports = {
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
-        "11": `┏━━━❮ 🛠️ *TOOLS & UTILITY* ❯━━━┓
+        "2": `┏━━━❮ 🛠️ *TOOLS & UTILITY* ❯━━━┓
 ┃
 ┃ ◈ \`.pt\`      ⌁ _<photo to sticker/tool>_
 ┃ ◈ \`.tourl\`   ⌁ _<media to link>_
@@ -107,7 +106,7 @@ module.exports = {
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
-        "12": `┏━━━❮ 👥 *GROUP & FUN* ❯━━━┓
+        "3": `┏━━━❮ 👥 *GROUP & FUN* ❯━━━┓
 ┃
 ┃ ◈ \`.tagall\`  ⌁ _<mention all members>_
 ┃ ◈ \`.hack\`    ⌁ _<prank hack UI>_
@@ -115,7 +114,7 @@ module.exports = {
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
-        "13": `┏━━━❮ ⚡ *SYSTEM & OWNER* ❯━━━┓
+        "4": `┏━━━❮ ⚡ *SYSTEM & OWNER* ❯━━━┓
 ┃
 ┃ ◈ \`.ping\`    ⌁ _<response speed>_
 ┃ ◈ \`.alive\`   ⌁ _<bot online status>_
@@ -126,13 +125,12 @@ module.exports = {
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
       };
 
-      // 🟢 Bulletproof Reply Listener
+      // 🟢 Reply Listener (1, 2, 3, 4 සඳහා)
       const replyListener = async (m) => {
         try {
           const replyMsg = m.messages?.[0];
-          if (!replyMsg || !replyMsg.message) return;
+          if (!replyMsg || !replyMsg.message || replyMsg.key.fromMe) return;
 
-          // Message එක ආවේ Menu එක දැම්ම chat එකෙන්මද බලනවා
           const fromChat = replyMsg.key?.remoteJid;
           if (fromChat !== targetChat) return;
 
@@ -144,13 +142,20 @@ module.exports = {
             msgContent.conversation || 
             msgContent.extendedTextMessage?.text || 
             ""
-          ).trim().replace(/[\[\]]/g, '');
+          ).trim().replace(/[\[\].]/g, '');
 
-          // 10, 11, 12, 13 ආවොත් කෙලින්ම Submenu එක යවනවා
-          if (["10", "11", "12", "13"].includes(replyText)) {
-            sock.ev.off('messages.upsert', replyListener); // තවත් listen නොවී ඉවත් කරයි
+          // අදාළ Menu message එකට reply කර ඇත්දැයි බැලීම (Optional match)
+          const contextInfo = msgContent.extendedTextMessage?.contextInfo;
+          const isQuotedMenu = contextInfo && contextInfo.stanzaId === menuMessageId;
 
-            const emojis = { "10": "📥", "11": "🛠️", "12": "👥", "13": "⚡" };
+          // අංක 1, 2, 3, 4 ඇතුළත් කළ විට
+          if (["1", "2", "3", "4"].includes(replyText)) {
+            // Group එකකදී නම් වෙනත් අයගේ numbers වලට trigger නොවී menu එකට quote කළ විට හෝ direct chat එකකදී පමණක් ක්‍රියාත්මක වීම
+            if (targetChat.endsWith('@g.us') && !isQuotedMenu) return;
+
+            sock.ev.off('messages.upsert', replyListener);
+
+            const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
             await sock.sendMessage(targetChat, { react: { text: emojis[replyText], key: replyMsg.key } }).catch(() => {});
 
             await sock.sendMessage(targetChat, { 
@@ -164,7 +169,7 @@ module.exports = {
 
       sock.ev.on('messages.upsert', replyListener);
 
-      // තත්පර 60කින් listener එක close වෙයි
+      // තත්පර 60කින් listener එක ඉවත් කරයි
       setTimeout(() => {
         sock.ev.off('messages.upsert', replyListener);
       }, 60000);
