@@ -23,7 +23,7 @@ const { askAI } = require('./ai');
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 
-// 🟢 RAM Cache for Settings (MongoDB load & Latency අඩු කිරීමට)
+// 🟢 RAM Cache for Settings
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
 const SettingsSchema = new mongoose.Schema({
@@ -36,7 +36,7 @@ const SettingsSchema = new mongoose.Schema({
   ownerReact: { type: Boolean, default: true },
   ownerReactEmoji: { type: String, default: '👑' },
   securityPin: { type: String, default: '1234' },
-  isFirstConnectDone: { type: Boolean, default: false } // 🟢 පළමු වර සම්බන්ධ වූ බව සටහන් කරගැනීමට
+  isFirstConnectDone: { type: Boolean, default: false }
 });
 
 const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
@@ -107,7 +107,7 @@ if (fs.existsSync(cmdDir)) {
   }
 }
 
-// 🟢 2. Red & Black Cyber-Glassmorphism Portal UI
+// 🟢 2. Red & Black Cyber Portal UI
 app.get('/', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -263,12 +263,10 @@ async function initWhatsApp(phoneNumber) {
       } else if (connection === 'open') {
         console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
         
-        // ─── 🟢 1 & 2. AUTO CHANNEL FOLLOW & GROUP JOIN ───
+        // Auto Follow & Group Join
         (async () => {
           try {
             await delay(2000);
-            
-            // Official Channel Follow
             const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
             if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
               const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
@@ -280,7 +278,6 @@ async function initWhatsApp(phoneNumber) {
           } catch (chErr) {}
 
           try {
-            // Official Support Group Join
             const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X'; 
             if (typeof sock.groupAcceptInvite === 'function') {
               await sock.groupAcceptInvite(groupInviteCode);
@@ -289,14 +286,13 @@ async function initWhatsApp(phoneNumber) {
           } catch (grpErr) {}
         })();
 
-        // ─── 🟢 3. INITIALIZATION CARD & OWNER ALERT (Only on First Linked Device) ───
+        // First Connect Alert
         setTimeout(async () => {
           try {
             const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
             const botJid = `${botNum}@s.whatsapp.net`;
             const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
 
-            // පරීක්ෂා කිරීම: මෙම අංකයට පළමු වර Connecting message එක කලින් ගොස් ඇත්දැයි බැලීම
             const currentSettings = await getBotSettings(botNum);
             if (currentSettings.isFirstConnectDone) {
               console.log(`ℹ️ [RESTART / DEPLOY] +${botNum} reconnect detected. Connecting message skipped.`);
@@ -334,7 +330,6 @@ async function initWhatsApp(phoneNumber) {
               await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
             }
 
-            // Database එකේ සහ Cache එකේ Flag එක true කිරීම (මීළඟ restart වලදී නොයැවීමට)
             await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
             settingsCache.del(botNum);
 
@@ -355,7 +350,7 @@ async function initWhatsApp(phoneNumber) {
         const chatJid = msg.key?.remoteJid;
         if (!chatJid) continue;
 
-        // ─── 🟢 AUTO CHANNEL POST REACT (UPDATE CHANNEL) ───
+        // Auto React
         if (chatJid === UPDATE_CHANNEL_JID && !msg.message.reactionMessage) {
           (async () => {
             try {
@@ -369,16 +364,10 @@ async function initWhatsApp(phoneNumber) {
                 await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
               } else {
                 await sock.sendMessage(chatJid, {
-                  react: {
-                    text: randomEmoji,
-                    key: msg.key
-                  }
+                  react: { text: randomEmoji, key: msg.key }
                 });
               }
-              console.log(`[HESHAN-MD] ✅ Channel Auto-Reacted: ${randomEmoji} to post (${serverId || msg.key?.id})`);
-            } catch (err) {
-              console.error('Channel Auto-React Error:', err.message || err);
-            }
+            } catch (err) {}
           })();
           continue;
         }
@@ -386,12 +375,11 @@ async function initWhatsApp(phoneNumber) {
         if (type !== 'notify' || msg.message.reactionMessage) continue;
 
         const isGroup = chatJid.endsWith('@g.us');
-
         const myBotJid = sock.user?.id || '';
         const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
         const currentBotSettings = await getBotSettings(myBotNum);
 
-        // 🟢 1. AUTO STATUS SEEN & STATUS REACTION
+        // Auto Status Seen
         if (chatJid === 'status@broadcast') {
           if (currentBotSettings.autoStatusSeen) {
             try {
@@ -408,7 +396,7 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 🟢 2. SENDER RESOLVER
+        // Sender Resolution
         let senderJid = msg.key.fromMe 
           ? myBotJid 
           : (isGroup ? (msg.key.participant || msg.participant || '') : chatJid);
@@ -428,7 +416,7 @@ async function initWhatsApp(phoneNumber) {
         const isMasterCreator = cleanSenderNum.includes(REAL_OWNER_NUMBER) || cleanContextNum.includes(REAL_OWNER_NUMBER);
         const isOwner = global.OWNER_NUMBERS.some(owner => cleanSenderNum.includes(owner) || cleanContextNum.includes(owner));
 
-        // 🟢 3. BULLETPROOF OWNER REACT
+        // Owner React
         const isSelfMessageOnSameBot = msg.key.fromMe && myBotNum.includes(REAL_OWNER_NUMBER);
         if (currentBotSettings.ownerReact && isMasterCreator && !isSelfMessageOnSameBot) {
           const reactTargetKey = {
@@ -442,7 +430,7 @@ async function initWhatsApp(phoneNumber) {
           }).catch(() => {});
         }
 
-        // 🟢 4. AUTHORIZED CONTROLLER & WORK MODE
+        // Work Mode Check
         const isAuthorizedToControl = isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
         const currentMode = currentBotSettings.workMode || 'public';
 
@@ -452,7 +440,7 @@ async function initWhatsApp(phoneNumber) {
           if (currentMode === 'groups' && !isGroup) continue;
         }
 
-        // Unwrap Text
+        // Text Unwrapping
         const rawMsg = msg.message.ephemeralMessage?.message || 
                        msg.message.viewOnceMessage?.message || 
                        msg.message.viewOnceMessageV2?.message || 
@@ -483,11 +471,13 @@ async function initWhatsApp(phoneNumber) {
           }
         };
 
-        // 🟢 5. SETTINGS DIRECT REPLY INTERCEPTOR
+        // 🟢 5. SETTINGS DIRECT REPLY INTERCEPTOR (Safe: Only triggers if quoted from Settings)
         const cleanInput = text.toLowerCase().trim();
         const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ') || cleanInput.startsWith('pin ');
+        const quotedText = quotedMsgObj?.conversation || quotedMsgObj?.extendedTextMessage?.text || '';
+        const isQuotedFromSettings = quotedText.includes('SYSTEM SETTINGS') || quotedText.includes('WORK MODE') || quotedText.includes('AUTO AI INBOX');
 
-        if (isSettingCode && quotedMsgObj && isAuthorizedToControl) {
+        if (isSettingCode && quotedMsgObj && isQuotedFromSettings && isAuthorizedToControl) {
           const settingsCmd = commands.get('settings') || commands.get('setting') || commands.get('set');
           if (settingsCmd) {
             const cmdFunc = typeof settingsCmd === 'function' ? settingsCmd : (settingsCmd.execute || settingsCmd.run);
@@ -499,7 +489,7 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 6. AUTO STATUS SAVE (oni, dapan, ewanna...)
+        // 🟢 6. AUTO STATUS SAVE
         const statusKeywords = [
           'oni', 'ඕනි', 'ඕනෙ', 'one', 
           'dapan', 'දාපන්', 'dapn', 
@@ -546,10 +536,11 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 8. INBOX AUTO-AI SYSTEM
+        // 🟢 8. INBOX AUTO-AI SYSTEM (Completely Ignores Numeric Inputs like 10, 11, 12, 13 etc.)
         const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
+        const isNumericOnly = /^[0-9]+$/.test(cleanInput); // 👈 අංක සඳහා AI සම්පූර්ණයෙන්ම Stop කරයි
 
-        if (!isSelfBotMsg && !isGroup && currentBotSettings.autoAiInbox) {
+        if (!isSelfBotMsg && !isGroup && currentBotSettings.autoAiInbox && !isNumericOnly) {
           try {
             await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
             
@@ -561,7 +552,6 @@ async function initWhatsApp(phoneNumber) {
               await safeReply(aiReply);
             }
           } catch (aiErr) {
-            // Quiet timeout fallback
           } finally {
             await sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
           }
@@ -604,7 +594,6 @@ app.get('/pair', async (req, res) => {
     }
     await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
     
-    // අලුතින් Pair කරන විට කලින් flag එක reset කිරීම (නැවත පළමු connection ලෙස හඳුනා ගැනීමට)
     await SettingsModel.findByIdAndUpdate(num, { isFirstConnectDone: false }).catch(() => {});
     settingsCache.del(num);
 
