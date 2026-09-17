@@ -23,6 +23,27 @@ const { askAI } = require('./ai');
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 
+// 🟢 Local Logo Verification & Auto-Download Engine (Fixes Logo Issues)
+const LOCAL_LOGO_PATH = path.join(process.cwd(), 'logo.jpg');
+const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
+
+async function ensureLocalLogo() {
+  try {
+    if (!fs.existsSync(LOCAL_LOGO_PATH)) {
+      console.log('🖼️ Local logo not found, downloading default asset...');
+      const res = await fetch(DEFAULT_BACKUP_LOGO);
+      if (res.ok) {
+        const buffer = await res.buffer();
+        fs.writeFileSync(LOCAL_LOGO_PATH, buffer);
+        console.log('✅ Default logo.jpg saved successfully.');
+      }
+    }
+  } catch (err) {
+    console.error('⚠️ Logo download check skipped:', err.message);
+  }
+}
+ensureLocalLogo();
+
 // 🟢 RAM Cache for Settings
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
@@ -311,8 +332,12 @@ async function initWhatsApp(phoneNumber) {
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
             try {
+              let logoPayload = fs.existsSync(LOCAL_LOGO_PATH) 
+                ? fs.readFileSync(LOCAL_LOGO_PATH) 
+                : { url: welcomeImg };
+
               await sock.sendMessage(botJid, { 
-                image: { url: welcomeImg },
+                image: logoPayload,
                 caption: connectedMsg
               });
             } catch (imgErr) {
@@ -350,7 +375,7 @@ async function initWhatsApp(phoneNumber) {
         const chatJid = msg.key?.remoteJid;
         if (!chatJid) continue;
 
-        // Auto React
+        // Auto React to Update Channel
         if (chatJid === UPDATE_CHANNEL_JID && !msg.message.reactionMessage) {
           (async () => {
             try {
@@ -471,7 +496,7 @@ async function initWhatsApp(phoneNumber) {
           }
         };
 
-        // 🟢 5. SETTINGS DIRECT REPLY INTERCEPTOR (Safe: Only triggers if quoted from Settings)
+        // 🟢 5. SETTINGS DIRECT REPLY INTERCEPTOR
         const cleanInput = text.toLowerCase().trim();
         const isSettingCode = /^(\d\.\d|\d)$/.test(cleanInput) || cleanInput.startsWith('6 ') || cleanInput.startsWith('pin ');
         const quotedText = quotedMsgObj?.conversation || quotedMsgObj?.extendedTextMessage?.text || '';
@@ -512,9 +537,10 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 7. COMMAND DISPATCHER
-        const prefix = '.';
-        if (text.startsWith(prefix)) {
+        // 🟢 7. COMMAND DISPATCHER (Supports Prefix . / ! #)
+        const prefixMatch = text.match(/^[./!#]/);
+        if (prefixMatch) {
+          const prefix = prefixMatch[0];
           const args = text.slice(prefix.length).trim().split(/ +/);
           const commandName = args.shift().toLowerCase();
 
@@ -527,6 +553,7 @@ async function initWhatsApp(phoneNumber) {
             try {
               const cmdFunc = typeof targetCmd === 'function' ? targetCmd : (targetCmd.execute || targetCmd.run);
               if (typeof cmdFunc === 'function') {
+                // Compatible with both execute(sock, msg, args, chatJid, safeReply, extra) forms
                 await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorizedToControl });
               }
             } catch (err) {
@@ -536,9 +563,9 @@ async function initWhatsApp(phoneNumber) {
           }
         }
 
-        // 🟢 8. INBOX AUTO-AI SYSTEM (Completely Ignores Numeric Inputs like 10, 11, 12, 13 etc.)
+        // 🟢 8. INBOX AUTO-AI SYSTEM
         const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
-        const isNumericOnly = /^[0-9]+$/.test(cleanInput); // 👈 අංක සඳහා AI සම්පූර්ණයෙන්ම Stop කරයි
+        const isNumericOnly = /^[0-9]+$/.test(cleanInput);
 
         if (!isSelfBotMsg && !isGroup && currentBotSettings.autoAiInbox && !isNumericOnly) {
           try {
