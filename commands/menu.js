@@ -3,8 +3,16 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 
-const LOCAL_LOGO = path.join(process.cwd(), 'logo.jpg');
-const FALLBACK_LOGO_URL = 'https://files.catbox.moe/gs150o.jpg';
+// Local logo path check (root එකේ හරි commands එක ඇතුලෙ හරි)
+const POSSIBLE_PATHS = [
+  path.join(process.cwd(), 'logo.jpg'),
+  path.join(process.cwd(), 'logo.png'),
+  path.join(process.cwd(), 'assets', 'logo.jpg'),
+  path.join(__dirname, '../logo.jpg')
+];
+
+// ස්ථිරවම වැඩ කරන public banner fallback url එකක්
+const FALLBACK_LOGO_URL = 'https://i.ibb.co/vz6V20v/image.jpg';
 
 function formatUptime(seconds) {
     seconds = Math.floor(Number(seconds) || 0);
@@ -13,6 +21,31 @@ function formatUptime(seconds) {
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
+}
+
+// Logo එක Buffer එකක් විදියට ගෙන දෙන function එක
+async function getLogoBuffer() {
+  // 1. මුලින්ම Local File එකක් තියෙනවද බලනවා
+  for (const p of POSSIBLE_PATHS) {
+    if (fs.existsSync(p)) {
+      try {
+        return fs.readFileSync(p);
+      } catch (e) {}
+    }
+  }
+
+  // 2. Local එකක් නැත්නම් URL එකෙන් Arraybuffer එකක් අරන් Buffer එක හදනවා
+  try {
+    const res = await axios.get(FALLBACK_LOGO_URL, {
+      responseType: 'arraybuffer',
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      timeout: 10000
+    });
+    return Buffer.from(res.data);
+  } catch (err) {
+    console.error("Logo Download Error:", err.message);
+    return null;
+  }
 }
 
 module.exports = {
@@ -53,32 +86,26 @@ module.exports = {
     try {
       await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
-      // Logo එක Buffer එකක් ලෙස Load කර ගැනීම
-      let imgPayload = null;
-      if (fs.existsSync(LOCAL_LOGO)) {
-        imgPayload = fs.readFileSync(LOCAL_LOGO);
-      } else {
-        try {
-          const res = await axios.get(FALLBACK_LOGO_URL, { 
-            responseType: 'arraybuffer',
-            timeout: 8000 
-          });
-          imgPayload = Buffer.from(res.data);
-        } catch {
-          imgPayload = { url: FALLBACK_LOGO_URL };
-        }
-      }
+      // Logo එක Load කර ගැනීම
+      const logoBuffer = await getLogoBuffer();
 
-      // Logo image එක caption එක සමඟ යැවීම
       let sentMenu;
-      try {
+      if (logoBuffer) {
+        // Logo image එකක් Buffer විදියට යැවීම
         sentMenu = await sock.sendMessage(targetChat, {
-          image: imgPayload,
-          caption: mainText
+          image: logoBuffer,
+          caption: mainText,
+          mimetype: 'image/jpeg'
         }, { quoted: msg });
-      } catch (sendErr) {
-        console.error("Image send error, falling back to text:", sendErr.message);
-        sentMenu = await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg });
+      } else {
+        // Logo එක කොහෙත්ම load නොවුනොත් URL object එකෙන් try කිරීම
+        sentMenu = await sock.sendMessage(targetChat, {
+          image: { url: FALLBACK_LOGO_URL },
+          caption: mainText
+        }, { quoted: msg }).catch(async () => {
+          // ඒකත් බැරි උනොත් Text එක විතරක් යැවීම
+          return await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg });
+        });
       }
 
       const menuMessageId = sentMenu?.key?.id;
@@ -125,7 +152,7 @@ module.exports = {
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
       };
 
-      // 🟢 Reply Listener (1, 2, 3, 4 සඳහා)
+      // 🟢 Reply Listener (1, 2, 3, 4)
       const replyListener = async (m) => {
         try {
           const replyMsg = m.messages?.[0];
@@ -144,13 +171,10 @@ module.exports = {
             ""
           ).trim().replace(/[\[\].]/g, '');
 
-          // අදාළ Menu message එකට reply කර ඇත්දැයි බැලීම (Optional match)
-          const contextInfo = msgContent.extendedTextMessage?.contextInfo;
-          const isQuotedMenu = contextInfo && contextInfo.stanzaId === menuMessageId;
-
-          // අංක 1, 2, 3, 4 ඇතුළත් කළ විට
           if (["1", "2", "3", "4"].includes(replyText)) {
-            // Group එකකදී නම් වෙනත් අයගේ numbers වලට trigger නොවී menu එකට quote කළ විට හෝ direct chat එකකදී පමණක් ක්‍රියාත්මක වීම
+            // Group එකකදී අදාළ menu එකට reply නොකර නිකන් 1, 2, 3 දැම්මොත් ignore කරයි
+            const contextInfo = msgContent.extendedTextMessage?.contextInfo;
+            const isQuotedMenu = contextInfo && contextInfo.stanzaId === menuMessageId;
             if (targetChat.endsWith('@g.us') && !isQuotedMenu) return;
 
             sock.ev.off('messages.upsert', replyListener);
@@ -169,7 +193,7 @@ module.exports = {
 
       sock.ev.on('messages.upsert', replyListener);
 
-      // තත්පර 60කින් listener එක ඉවත් කරයි
+      // තත්පර 60කින් listener එක clear වෙයි
       setTimeout(() => {
         sock.ev.off('messages.upsert', replyListener);
       }, 60000);
