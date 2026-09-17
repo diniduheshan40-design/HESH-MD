@@ -1,7 +1,8 @@
+// commands/ownertools.js
 const util = require('util');
 
 module.exports = {
-  name: 'owner',
+  name: 'ownertools',
   alias: ['eval', 'bc', 'broadcast', 'block', 'unblock', 'join', 'leave', 'setpp', 'restart'],
   description: 'Master Owner Control Suite',
   async execute(sock, msg, args, chatJid, safeReply, { isOwner }) {
@@ -9,14 +10,13 @@ module.exports = {
       return await safeReply('⛔ *Access Denied!* This control suite is reserved for the Master Owner.');
     }
 
-    // Command identifier ලබා ගැනීම
     const rawMsg = msg.message?.conversation || 
                    msg.message?.extendedTextMessage?.text || 
                    msg.message?.imageMessage?.caption || 
                    '';
     const usedCmd = rawMsg.slice(1).trim().split(/ +/)[0].toLowerCase();
 
-    // 🟢 1. JAVASCRIPT EVAL (Live Code Execution)
+    // 🟢 1. JAVASCRIPT EVAL
     if (usedCmd === 'eval' || usedCmd === '>') {
       const code = args.join(' ');
       if (!code) return await safeReply('⚠️ කරුණාකර execute කිරීමට JS code එක ලබාදෙන්න.');
@@ -32,7 +32,7 @@ module.exports = {
       }
     }
 
-    // 🟢 2. BROADCAST ANNOUNCEMENT (.bc <text>)
+    // 🟢 2. BROADCAST (.bc <text>)
     if (usedCmd === 'bc' || usedCmd === 'broadcast') {
       const text = args.join(' ');
       if (!text) return await safeReply('⚠️ Broadcast කිරීමට පණිවිඩයක් ලබාදෙන්න.');
@@ -48,7 +48,7 @@ module.exports = {
           if (!id.includes('broadcast')) {
             await sock.sendMessage(id, { text: bcMsg });
             count++;
-            await new Promise(res => setTimeout(res, 800)); // Delay to prevent spam flags
+            await new Promise(res => setTimeout(res, 800));
           }
         } catch (e) {}
       }
@@ -93,14 +93,14 @@ module.exports = {
       }
       const code = link.split('chat.whatsapp.com/')[1]?.trim();
       try {
-        const res = await sock.groupAcceptInvite(code);
+        await sock.groupAcceptInvite(code);
         return await safeReply('✅ Successfully joined group!');
       } catch (e) {
         return await safeReply(`❌ Failed to join: ${e.message}`);
       }
     }
 
-    // 🟢 6. LEAVE CURRENT GROUP (.leave)
+    // 🟢 6. LEAVE GROUP (.leave)
     if (usedCmd === 'leave') {
       if (!chatJid.endsWith('@g.us')) {
         return await safeReply('⚠️ මේ command එක groups වල පමණක් භාවිතා කරන්න.');
@@ -109,7 +109,7 @@ module.exports = {
       return await sock.groupLeave(chatJid);
     }
 
-    // 🟢 7. CHANGE BOT PROFILE PICTURE (.setpp)
+    // 🟢 7. PROFILE PICTURE (.setpp)
     if (usedCmd === 'setpp') {
       const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
       const isImg = quoted?.imageMessage;
@@ -130,14 +130,14 @@ module.exports = {
       }
     }
 
-    // 🟢 8. RESTART BOT (.restart)
+    // 🟢 8. RESTART (.restart)
     if (usedCmd === 'restart') {
       await safeReply('🔄 *Restarting Bot Engine...* Please wait a few seconds.');
       setTimeout(() => process.exit(0), 1000);
       return;
     }
 
-    // 🟢 DEFAULT OWNER MENU
+    // DEFAULT MENU (.ownertools)
     const ownerMenu = `
 ╔══════════════════════════════════════╗
 ║     👑 MASTER OWNER CONTROL SUITE    ║
@@ -173,3 +173,4 @@ module.exports = {
     return await safeReply(ownerMenu);
   }
 };
+
