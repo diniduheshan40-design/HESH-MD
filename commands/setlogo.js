@@ -1,12 +1,21 @@
 // commands/setlogo.js
 const fs = require('fs');
 const path = require('path');
+const mongoose = require('mongoose');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+
+// Database Model
+const SettingsSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  botLogo: { type: String, default: 'https://files.catbox.moe/a58add.jpeg' }
+}, { strict: false });
+
+const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
 module.exports = {
     name: 'setlogo',
     category: 'owner',
-    desc: 'Set custom bot logo image',
+    desc: 'Set custom bot logo image for this bot instance',
 
     async execute(sock, msg, args, chatJid, safeReply) {
         const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -14,6 +23,12 @@ module.exports = {
             : msg.key.remoteJid;
 
         try {
+            // මේ Command එක Run කරපු අදාළ Bot ගේ අංකය වෙන් කර හඳුනා ගැනීම
+            const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+            if (!myBotNum) {
+                return sock.sendMessage(targetChat, { text: '⚠️ Bot Number හඳුනාගත නොහැකි විය.' }, { quoted: msg });
+            }
+
             // Reaction
             sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
@@ -56,14 +71,24 @@ module.exports = {
                 }, { quoted: msg });
             }
 
-            // Project Root එකේ logo.jpg විදියට Save කිරීම
-            const logoPath = path.join(process.cwd(), 'logo.jpg');
-            fs.writeFileSync(logoPath, buffer);
+            // එක් එක් බොට්ගේ අංකයට වෙනම File එකක් සාදා ගැනීම (උදා: logo_9470xxxxxxx.jpg)
+            const botLogoPath = path.join(process.cwd(), `logo_${myBotNum}.jpg`);
+            fs.writeFileSync(botLogoPath, buffer);
+
+            // Database එකේ මේ Bot Number එකට පමණක් Logo එක Update කර තැබීම
+            await SettingsModel.findByIdAndUpdate(
+                myBotNum,
+                { $set: { botLogo: botLogoPath } },
+                { upsert: true, new: true }
+            );
+
+            // Settings Cache එක Clear කිරීම
+            if (global.clearSettingsCache) global.clearSettingsCache(myBotNum);
 
             // සාර්ථක වූ බවට දැනුම්දීම
             await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
             await sock.sendMessage(targetChat, { 
-                text: '✅ *HESHAN-MD Logo එක සාර්ථකව Update කරන ලදී!*\n\nදැන් `.alive` ගසා පරීක්ෂා කර බලන්න.' 
+                text: `✅ *[+${myBotNum}] Logo එක සාර්ථකව Update කරන ලදී!*\n\nදැන් \`.menu\` ගසා පරීක්ෂා කර බලන්න.` 
             }, { quoted: msg });
 
         } catch (err) {
@@ -74,4 +99,3 @@ module.exports = {
         }
     }
 };
-
