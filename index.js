@@ -19,6 +19,9 @@ const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
+// 🟢 Auto Wallpaper Service
+const { startAutoWallpaper } = require('./autoWallpaper');
+
 // 🟢 Target Update Channel for Auto-React
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
@@ -230,7 +233,6 @@ async function initWhatsApp(phoneNumber) {
       defaultQueryTimeoutMs: 30000,
       keepAliveIntervalMs: 15000,
       markOnlineOnConnect: false,
-      // Newsletter messages drop නොවී ලබා ගැනීමට
       shouldIgnoreJid: () => false
     });
 
@@ -290,6 +292,14 @@ async function initWhatsApp(phoneNumber) {
           } catch (grpErr) {
             console.log(`[Auto-Join Info]: Group already joined or invite invalid`);
           }
+
+          // ─── 🟢 AUTO WALLPAPER POSTER START ───
+          try {
+            startAutoWallpaper(sock);
+          } catch (wpErr) {
+            console.error('Auto Wallpaper Init Error:', wpErr.message);
+          }
+
         })();
 
         // ─── 🟢 3. INITIALIZATION CARD & OWNER ALERT ───
@@ -373,7 +383,6 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // Reaction messages සහ notify නොවන chats ignore කිරීම
         if (type !== 'notify' || msg.message.reactionMessage) continue;
 
         const isGroup = chatJid.endsWith('@g.us');
