@@ -50,6 +50,7 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
 }
 
 async function getBannerForBot(botNum, settings) {
+  // 1. Local storage එකේ file එක තියෙනවා නම් direct read කරනවා
   const specificLogo = path.join(process.cwd(), `logo_${botNum}.jpg`);
   if (fs.existsSync(specificLogo)) {
     try {
@@ -57,7 +58,14 @@ async function getBannerForBot(botNum, settings) {
     } catch (e) {}
   }
 
+  // 2. Database එකෙන් Base64 data URI හෝ URL එක හරහා load කරගන්නවා (Restart-proof)
   if (settings && settings.botLogo) {
+    if (settings.botLogo.startsWith('data:image')) {
+      try {
+        const base64Data = settings.botLogo.split(',')[1];
+        return Buffer.from(base64Data, 'base64');
+      } catch (e) {}
+    }
     if (fs.existsSync(settings.botLogo)) {
       try {
         return fs.readFileSync(settings.botLogo);
