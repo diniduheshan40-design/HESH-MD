@@ -3,7 +3,6 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
-// Stream එකක් Buffer එකක් බවට හැරවීම
 async function streamToBuffer(stream) {
     let buffer = Buffer.from([]);
     for await (const chunk of stream) {
@@ -12,11 +11,39 @@ async function streamToBuffer(stream) {
     return buffer;
 }
 
+// 🟢 1. Pomf.cat / Uguu Uploader (100% Free & No Block)
+async function uploadToUguu(buffer, fileName) {
+    const form = new FormData();
+    form.append('files[]', buffer, { filename: fileName });
+    const res = await axios.post('https://uguu.se/upload.php', form, {
+        headers: form.getHeaders(),
+        timeout: 25000
+    });
+    if (res.data?.files?.[0]?.url) {
+        return res.data.files[0].url;
+    }
+    throw new Error('Uguu upload failed');
+}
+
+// 🟢 2. TmpFiles Uploader (Fallback)
+async function uploadToTmp(buffer, fileName) {
+    const form = new FormData();
+    form.append('file', buffer, { filename: fileName });
+    const res = await axios.post('https://tmpfiles.org/api/v1/upload', form, {
+        headers: form.getHeaders(),
+        timeout: 25000
+    });
+    if (res.data?.data?.url) {
+        return res.data.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+    }
+    throw new Error('TmpFiles upload failed');
+}
+
 module.exports = {
     name: "tourl",
     alias: ["url", "upload", "imgtourl"],
     category: "utility",
-    desc: "Generate a permanent URL for any media or text",
+    desc: "Generate direct link for media",
 
     async execute(sock, msg, args, chatJid, safeReply) {
         const from = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -29,7 +56,6 @@ module.exports = {
         };
 
         try {
-            // Unpack Message
             const m = msg.message?.ephemeralMessage?.message || 
                       msg.message?.viewOnceMessage?.message || 
                       msg.message?.viewOnceMessageV2?.message || 
@@ -39,10 +65,9 @@ module.exports = {
             const quoted = m?.extendedTextMessage?.contextInfo?.quotedMessage;
             const targetMsg = quoted || m;
 
-            // Media වර්ගය හඳුනා ගැනීම
             let mediaType = null;
             let mediaObj = null;
-            let ext = 'bin';
+            let ext = 'jpg';
 
             if (targetMsg?.imageMessage) {
                 mediaType = 'image';
@@ -67,71 +92,48 @@ module.exports = {
             }
 
             let buffer = null;
-            let fileName = `file_${Date.now()}.${ext}`;
+            let fileName = `heshan_${Date.now()}.${ext}`;
 
-            // 1. Media බාගත කිරීම (Direct Baileys Stream - කිසිදා crash නොවේ)
             if (mediaType && mediaObj) {
                 await sock.sendMessage(from, { react: { text: '🔄', key: msg.key } }).catch(() => {});
                 const stream = await downloadContentFromMessage(mediaObj, mediaType);
                 buffer = await streamToBuffer(stream);
-            } 
-            // 2. Text input එකක් නම්
-            else if (args && args.length > 0) {
+            } else if (args && args.length > 0) {
                 buffer = Buffer.from(args.join(" "), 'utf-8');
-                fileName = `text_${Date.now()}.txt`;
+                fileName = `heshan_${Date.now()}.txt`;
             } else if (quoted?.conversation || quoted?.extendedTextMessage?.text) {
                 const txt = quoted.conversation || quoted.extendedTextMessage?.text;
                 buffer = Buffer.from(txt, 'utf-8');
-                fileName = `text_${Date.now()}.txt`;
+                fileName = `heshan_${Date.now()}.txt`;
             } else {
-                return await reply("⚠️ *Usage:*\nඡායාරූපයකට, වීඩියෝවකට, Voice එකකට හෝ Sticker එකකට reply කරමින් `.tourl` යවන්න.\n\nනැතහොත්: `.tourl <ඔබේ text එක>` ලෙස යොදන්න.");
+                return await reply("⚠️ ඡායාරූපයකට හෝ වීඩියෝවකට reply කරමින් `.tourl` යවන්න.");
             }
 
             if (!buffer || buffer.length === 0) {
-                return await reply("❌ Media එක extract කර ගැනීමට නොහැකි විය.");
+                return await reply("❌ Media extract කරගැනීමට නොහැකි විය.");
             }
 
-            // Catbox වෙත Upload කිරීම
-            const form = new FormData();
-            form.append('reqtype', 'fileupload');
-            form.append('fileToUpload', buffer, { filename: fileName });
+            // Cloud එකට Upload කිරීම (Multi-server fallback)
+            let finalUrl = null;
 
-            const uploadRes = await axios.post('https://catbox.moe/user/api.php', form, {
-                headers: {
-                    ...form.getHeaders(),
-                    'User-Agent': 'Mozilla/5.0'
-                },
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity,
-                timeout: 60000
-            });
-
-            if (!uploadRes.data || !uploadRes.data.startsWith('http')) {
-                return await reply("❌ Cloud Server එකට upload කිරීම අසාර්ථක විය.");
-            }
-
-            const rawUrl = uploadRes.data.trim();
-            let finalUrl = rawUrl;
-
-            // Shortener එක වැඩ නොකළත් URL එක drop නොවන Safe Try-Catch
             try {
-                const short = await axios.post('https://url.devofc.top/api/shorten', 
-                    { url: rawUrl }, 
-                    { headers: { 'Content-Type': 'application/json' }, timeout: 5000 }
-                );
-                if (short.data?.id) {
-                    finalUrl = `https://url.devofc.top/${short.data.id}`;
+                finalUrl = await uploadToUguu(buffer, fileName);
+            } catch (err1) {
+                try {
+                    finalUrl = await uploadToTmp(buffer, fileName);
+                } catch (err2) {
+                    throw new Error("සියලුම Upload සර්වර්ස් කාර්යබහුලයි. මඳ වේලාවකින් උත්සාහ කරන්න.");
                 }
-            } catch (err) {}
+            }
 
             const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
 
-            const resText = `┏━━━❮ ⚡ *𝐇𝐄𝐒𝐇𝐀𝐍 - 𝐌𝐃 𝐔𝐑𝐋* ⚡ ❯━━━┓
+            const outMsg = `┏━━━❮ ⚡ *𝐇𝐄𝐒𝐇𝐀𝐍 - 𝐌𝐃 𝐔𝐑𝐋* ⚡ ❯━━━┓
 ┃
-┣━━『 📦 *FILE DETAILS* 』
+┣━━『 📦 *FILE INFORMATION* 』
 ┃ ◈ *Name*   : *${fileName}*
 ┃ ◈ *Size*   : *${fileSizeMB} MB*
-┃ ◈ *Status* : *Active 🟢*
+┃ ◈ *Status* : *Uploaded 🟢*
 ┃
 ┣━━『 🔗 *DIRECT LINK* 』
 ┃ ${finalUrl}
@@ -140,10 +142,10 @@ module.exports = {
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
 
             await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
-            return await reply(resText);
+            return await reply(outMsg);
 
         } catch (e) {
-            console.error("Tourl Full Error:", e);
+            console.error("Tourl Final Error:", e);
             await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
             return await reply(`❌ Error: ${e.message}`);
         }
