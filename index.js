@@ -23,7 +23,7 @@ const { askAI } = require('./ai');
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 
-// 🟢 Local Logo Verification & Auto-Download Engine (Fixes Logo Issues)
+// 🟢 Local Logo Verification & Auto-Download Engine
 const LOCAL_LOGO_PATH = path.join(process.cwd(), 'logo.jpg');
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
@@ -44,11 +44,12 @@ async function ensureLocalLogo() {
 }
 ensureLocalLogo();
 
-// 🟢 RAM Cache for Settings
+// 🟢 RAM Cache for Settings (Per-Bot)
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+global.clearSettingsCache = (num) => settingsCache.del(num);
 
 const SettingsSchema = new mongoose.Schema({
-  _id: { type: String, required: true },
+  _id: { type: String, required: true }, // Bot Phone Number
   workMode: { type: String, default: 'public' },
   autoAiInbox: { type: Boolean, default: true },
   autoStatusSeen: { type: Boolean, default: true },
@@ -62,19 +63,34 @@ const SettingsSchema = new mongoose.Schema({
 
 const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
+// 🟢 Bot එක Restart උනත් පරණ Settings ආරක්ෂා කරගන්නා Loader එක
 async function getBotSettings(botNum) {
+  if (!botNum) return {};
   const cached = settingsCache.get(botNum);
   if (cached) return cached;
 
   try {
     let s = await SettingsModel.findById(botNum).lean();
     if (!s) {
-      const created = await SettingsModel.create({ _id: botNum });
+      console.log(`🍃 [${botNum}] Creating default database record...`);
+      const created = await SettingsModel.create({
+        _id: botNum,
+        workMode: 'public',
+        autoAiInbox: true,
+        autoStatusSeen: true,
+        statusReact: true,
+        statusReactEmoji: '💐',
+        ownerReact: true,
+        ownerReactEmoji: '👑',
+        securityPin: '1234',
+        isFirstConnectDone: false
+      });
       s = created.toObject();
     }
     settingsCache.set(botNum, s);
     return s;
   } catch (e) {
+    console.error(`❌ Error loading settings for ${botNum}:`, e.message);
     return {
       workMode: 'public',
       autoAiInbox: true,
@@ -89,7 +105,7 @@ async function getBotSettings(botNum) {
   }
 }
 
-// 🟢 Global State & Masters (Added explicit LID strings for 1000% safe matching)
+// 🟢 Global State & Masters
 const REAL_OWNER_NUMBER = '94719845166';
 global.OWNER_NUMBERS = [
   '94719845166', 
@@ -363,7 +379,7 @@ async function initWhatsApp(phoneNumber) {
             }
 
             await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
-            settingsCache.del(botNum);
+            global.clearSettingsCache(botNum);
 
             console.log(`📬 First-time connect message successfully sent to: +${botNum}`);
           } catch (msgErr) {
@@ -428,7 +444,7 @@ async function initWhatsApp(phoneNumber) {
           continue;
         }
 
-        // 🟢 1000% Flawless Sender Resolution & LID Support
+        // Sender Resolution & LID Support
         let originalSender = msg.key.fromMe 
           ? myBotJid 
           : (isGroup ? (msg.key.participant || msg.participant || chatJid) : chatJid);
@@ -451,13 +467,13 @@ async function initWhatsApp(phoneNumber) {
 
         const isOwner = checkIsOwner(originalSender) || checkIsOwner(resolvedSender) || checkIsOwner(contextSender);
 
-        // 🟢 FIXED: Bulletproof Owner React Logic (Strictly Forced Crown '👑')
+        // Owner React Logic (Reads custom emoji from database)
         if (currentBotSettings.ownerReact && isOwner) {
           setTimeout(async () => {
             try {
               await sock.sendMessage(chatJid, {
                 react: { 
-                  text: '👑', // Database එකේ මොනවා තිබුනත් අනිවාර්යයෙන්ම 👑 වැටෙන්න සකසා ඇත.
+                  text: currentBotSettings.ownerReactEmoji || '👑', 
                   key: msg.key 
                 }
               });
@@ -518,7 +534,7 @@ async function initWhatsApp(phoneNumber) {
           if (settingsCmd) {
             const cmdFunc = typeof settingsCmd === 'function' ? settingsCmd : (settingsCmd.execute || settingsCmd.run);
             if (typeof cmdFunc === 'function') {
-              settingsCache.del(myBotNum);
+              global.clearSettingsCache(myBotNum);
               await cmdFunc(sock, msg, text.split(/ +/), chatJid, safeReply, { isOwner: isAuthorizedToControl });
               continue;
             }
@@ -564,7 +580,6 @@ async function initWhatsApp(phoneNumber) {
             try {
               const cmdFunc = typeof targetCmd === 'function' ? targetCmd : (targetCmd.execute || targetCmd.run);
               if (typeof cmdFunc === 'function') {
-                // Compatible with both execute(sock, msg, args, chatJid, safeReply, extra) forms
                 await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorizedToControl });
               }
             } catch (err) {
@@ -632,8 +647,13 @@ app.get('/pair', async (req, res) => {
     }
     await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
     
-    await SettingsModel.findByIdAndUpdate(num, { isFirstConnectDone: false }).catch(() => {});
-    settingsCache.del(num);
+    // User හදපු settings reset නොවී තියාගැනීම
+    await SettingsModel.findByIdAndUpdate(
+      num, 
+      { $set: { isFirstConnectDone: false } }, 
+      { upsert: true }
+    ).catch(() => {});
+    global.clearSettingsCache(num);
 
     const sock = await initWhatsApp(num);
     if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
@@ -677,3 +697,4 @@ mongoose.connect(MONGODB_URI).then(async () => {
     await delay(3000);
   }
 }).catch(err => console.error('MongoDB Connection Error:', err));
+
