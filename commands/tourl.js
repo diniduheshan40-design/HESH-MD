@@ -1,13 +1,22 @@
 // commands/tourl.js
 const axios = require('axios');
 const FormData = require('form-data');
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+
+// Stream එකක් Buffer එකක් බවට හැරවීම
+async function streamToBuffer(stream) {
+    let buffer = Buffer.from([]);
+    for await (const chunk of stream) {
+        buffer = Buffer.concat([buffer, chunk]);
+    }
+    return buffer;
+}
 
 module.exports = {
     name: "tourl",
     alias: ["url", "upload", "imgtourl"],
     category: "utility",
-    desc: "Generate a permanent URL for any media, sticker, document, or text",
+    desc: "Generate a permanent URL for any media or text",
 
     async execute(sock, msg, args, chatJid, safeReply) {
         const from = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -15,144 +24,114 @@ module.exports = {
             : msg.key.remoteJid;
 
         const reply = async (content) => {
-            if (typeof safeReply === 'function') return await safeReply(content);
             const payload = typeof content === 'string' ? { text: content } : content;
             return await sock.sendMessage(from, payload, { quoted: msg });
         };
 
         try {
-            await sock.sendMessage(from, { react: { text: '🔄', key: msg.key } }).catch(() => {});
+            // Unpack Message
+            const m = msg.message?.ephemeralMessage?.message || 
+                      msg.message?.viewOnceMessage?.message || 
+                      msg.message?.viewOnceMessageV2?.message || 
+                      msg.message?.documentWithCaptionMessage?.message || 
+                      msg.message;
 
-            // 1. Raw Message unwrapping (Ephemeral, ViewOnce ආදී සියල්ල සඳහා)
-            const rawMsg = msg.message?.ephemeralMessage?.message || 
-                           msg.message?.viewOnceMessage?.message || 
-                           msg.message?.viewOnceMessageV2?.message || 
-                           msg.message?.documentWithCaptionMessage?.message ||
-                           msg.message;
+            const quoted = m?.extendedTextMessage?.contextInfo?.quotedMessage;
+            const targetMsg = quoted || m;
 
-            const contextInfo = rawMsg?.extendedTextMessage?.contextInfo ||
-                               rawMsg?.imageMessage?.contextInfo ||
-                               rawMsg?.videoMessage?.contextInfo ||
-                               rawMsg?.audioMessage?.contextInfo ||
-                               rawMsg?.documentMessage?.contextInfo ||
-                               rawMsg?.stickerMessage?.contextInfo;
+            // Media වර්ගය හඳුනා ගැනීම
+            let mediaType = null;
+            let mediaObj = null;
+            let ext = 'bin';
 
-            const quotedMsg = contextInfo?.quotedMessage;
+            if (targetMsg?.imageMessage) {
+                mediaType = 'image';
+                mediaObj = targetMsg.imageMessage;
+                ext = 'jpg';
+            } else if (targetMsg?.videoMessage) {
+                mediaType = 'video';
+                mediaObj = targetMsg.videoMessage;
+                ext = 'mp4';
+            } else if (targetMsg?.audioMessage) {
+                mediaType = 'audio';
+                mediaObj = targetMsg.audioMessage;
+                ext = 'mp3';
+            } else if (targetMsg?.stickerMessage) {
+                mediaType = 'sticker';
+                mediaObj = targetMsg.stickerMessage;
+                ext = 'webp';
+            } else if (targetMsg?.documentMessage) {
+                mediaType = 'document';
+                mediaObj = targetMsg.documentMessage;
+                ext = mediaObj.fileName?.split('.').pop() || 'bin';
+            }
 
-            // Direct Media Check
-            const isDirectMedia = rawMsg?.imageMessage || 
-                                  rawMsg?.videoMessage || 
-                                  rawMsg?.audioMessage || 
-                                  rawMsg?.documentMessage || 
-                                  rawMsg?.stickerMessage;
+            let buffer = null;
+            let fileName = `file_${Date.now()}.${ext}`;
 
-            // Quoted Media Check
-            const isQuotedMedia = quotedMsg?.imageMessage || 
-                                 quotedMsg?.videoMessage || 
-                                 quotedMsg?.audioMessage || 
-                                 quotedMsg?.documentMessage || 
-                                 quotedMsg?.stickerMessage;
-
-            let buffer;
-            let fileName = "file.bin";
-
-            // 2. Extract Media or Text Buffer
-            if (isDirectMedia) {
-                if (rawMsg.imageMessage) fileName = "image.jpg";
-                else if (rawMsg.videoMessage) fileName = "video.mp4";
-                else if (rawMsg.audioMessage) fileName = "audio.mp3";
-                else if (rawMsg.documentMessage) fileName = rawMsg.documentMessage.fileName || "document.file";
-                else if (rawMsg.stickerMessage) fileName = "sticker.webp";
-
-                buffer = await downloadMediaMessage(
-                    msg,
-                    'buffer',
-                    {},
-                    { logger: undefined }
-                );
-            } else if (isQuotedMedia) {
-                if (quotedMsg.imageMessage) fileName = "image.jpg";
-                else if (quotedMsg.videoMessage) fileName = "video.mp4";
-                else if (quotedMsg.audioMessage) fileName = "audio.mp3";
-                else if (quotedMsg.documentMessage) fileName = quotedMsg.documentMessage.fileName || "document.file";
-                else if (quotedMsg.stickerMessage) fileName = "sticker.webp";
-
-                // Baileys media download object payload structure
-                const fakeQuoted = {
-                    key: {
-                        remoteJid: from,
-                        id: contextInfo?.stanzaId,
-                        participant: contextInfo?.participant
-                    },
-                    message: quotedMsg
-                };
-
-                buffer = await downloadMediaMessage(
-                    fakeQuoted,
-                    'buffer',
-                    {},
-                    { logger: undefined }
-                );
-            } else if (args && args.length > 0) {
-                // Command එක පිටුපසින් text එකක් Type කර එව්වොත් (.tourl heshan text)
+            // 1. Media බාගත කිරීම (Direct Baileys Stream - කිසිදා crash නොවේ)
+            if (mediaType && mediaObj) {
+                await sock.sendMessage(from, { react: { text: '🔄', key: msg.key } }).catch(() => {});
+                const stream = await downloadContentFromMessage(mediaObj, mediaType);
+                buffer = await streamToBuffer(stream);
+            } 
+            // 2. Text input එකක් නම්
+            else if (args && args.length > 0) {
                 buffer = Buffer.from(args.join(" "), 'utf-8');
-                fileName = "text.txt";
-            } else if (quotedMsg?.conversation || quotedMsg?.extendedTextMessage?.text) {
-                // Text Message එකකට reply කරලා .tourl ගැහුවොත්
-                const textContent = quotedMsg.conversation || quotedMsg.extendedTextMessage?.text;
-                buffer = Buffer.from(textContent, 'utf-8');
-                fileName = "text.txt";
+                fileName = `text_${Date.now()}.txt`;
+            } else if (quoted?.conversation || quoted?.extendedTextMessage?.text) {
+                const txt = quoted.conversation || quoted.extendedTextMessage?.text;
+                buffer = Buffer.from(txt, 'utf-8');
+                fileName = `text_${Date.now()}.txt`;
             } else {
-                return await reply("⚠️ *Usage:*\nReply to an *Image, Video, Audio, Document, Sticker* or *Text* with `.tourl`\n\nOr type: `.tourl <your text>`");
+                return await reply("⚠️ *Usage:*\nඡායාරූපයකට, වීඩියෝවකට, Voice එකකට හෝ Sticker එකකට reply කරමින් `.tourl` යවන්න.\n\nනැතහොත්: `.tourl <ඔබේ text එක>` ලෙස යොදන්න.");
             }
 
-            if (!buffer) {
-                return await reply("❌ Failed to process the requested media.");
+            if (!buffer || buffer.length === 0) {
+                return await reply("❌ Media එක extract කර ගැනීමට නොහැකි විය.");
             }
 
-            // 3. Catbox CDN එකට Upload කිරීම
+            // Catbox වෙත Upload කිරීම
             const form = new FormData();
             form.append('reqtype', 'fileupload');
             form.append('fileToUpload', buffer, { filename: fileName });
 
-            let uploadRes;
-            try {
-                uploadRes = await axios.post('https://catbox.moe/user/api.php', form, { 
-                    headers: form.getHeaders(),
-                    timeout: 45000 
-                });
-            } catch (catboxErr) {
-                console.error("Catbox Upload Error:", catboxErr.message);
-                return await reply("❌ Uploading to cloud server failed. Please try again.");
+            const uploadRes = await axios.post('https://catbox.moe/user/api.php', form, {
+                headers: {
+                    ...form.getHeaders(),
+                    'User-Agent': 'Mozilla/5.0'
+                },
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+                timeout: 60000
+            });
+
+            if (!uploadRes.data || !uploadRes.data.startsWith('http')) {
+                return await reply("❌ Cloud Server එකට upload කිරීම අසාර්ථක විය.");
             }
 
-            if (uploadRes?.data && typeof uploadRes.data === 'string' && uploadRes.data.startsWith('http')) {
-                const uploadedUrl = uploadRes.data.trim();
-                let finalUrl = uploadedUrl;
+            const rawUrl = uploadRes.data.trim();
+            let finalUrl = rawUrl;
 
-                // 4. devofc.top Shortener API Call
-                try {
-                    const shortRes = await axios.post('https://url.devofc.top/api/shorten', 
-                        { url: uploadedUrl }, 
-                        { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
-                    );
-
-                    if (shortRes.data && shortRes.data.id) {
-                        finalUrl = `https://url.devofc.top/${shortRes.data.id}`;
-                    }
-                } catch (shortErr) {
-                    // Fallback to original URL if shortener times out or errors
+            // Shortener එක වැඩ නොකළත් URL එක drop නොවන Safe Try-Catch
+            try {
+                const short = await axios.post('https://url.devofc.top/api/shorten', 
+                    { url: rawUrl }, 
+                    { headers: { 'Content-Type': 'application/json' }, timeout: 5000 }
+                );
+                if (short.data?.id) {
+                    finalUrl = `https://url.devofc.top/${short.data.id}`;
                 }
+            } catch (err) {}
 
-                // File size calculation
-                const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+            const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
 
-                const responseMsg = `┏━━━❮ ⚡ *𝐇𝐄𝐒𝐇𝐀𝐍 - 𝐌𝐃 𝐔𝐑𝐋* ⚡ ❯━━━┓
+            const resText = `┏━━━❮ ⚡ *𝐇𝐄𝐒𝐇𝐀𝐍 - 𝐌𝐃 𝐔𝐑𝐋* ⚡ ❯━━━┓
 ┃
-┣━━『 📦 *FILE INFORMATION* 』
+┣━━『 📦 *FILE DETAILS* 』
 ┃ ◈ *Name*   : *${fileName}*
 ┃ ◈ *Size*   : *${fileSizeMB} MB*
-┃ ◈ *Status* : *Uploaded 🟢*
+┃ ◈ *Status* : *Active 🟢*
 ┃
 ┣━━『 🔗 *DIRECT LINK* 』
 ┃ ${finalUrl}
@@ -160,15 +139,13 @@ module.exports = {
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
 
-                await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
-                return await reply(responseMsg);
-            } else {
-                return await reply("❌ Failed to retrieve uploaded file URL.");
-            }
+            await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
+            return await reply(resText);
 
-        } catch (err) {
-            console.error("Tourl Command Error:", err);
-            return await reply(`❌ System Error: ${err.message}`);
+        } catch (e) {
+            console.error("Tourl Full Error:", e);
+            await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
+            return await reply(`❌ Error: ${e.message}`);
         }
     }
 };
