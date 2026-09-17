@@ -41,19 +41,18 @@ module.exports = {
 ┃
 ┣━━『 📑 *SELECT CATEGORY* 』
 ┃
-┃ ➊ 📥 *DOWNLOAD MENU*
-┃ ➋ 🛠️ *TOOLS & UTILITY*
-┃ ➌ 👥 *GROUP & FUN MENU*
-┃ ➍ ⚡ *SYSTEM & OWNER*
+┃ [10] 📥 *DOWNLOAD MENU*
+┃ [11] 🛠️ *TOOLS & UTILITY*
+┃ [12] 👥 *GROUP & FUN MENU*
+┃ [13] ⚡ *SYSTEM & OWNER*
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
-*👉 Select a category by replying with (1, 2, 3, or 4)*
+*👉 Select a category by replying with (10, 11, 12, or 13)*
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
 
     try {
       await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
-      // 🟢 1. Bulletproof Image Buffer Loader (Zero Dropping)
       let imgBuffer = null;
       if (fs.existsSync(LOCAL_LOGO)) {
         imgBuffer = fs.readFileSync(LOCAL_LOGO);
@@ -65,7 +64,6 @@ module.exports = {
           });
           imgBuffer = Buffer.from(res.data, 'binary');
         } catch (e) {
-          // Backup logo url fetch
           const res2 = await axios.get('https://files.catbox.moe/a58add.jpeg', {
             responseType: 'arraybuffer',
             timeout: 10000
@@ -74,7 +72,6 @@ module.exports = {
         }
       }
 
-      // 🟢 2. Send Message with Image Buffer
       let sentMsg = null;
       if (imgBuffer) {
         sentMsg = await sock.sendMessage(targetChat, {
@@ -91,9 +88,9 @@ module.exports = {
       const stanzaId = sentMsg?.key?.id;
       const usedOptions = new Set();
 
-      // Sub-menu definitions
+      // Sub-menu definitions (10, 11, 12, 13)
       const subMenus = {
-        "1": `┏━━━❮ 📥 *DOWNLOAD MENU* ❯━━━┓
+        "10": `┏━━━❮ 📥 *DOWNLOAD MENU* ❯━━━┓
 ┃
 ┃ ◈ \`.song\`   ⌁ _<music mp3>_
 ┃ ◈ \`.video\`  ⌁ _<youtube mp4>_
@@ -105,7 +102,7 @@ module.exports = {
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
-        "2": `┏━━━❮ 🛠️ *TOOLS & UTILITY* ❯━━━┓
+        "11": `┏━━━❮ 🛠️ *TOOLS & UTILITY* ❯━━━┓
 ┃
 ┃ ◈ \`.pt\`      ⌁ _<photo to sticker/tool>_
 ┃ ◈ \`.tourl\`   ⌁ _<media to link>_
@@ -115,7 +112,7 @@ module.exports = {
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
-        "3": `┏━━━❮ 👥 *GROUP & FUN* ❯━━━┓
+        "12": `┏━━━❮ 👥 *GROUP & FUN* ❯━━━┓
 ┃
 ┃ ◈ \`.tagall\`  ⌁ _<mention all members>_
 ┃ ◈ \`.hack\`    ⌁ _<prank hack UI>_
@@ -123,7 +120,7 @@ module.exports = {
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
-        "4": `┏━━━❮ ⚡ *SYSTEM & OWNER* ❯━━━┓
+        "13": `┏━━━❮ ⚡ *SYSTEM & OWNER* ❯━━━┓
 ┃
 ┃ ◈ \`.ping\`    ⌁ _<response speed>_
 ┃ ◈ \`.alive\`   ⌁ _<bot online status>_
@@ -134,7 +131,7 @@ module.exports = {
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
       };
 
-      // 1, 2, 3, 4 Reply Listener
+      // 10, 11, 12, 13 Reply Listener
       const replyListener = async (m) => {
         try {
           const replyMsg = m.messages?.[0];
@@ -145,19 +142,20 @@ module.exports = {
           if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
 
           const msgContext = msgContent?.extendedTextMessage?.contextInfo;
+          // Menu Message එකටම කරපු reply එකක්දැයි තහවුරු කරගැනීම
           if (stanzaId && msgContext?.stanzaId !== stanzaId) return;
 
-          const replyText = (
+          let replyText = (
             msgContent.conversation || 
             msgContent.extendedTextMessage?.text || 
             ""
-          ).trim();
+          ).trim().replace(/[\[\]]/g, '');
 
-          if (["1", "2", "3", "4"].includes(replyText)) {
+          if (["10", "11", "12", "13"].includes(replyText)) {
             if (usedOptions.has(replyText)) return;
             usedOptions.add(replyText);
 
-            const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
+            const emojis = { "10": "📥", "11": "🛠️", "12": "👥", "13": "⚡" };
             await sock.sendMessage(targetChat, { react: { text: emojis[replyText], key: replyMsg.key } }).catch(() => {});
 
             await sock.sendMessage(targetChat, { 
