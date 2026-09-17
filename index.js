@@ -106,6 +106,8 @@ const SettingsModel = createSettingsModel();
 function clearSettingsCache(num) {
   settingsCache.del(num);
 }
+// commands (.setlogo, .set) වලින් direct access කිරීමට global scope එකට assign කිරීම
+global.clearSettingsCache = clearSettingsCache;
 
 // bot number එකකට settings ටික ලබාගන්නවා (cache → DB → default, මේ order එකෙන්)
 async function getBotSettings(botNum) {
@@ -415,11 +417,23 @@ function buildDeploymentAlertMessage(botNum) {
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 }
 
-// bot එකට logo එකත් එක්ක connected message එක යවනවා, logo fail වුනොත් text විතරක්
-async function sendConnectedMessageWithLogo(sock, botJid, message, logoUrl) {
+// bot එකට logo එකත් එක්ක connected message එක යවනවා (URL සහ Base64 Data URI දෙකම Handle කරමින්)
+async function sendConnectedMessageWithLogo(sock, botJid, message, logoData) {
   try {
-    await sock.sendMessage(botJid, { image: { url: logoUrl }, caption: message });
+    let imagePayload;
+
+    if (logoData && typeof logoData === 'string' && logoData.startsWith('data:image')) {
+      const base64Content = logoData.split(',')[1];
+      imagePayload = Buffer.from(base64Content, 'base64');
+    } else if (logoData && typeof logoData === 'string' && logoData.startsWith('http')) {
+      imagePayload = { url: logoData };
+    } else {
+      imagePayload = { url: DEFAULT_BACKUP_LOGO };
+    }
+
+    await sock.sendMessage(botJid, { image: imagePayload, caption: message });
   } catch (imgErr) {
+    console.error('Connected message logo send error, fallback to text:', imgErr.message);
     await sock.sendMessage(botJid, { text: message });
   }
 }
