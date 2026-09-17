@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 
 const DEFAULT_BANNER = 'https://files.catbox.moe/a58add.jpeg';
 
-// Per-Bot MongoDB Schema (botLogo සහිතව)
+// Per-Bot MongoDB Schema (autoPresence එක් කරන ලදී)
 const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   workMode: { type: String, default: 'public' },
@@ -16,6 +16,7 @@ const SettingsSchema = new mongoose.Schema({
   ownerReact: { type: Boolean, default: true },
   ownerReactEmoji: { type: String, default: '👑' },
   botLogo: { type: String, default: DEFAULT_BANNER },
+  autoPresence: { type: String, default: 'off' }, // 'off', 'typing', 'recording'
   securityPin: { type: String, default: '1234' },
   isFirstConnectDone: { type: Boolean, default: false }
 });
@@ -49,7 +50,6 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
   }
 }
 
-// අදාළ Session එකට ගැලපෙන Banner Image එක ලබාගැනීම
 async function getBannerForBot(botNum, settings) {
   const specificLogo = path.join(process.cwd(), `logo_${botNum}.jpg`);
   if (fs.existsSync(specificLogo)) {
@@ -81,7 +81,6 @@ module.exports = {
       return await safeReply('⛔ *Access Denied!* Only Owner can modify settings.');
     }
 
-    // අදාළ Session එකේ Bot Number එක නිවැරදිව හඳුනාගැනීම
     const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
     if (!botNumber) return await safeReply('⚠️ Bot Number හඳුනාගත නොහැකි විය.');
 
@@ -120,16 +119,21 @@ module.exports = {
     else if (input === '5.1') { settings.ownerReact = true; isUpdated = true; }
     else if (input === '5.2') { settings.ownerReact = false; isUpdated = true; }
 
-    // 6. CHANGE EMOJI (.set 6 🔥)
-    else if (input.startsWith('6')) {
+    // 6. AUTO PRESENCE (Typing / Recording)
+    else if (input === '6.1') { settings.autoPresence = 'typing'; isUpdated = true; }
+    else if (input === '6.2') { settings.autoPresence = 'recording'; isUpdated = true; }
+    else if (input === '6.3') { settings.autoPresence = 'off'; isUpdated = true; }
+
+    // 7. CHANGE EMOJI (.set 7 🔥)
+    else if (input.startsWith('7')) {
       const parts = args.join(' ').split(/ +/);
       const emoji = parts[1];
-      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 6 🔥`)');
+      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 7 🔥`)');
       settings.ownerReactEmoji = emoji;
       isUpdated = true;
     }
 
-    // 7. CHANGE PIN (.set pin 5566)
+    // 8. CHANGE PIN (.set pin 5566)
     else if (input.startsWith('pin')) {
       const parts = args.join(' ').split(/ +/);
       const newPin = parts[1];
@@ -138,11 +142,9 @@ module.exports = {
       isUpdated = true;
     }
 
-    // MongoDB Database එකට Save කර Cache එක Clear කිරීම
+    // MongoDB Database එකට Save කර Cache Clear කිරීම
     if (isUpdated) {
       await settings.save();
-      
-      // Cache එක Clear කිරීම
       if (global.clearSettingsCache) global.clearSettingsCache(botNumber);
 
       const modeBadge = {
@@ -152,7 +154,13 @@ module.exports = {
         groups: 'GROUPS 👥'
       }[settings.workMode || 'public'];
 
-      return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n• Mode: *${modeBadge}*\n• AI Inbox: *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*\n• Status Seen: *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n• Owner Emoji: *${settings.ownerReactEmoji || '👑'}*`);
+      const presenceBadge = {
+        typing: 'TYPING ✍️',
+        recording: 'RECORDING 🎙️',
+        off: 'OFF 🔴'
+      }[settings.autoPresence || 'off'];
+
+      return await applyWithLoader(sock, chatJid, msg, `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n• Work Mode: *${modeBadge}*\n• Fake Status: *${presenceBadge}*\n• AI Inbox: *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*`);
     }
 
     // MENU UI
@@ -163,6 +171,12 @@ module.exports = {
       inbox: 'INBOX 📥',
       groups: 'GROUPS 👥'
     }[settings.workMode || 'public'] || 'PUBLIC 🌐';
+
+    const presenceBadge = {
+      typing: 'TYPING ✍️',
+      recording: 'RECORDING 🎙️',
+      off: 'OFF 🔴'
+    }[settings.autoPresence || 'off'] || 'OFF 🔴';
 
     const menu = `╭─── ⚡ *HESHAN-MD SYSTEM SETTINGS* ⚡ ───╮
 │
@@ -192,15 +206,20 @@ module.exports = {
 │  ├ 5.1 Owner React On
 │  └ 5.2 Owner React Off
 │
-├─◈ *6. OWNER EMOJI* ⤿ [ ${settings.ownerReactEmoji || '👑'} ]
-│  └ ✦ Type: .set 6 <emoji>
+├─◈ *6. FAKE ACTION* ⤿ [ ${presenceBadge} ]
+│  ├ 6.1 Fake Typing ✍️
+│  ├ 6.2 Fake Recording 🎙️
+│  └ 6.3 Turn Off 🔴
 │
-├─◈ *7. CHANGE PIN* ⤿ [ ${settings.securityPin || '1234'} ]
+├─◈ *7. OWNER EMOJI* ⤿ [ ${settings.ownerReactEmoji || '👑'} ]
+│  └ ✦ Type: .set 7 <emoji>
+│
+├─◈ *8. CHANGE PIN* ⤿ [ ${settings.securityPin || '1234'} ]
 │  └ ✦ Type: .set pin <new_pin>
 │
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option අංකය කෙලින්ම Reply කරන්න (උදා: *1.1* හෝ *2.1*)
+• අදාළ Option අංකය කෙලින්ම Reply කරන්න (උදා: *6.1* හෝ *6.2*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
