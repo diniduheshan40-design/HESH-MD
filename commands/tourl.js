@@ -1,154 +1,143 @@
-// commands/tourl.js
 const axios = require('axios');
 const FormData = require('form-data');
-const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
-
-async function streamToBuffer(stream) {
-    let buffer = Buffer.from([]);
-    for await (const chunk of stream) {
-        buffer = Buffer.concat([buffer, chunk]);
-    }
-    return buffer;
-}
-
-// 🟢 1. Pomf.cat / Uguu Uploader (100% Free & No Block)
-async function uploadToUguu(buffer, fileName) {
-    const form = new FormData();
-    form.append('files[]', buffer, { filename: fileName });
-    const res = await axios.post('https://uguu.se/upload.php', form, {
-        headers: form.getHeaders(),
-        timeout: 25000
-    });
-    if (res.data?.files?.[0]?.url) {
-        return res.data.files[0].url;
-    }
-    throw new Error('Uguu upload failed');
-}
-
-// 🟢 2. TmpFiles Uploader (Fallback)
-async function uploadToTmp(buffer, fileName) {
-    const form = new FormData();
-    form.append('file', buffer, { filename: fileName });
-    const res = await axios.post('https://tmpfiles.org/api/v1/upload', form, {
-        headers: form.getHeaders(),
-        timeout: 25000
-    });
-    if (res.data?.data?.url) {
-        return res.data.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
-    }
-    throw new Error('TmpFiles upload failed');
-}
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 module.exports = {
     name: "tourl",
-    alias: ["url", "upload", "imgtourl"],
+    alias: ["url"],
+    description: "Generate a permanent URL for any media, sticker, document, or text",
     category: "utility",
-    desc: "Generate direct link for media",
 
-    async execute(sock, msg, args, chatJid, safeReply) {
-        const from = (typeof chatJid === 'string' && chatJid.includes('@')) 
-            ? chatJid 
-            : msg.key.remoteJid;
+    run: async (context) => {
+        return module.exports.execute(context);
+    },
 
-        const reply = async (content) => {
-            const payload = typeof content === 'string' ? { text: content } : content;
-            return await sock.sendMessage(from, payload, { quoted: msg });
-        };
-
+    execute: async (context) => {
         try {
-            const m = msg.message?.ephemeralMessage?.message || 
-                      msg.message?.viewOnceMessage?.message || 
-                      msg.message?.viewOnceMessageV2?.message || 
-                      msg.message?.documentWithCaptionMessage?.message || 
-                      msg.message;
+            const conn = context.conn || context.sock;
+            const from = context.from || context.senderJid;
+            const mek = context.mek || context.msg;
+            const args = context.args || [];
 
-            const quoted = m?.extendedTextMessage?.contextInfo?.quotedMessage;
-            const targetMsg = quoted || m;
+            if (!conn || !from || !mek) return;
 
-            let mediaType = null;
-            let mediaObj = null;
-            let ext = 'jpg';
+            const messageContent = mek.message?.ephemeralMessage?.message || 
+                                   mek.message?.viewOnceMessage?.message || 
+                                   mek.message?.viewOnceMessageV2?.message || 
+                                   mek.message;
+            
+            const quoted = messageContent?.extendedTextMessage?.contextInfo?.quotedMessage || 
+                           messageContent?.imageMessage?.contextInfo?.quotedMessage || 
+                           messageContent?.videoMessage?.contextInfo?.quotedMessage ||
+                           messageContent?.audioMessage?.contextInfo?.quotedMessage ||
+                           messageContent?.documentMessage?.contextInfo?.quotedMessage ||
+                           messageContent?.stickerMessage?.contextInfo?.quotedMessage;
 
-            if (targetMsg?.imageMessage) {
-                mediaType = 'image';
-                mediaObj = targetMsg.imageMessage;
-                ext = 'jpg';
-            } else if (targetMsg?.videoMessage) {
-                mediaType = 'video';
-                mediaObj = targetMsg.videoMessage;
-                ext = 'mp4';
-            } else if (targetMsg?.audioMessage) {
-                mediaType = 'audio';
-                mediaObj = targetMsg.audioMessage;
-                ext = 'mp3';
-            } else if (targetMsg?.stickerMessage) {
-                mediaType = 'sticker';
-                mediaObj = targetMsg.stickerMessage;
-                ext = 'webp';
-            } else if (targetMsg?.documentMessage) {
-                mediaType = 'document';
-                mediaObj = targetMsg.documentMessage;
-                ext = mediaObj.fileName?.split('.').pop() || 'bin';
+            // Direct Media check (කමාන්ඩ් එකත් එක්කම ෆොටෝ/වීඩියෝ එකක් එව්වොත්)
+            const isDirectMedia = messageContent?.imageMessage || 
+                                  messageContent?.videoMessage || 
+                                  messageContent?.audioMessage || 
+                                  messageContent?.documentMessage || 
+                                  messageContent?.stickerMessage;
+
+            let buffer;
+            let fileName = "file.bin";
+
+            await conn.sendMessage(from, { react: { text: '🔄', key: mek.key } });
+
+            // 1. Media එකක් (Photo/Video/Audio/Doc/Sticker) Reply කරලා හෝ Direct එව්වොත්
+            if (isDirectMedia || (quoted && (quoted.imageMessage || quoted.videoMessage || quoted.audioMessage || quoted.documentMessage || quoted.stickerMessage))) {
+                
+                let targetMsg = isDirectMedia ? mek : { message: quoted };
+                let msgRef = isDirectMedia ? messageContent : quoted;
+
+                if (msgRef.imageMessage) fileName = "image.png";
+                else if (msgRef.videoMessage) fileName = "video.mp4";
+                else if (msgRef.audioMessage) fileName = "audio.mp3";
+                else if (msgRef.documentMessage) fileName = msgRef.documentMessage.fileName || "document.file";
+                else if (msgRef.stickerMessage) fileName = "sticker.webp";
+
+                buffer = await downloadMediaMessage(
+                    targetMsg,
+                    'buffer',
+                    {},
+                    { logger: console }
+                );
+            } 
+            // 2. Text එකක් Reply කරලා හෝ Command එකත් එක්ක ගහලා එව්වොත්
+            else if (args.length > 0 || (quoted && (quoted.conversation || quoted.extendedTextMessage?.text))) {
+                const textData = args.length > 0 ? args.join(" ") : (quoted.conversation || quoted.extendedTextMessage?.text);
+                
+                // Text එක .txt ෆයිල් එකක් බවට හැරවීම (Buffer conversion)
+                buffer = Buffer.from(textData, 'utf-8');
+                fileName = "text.txt";
+            } 
+            // 3. මුකුත් දුන්නේ නැත්නම්
+            else {
+                return await conn.sendMessage(from, { text: "⚠️ *Usage:*\n.tourl <text>\n\nOr reply to any Image, Video, Voice, Document, Sticker, or Text with `.tourl`" }, { quoted: mek });
             }
 
-            let buffer = null;
-            let fileName = `heshan_${Date.now()}.${ext}`;
-
-            if (mediaType && mediaObj) {
-                await sock.sendMessage(from, { react: { text: '🔄', key: msg.key } }).catch(() => {});
-                const stream = await downloadContentFromMessage(mediaObj, mediaType);
-                buffer = await streamToBuffer(stream);
-            } else if (args && args.length > 0) {
-                buffer = Buffer.from(args.join(" "), 'utf-8');
-                fileName = `heshan_${Date.now()}.txt`;
-            } else if (quoted?.conversation || quoted?.extendedTextMessage?.text) {
-                const txt = quoted.conversation || quoted.extendedTextMessage?.text;
-                buffer = Buffer.from(txt, 'utf-8');
-                fileName = `heshan_${Date.now()}.txt`;
-            } else {
-                return await reply("⚠️ ඡායාරූපයකට හෝ වීඩියෝවකට reply කරමින් `.tourl` යවන්න.");
+            if (!buffer) {
+                return await conn.sendMessage(from, { text: "❌ Failed to extract content." }, { quoted: mek });
             }
 
-            if (!buffer || buffer.length === 0) {
-                return await reply("❌ Media extract කරගැනීමට නොහැකි විය.");
-            }
+            await conn.sendMessage(from, { text: "📥 Uploading to cloud server..." }, { quoted: mek });
 
-            // Cloud එකට Upload කිරීම (Multi-server fallback)
-            let finalUrl = null;
+            // 4. Catbox (Permanent CDN) එකට Upload කිරීම
+            const form = new FormData();
+            form.append('reqtype', 'fileupload');
+            form.append('fileToUpload', buffer, { filename: fileName });
 
+            let uploadRes;
             try {
-                finalUrl = await uploadToUguu(buffer, fileName);
-            } catch (err1) {
-                try {
-                    finalUrl = await uploadToTmp(buffer, fileName);
-                } catch (err2) {
-                    throw new Error("සියලුම Upload සර්වර්ස් කාර්යබහුලයි. මඳ වේලාවකින් උත්සාහ කරන්න.");
-                }
+                uploadRes = await axios.post('https://catbox.moe/user/api.php', form, { 
+                    headers: form.getHeaders(),
+                    timeout: 30000 
+                });
+            } catch (err) {
+                console.error("Catbox Upload Error:", err.message);
+                return await conn.sendMessage(from, { text: "❌ Uploading to Catbox failed." }, { quoted: mek });
             }
 
-            const fileSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+            // 5. Success වූ පසු Redirect URL එක සෑදීම සහ Chat එකට යැවීම
+            if (uploadRes.data && uploadRes.data.startsWith('http')) {
+                const uploadedUrl = uploadRes.data;
+                let finalUrl = uploadedUrl; // Default එක විදිහට මුල් ලින්ක් එක තියාගන්නවා
 
-            const outMsg = `┏━━━❮ ⚡ *𝐇𝐄𝐒𝐇𝐀𝐍 - 𝐌𝐃 𝐔𝐑𝐋* ⚡ ❯━━━┓
-┃
-┣━━『 📦 *FILE INFORMATION* 』
-┃ ◈ *Name*   : *${fileName}*
-┃ ◈ *Size*   : *${fileSizeMB} MB*
-┃ ◈ *Status* : *Uploaded 🟢*
-┃
-┣━━『 🔗 *DIRECT LINK* 』
-┃ ${finalUrl}
-┃
-┗━━━━━━━━━━━━━━━━━━━━━┛
-> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
+                // 🟢 6. url.devofc.top හරහා Short Link එක සෑදීම (POST ක්‍රමයට JSON යැවීම)
+                try {
+                    await conn.sendMessage(from, { text: "🔗 Generating Secure Link..." }, { quoted: mek });
+                    
+                    const shortRes = await axios.post('https://url.devofc.top/api/shorten', 
+                        { url: uploadedUrl }, 
+                        { headers: { 'Content-Type': 'application/json' } }
+                    );
+                    
+                    // API එකෙන් එන ID එක අරගෙන Short Link එක හැදීම
+                    if (shortRes.data && shortRes.data.id) {
+                        finalUrl = `https://url.devofc.top/${shortRes.data.id}`;
+                    }
+                } catch (shortErr) {
+                    console.error("URL Shortener Failed:", shortErr.message);
+                    // Short API එක අවුල් ගියොත් Original Catbox Link එකම යවනවා (Safe Fallback)
+                }
 
-            await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
-            return await reply(outMsg);
+                const captionText = `✅ *URL Generated Successfully!*\n> 🔗 *Link:* ${finalUrl}\n\n> </> 𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗯𝘆 𝗛𝗘𝗦𝗛𝗔𝗡 𝗠𝗗`;
+                
+                await conn.sendMessage(from, { text: captionText }, { quoted: mek });
+                await conn.sendMessage(from, { react: { text: '✅', key: mek.key } });
+            } else {
+                return await conn.sendMessage(from, { text: "❌ Failed to upload file to cloud." }, { quoted: mek });
+            }
 
-        } catch (e) {
-            console.error("Tourl Final Error:", e);
-            await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
-            return await reply(`❌ Error: ${e.message}`);
+        } catch (err) {
+            console.error("TOURL ERROR:", err);
+            const conn = context?.conn || context?.sock;
+            const from = context?.from || context?.senderJid;
+            const mek = context?.mek || context?.msg;
+            if (conn && from) {
+                await conn.sendMessage(from, { text: `❌ Error occurred: ${err.message}` }, { quoted: mek });
+            }
         }
     }
 };
-
