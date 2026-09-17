@@ -324,7 +324,7 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.macOS('Desktop'),
+    browser: Browsers.ubuntu('Chrome'), // Pairing code reject නොවෙන්න mobile-friendly browser fingerprint එක
     msgRetryCounterCache,
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
@@ -927,7 +927,7 @@ function registerResetSingleNumberRoute(app) {
   });
 }
 
-// pairing code එකක් generate කරන route එක
+// pairing code එකක් generate කරන route එක (පැහැදිලිව handshake delay එක සහිතව update කළ කොටස)
 function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
@@ -944,18 +944,23 @@ function registerPairRoute(app) {
       const sock = await initWhatsApp(num);
       if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
 
+      // Socket එක WhatsApp server එකත් එක්ක connect වෙන්න අවශ්‍ය delay එක
+      await delay(4000);
+
       if (!sock.authState.creds.registered) {
-        await delay(2500);
-        const code = await Promise.race([
+        const rawCode = await Promise.race([
           sock.requestPairingCode(num),
-          new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 20000))
+          new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 25000))
         ]);
-        return res.json({ code: code?.match(/.{1,4}/g)?.join('-') || code });
+
+        const formattedCode = rawCode?.match(/.{1,4}/g)?.join('-') || rawCode;
+        return res.json({ code: formattedCode });
       } else {
         return res.status(400).json({ error: 'This number is already linked!' });
       }
     } catch (err) {
-      return res.status(500).json({ error: 'Rate limited or pairing timeout. Please retry.' });
+      console.error('Pairing Error:', err);
+      return res.status(500).json({ error: 'Pairing failed or WhatsApp rate-limited. Please wait 1 minute and retry.' });
     }
   });
 }
@@ -1023,3 +1028,4 @@ async function main() {
 }
 
 main();
+
