@@ -3,15 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 
-// Local logo path check (root එකේ හරි commands එක ඇතුලෙ හරි)
-const POSSIBLE_PATHS = [
-  path.join(process.cwd(), 'logo.jpg'),
-  path.join(process.cwd(), 'logo.png'),
-  path.join(process.cwd(), 'assets', 'logo.jpg'),
-  path.join(__dirname, '../logo.jpg')
-];
-
-// ස්ථිරවම වැඩ කරන public direct banner fallback url එකක්
+// Local logo path
+const LOCAL_LOGO = path.join(process.cwd(), 'logo.jpg');
 const FALLBACK_LOGO_URL = 'https://files.catbox.moe/a58add.jpeg';
 
 function formatUptime(seconds) {
@@ -23,33 +16,22 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// Logo එක Buffer එකක් විදියට ලබා දෙන function එක
-async function getLogoBuffer() {
-  // 1. මුලින්ම Local File එකක් තියෙනවද බලනවා
-  for (const p of POSSIBLE_PATHS) {
-    if (fs.existsSync(p)) {
-      try {
-        const fileData = fs.readFileSync(p);
-        if (fileData && fileData.length > 0) return fileData;
-      } catch (e) {}
+// Logo image එක buffer එකක් බවට පත් කර ගැනීම
+async function fetchLogo() {
+    if (fs.existsSync(LOCAL_LOGO)) {
+        try {
+            return fs.readFileSync(LOCAL_LOGO);
+        } catch (e) {}
     }
-  }
-
-  // 2. Local එකක් නැත්නම් Fallback URL එකෙන් Buffer එකක් ලබා ගැනීම
-  try {
-    const res = await axios.get(FALLBACK_LOGO_URL, {
-      responseType: 'arraybuffer',
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-      timeout: 10000,
-      validateStatus: () => true
-    });
-    if (res.status === 200 && res.data) {
-      return Buffer.from(res.data);
+    try {
+        const response = await axios.get(FALLBACK_LOGO_URL, { 
+            responseType: 'arraybuffer',
+            timeout: 10000 
+        });
+        return Buffer.from(response.data);
+    } catch (e) {
+        return { url: FALLBACK_LOGO_URL };
     }
-  } catch (err) {
-    console.error("Logo Download Error:", err.message);
-  }
-  return null;
 }
 
 module.exports = {
@@ -90,26 +72,15 @@ module.exports = {
     try {
       await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
-      // Logo එක Load කර ගැනීම
-      const logoBuffer = await getLogoBuffer();
+      const logoImg = await fetchLogo();
 
-      let sentMenu;
-      if (logoBuffer) {
-        sentMenu = await sock.sendMessage(targetChat, {
-          image: logoBuffer,
-          caption: mainText,
-          mimetype: 'image/jpeg'
-        }, { quoted: msg }).catch(async () => {
-          return await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg });
-        });
-      } else {
-        sentMenu = await sock.sendMessage(targetChat, {
-          image: { url: FALLBACK_LOGO_URL },
+      const sentMenu = await sock.sendMessage(targetChat, {
+          image: logoImg,
           caption: mainText
-        }, { quoted: msg }).catch(async () => {
+      }, { quoted: msg }).catch(async (imgErr) => {
+          console.error("Image Send Error:", imgErr.message);
           return await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg });
-        });
-      }
+      });
 
       const menuMessageId = sentMenu?.key?.id;
 
@@ -165,7 +136,6 @@ module.exports = {
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
       };
 
-      // 🟢 Reply Listener (1, 2, 3, 4)
       const replyListener = async (m) => {
         try {
           const replyMsg = m.messages?.[0];
