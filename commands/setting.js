@@ -1,6 +1,11 @@
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
 const mongoose = require('mongoose');
 
-// Per-Bot MongoDB Schema
+const DEFAULT_BANNER = 'https://files.catbox.moe/a58add.jpeg';
+
+// Per-Bot MongoDB Schema (botLogo සහිතව)
 const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   workMode: { type: String, default: 'public' },
@@ -10,6 +15,7 @@ const SettingsSchema = new mongoose.Schema({
   statusReactEmoji: { type: String, default: '💐' },
   ownerReact: { type: Boolean, default: true },
   ownerReactEmoji: { type: String, default: '👑' },
+  botLogo: { type: String, default: DEFAULT_BANNER },
   securityPin: { type: String, default: '1234' },
   isFirstConnectDone: { type: Boolean, default: false }
 });
@@ -43,6 +49,29 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
   }
 }
 
+// අදාළ Session එකට ගැලපෙන Banner Image එක ලබාගැනීම
+async function getBannerForBot(botNum, settings) {
+  const specificLogo = path.join(process.cwd(), `logo_${botNum}.jpg`);
+  if (fs.existsSync(specificLogo)) {
+    try {
+      return fs.readFileSync(specificLogo);
+    } catch (e) {}
+  }
+
+  if (settings && settings.botLogo) {
+    if (fs.existsSync(settings.botLogo)) {
+      try {
+        return fs.readFileSync(settings.botLogo);
+      } catch (e) {}
+    }
+    if (settings.botLogo.startsWith('http')) {
+      return { url: settings.botLogo };
+    }
+  }
+
+  return { url: DEFAULT_BANNER };
+}
+
 module.exports = {
   name: 'settings',
   alias: ['setting', 'set', 'config'],
@@ -52,7 +81,7 @@ module.exports = {
       return await safeReply('⛔ *Access Denied!* Only Owner can modify settings.');
     }
 
-    // අදාළ Session එකේ Bot Number එක හරියටම වෙන් කර හඳුනාගැනීම
+    // අදාළ Session එකේ Bot Number එක නිවැරදිව හඳුනාගැනීම
     const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
     if (!botNumber) return await safeReply('⚠️ Bot Number හඳුනාගත නොහැකි විය.');
 
@@ -113,7 +142,7 @@ module.exports = {
     if (isUpdated) {
       await settings.save();
       
-      // Cache එක Clear කරනවා අලුත් setting එක එසැනින් ක්‍රියාත්මක වෙන්න
+      // Cache එක Clear කිරීම
       if (global.clearSettingsCache) global.clearSettingsCache(botNumber);
 
       const modeBadge = {
@@ -175,11 +204,10 @@ module.exports = {
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-    const bannerImg = 'https://files.catbox.moe/a58add.jpeg';
-
     try {
+      const bannerPayload = await getBannerForBot(botNumber, settings);
       return await sock.sendMessage(chatJid, {
-        image: { url: bannerImg },
+        image: bannerPayload,
         caption: menu
       }, { quoted: msg });
     } catch (err) {
