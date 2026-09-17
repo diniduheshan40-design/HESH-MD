@@ -2,6 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
+const fetch = require('node-fetch');
+const FormData = require('form-data');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 // Database Model
@@ -14,18 +16,39 @@ const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Catbox CDN එකට upload කර ස්ථිර Link එකක් ලබාගැනීමේ helper function එක
+async function uploadToCatbox(buffer) {
+  try {
+    const form = new FormData();
+    form.append('reqtype', 'fileupload');
+    form.append('fileToUpload', buffer, { filename: 'logo.jpg' });
+
+    const response = await fetch('https://catbox.moe/user/api.php', {
+      method: 'POST',
+      body: form
+    });
+
+    const url = await response.text();
+    if (url && url.startsWith('http')) {
+      return url.trim();
+    }
+  } catch (err) {
+    console.error('Catbox upload error:', err.message);
+  }
+  return null;
+}
+
 module.exports = {
   name: 'setlogo',
   alias: ['logo', 'setbotlogo'],
   category: 'owner',
-  desc: 'Set custom bot logo image permanently with clean layout',
+  desc: 'Set custom bot logo permanently without database freeze',
 
   async execute(sock, msg, args, chatJid, safeReply, { isOwner }) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
       ? chatJid 
       : msg.key.remoteJid;
 
-    // Owner verification check
     if (isOwner !== undefined && !isOwner) {
       return sock.sendMessage(targetChat, { text: '⛔ *Access Denied!* Only Owner can modify the system logo.' }, { quoted: msg });
     }
@@ -36,10 +59,8 @@ module.exports = {
         return sock.sendMessage(targetChat, { text: '⚠️ Bot Number හඳුනාගත නොහැකි විය.' }, { quoted: msg });
       }
 
-      // Initial Reaction
       sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
-      // Photo එක direct එවපු එකක්ද නැත්නම් Quoted (Reply) කරපු එකක්ද කියා හඳුනාගැනීම
       const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
       const quotedMsg = quotedContext?.quotedMessage;
       let targetMsg = null;
@@ -71,25 +92,15 @@ module.exports = {
         return sock.sendMessage(targetChat, { text: helpText }, { quoted: msg });
       }
 
-      // ─── 🌟 ULTRA-CLEAN EDIT ANIMATION (No Broken Lines) ───
+      // Step 1: 30% Loader යැවීම
       const initialText = `*⚡ HESHAN-MD LOGO SYNC ⚡*
 ────────────────────────────
-🔄 [░░░░░░░░░░] 0%
-✦ Status: Initializing stream...`;
+🔄 [■■■░░░░░░░] 30%
+✦ Status: Downloading image stream...`;
 
       let activeLoader = await sock.sendMessage(targetChat, { text: initialText }, { quoted: msg });
 
-      // Frame 1
-      await sleep(400);
-      await sock.sendMessage(targetChat, { 
-        text: `*⚡ HESHAN-MD LOGO SYNC ⚡*
-────────────────────────────
-🔄 [■■■░░░░░░░] 30%
-✦ Status: Downloading media stream...`, 
-        edit: activeLoader.key 
-      }).catch(() => {});
-
-      // Media download කිරීම
+      // Image එක download කිරීම
       const buffer = await downloadMediaMessage(
         targetMsg,
         'buffer',
@@ -102,40 +113,43 @@ module.exports = {
 
       if (!buffer || buffer.length === 0) {
         return sock.sendMessage(targetChat, { 
-          text: '❌ Image stream download fail විය! නැවත උත්සාහ කරන්න.', 
+          text: '❌ Image download fail විය! කරුණාකර නැවත උත්සාහ කරන්න.', 
           edit: activeLoader.key 
         }).catch(async () => {
-          await sock.sendMessage(targetChat, { text: '❌ Image stream download fail විය!' }, { quoted: msg });
+          await sock.sendMessage(targetChat, { text: '❌ Image download fail විය!' }, { quoted: msg });
         });
       }
 
-      // Frame 2
-      await sleep(400);
+      // Step 2: 70% Loader Update
       await sock.sendMessage(targetChat, { 
         text: `*⚡ HESHAN-MD LOGO SYNC ⚡*
 ────────────────────────────
-🔄 [■■■■■■░░░░] 65%
-✦ Status: Syncing with MongoDB vault...`, 
+🔄 [■■■■■■■░░░] 70%
+✦ Status: Uploading to Cloud Vault...`, 
         edit: activeLoader.key 
       }).catch(() => {});
 
-      // 1. Local copy එකක් හැදීම
+      // 1. Local copy save කර තැබීම
       const botLogoPath = path.join(process.cwd(), `logo_${myBotNum}.jpg`);
       fs.writeFileSync(botLogoPath, buffer);
 
-      // 2. Base64 Data URI එකක් විදිහට MongoDB එකට සදාකාලිකව Save කිරීම
-      const base64DataUri = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+      // 2. Cloud එකට upload කර direct URL ලබාගැනීම (Fail වුවහොත් local file path එක යොදයි)
+      let finalLogoUrl = await uploadToCatbox(buffer);
+      if (!finalLogoUrl) {
+        finalLogoUrl = botLogoPath;
+      }
+
+      // 3. Database එකට සැහැල්ලු URL එකක් ලෙස Save කිරීම (මිලි තත්පර 10කින් save වේ)
       await SettingsModel.findByIdAndUpdate(
         myBotNum,
-        { $set: { botLogo: base64DataUri } },
+        { $set: { botLogo: finalLogoUrl } },
         { upsert: true, new: true }
       );
 
-      // Cache Eviction
+      // Cache flush කිරීම
       if (global.clearSettingsCache) global.clearSettingsCache(myBotNum);
 
-      // Frame 3 (Complete)
-      await sleep(400);
+      // Step 3: 100% Completed Loader Update
       await sock.sendMessage(targetChat, { 
         text: `*⚡ HESHAN-MD LOGO SYNC ⚡*
 ────────────────────────────
@@ -144,12 +158,12 @@ module.exports = {
         edit: activeLoader.key 
       }).catch(() => {});
 
-      await sleep(350);
+      await sleep(600);
 
-      // Final Reaction
+      // Success Reaction
       sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
 
-      // Loader එක delete කර preview එක සමඟ clean caption එක යැවීම
+      // Loader එක delete කිරීම
       await sock.sendMessage(targetChat, { delete: activeLoader.key }).catch(() => {});
 
       const successCaption = `*⚡ HESHAN-MD LOGO DEPLOYED ⚡*
