@@ -38,11 +38,15 @@ const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 
 function getLocalLogoBuffer() {
-  const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
+  const localLogoPath = path.join(process.cwd(), 'logo.jpg');
   if (fs.existsSync(localLogoPath)) {
     return fs.readFileSync(localLogoPath);
   }
-  return { url: 'https://files.catbox.moe/a58add.jpeg' };
+  const assetsLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
+  if (fs.existsSync(assetsLogoPath)) {
+    return fs.readFileSync(assetsLogoPath);
+  }
+  return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
 
 const REAL_OWNER_NUMBER = '94719845166';
@@ -63,7 +67,7 @@ const DEFAULT_SETTINGS = {
   statusReactEmoji: '💐',
   ownerReact: true,
   ownerReactEmoji: '👑',
-  botLogo: './assets/logo.jpg',
+  botLogo: './logo.jpg',
   autoPresence: 'off',
   securityPin: '1234',
   isFirstConnectDone: false
@@ -525,7 +529,7 @@ async function createBaileysSocket(phoneNumber) {
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 30000,
     keepAliveIntervalMs: 25000,
-    markOnlineOnConnect: true,
+    markOnlineOnConnect: false, // 🛡️ Online spams වැළැක්වීමට
     emitOwnEvents: false,
     shouldIgnoreJid: () => false
   });
@@ -548,11 +552,13 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   } catch (e) {}
 
   delete activeSessions[phoneNumber];
+  isStarting[phoneNumber] = false;
 
-  const isPermanentLogout = statusCode === DisconnectReason.loggedOut;
+  const isPermanentLogout = statusCode === DisconnectReason.loggedOut || statusCode === 401;
 
   if (!isPermanentLogout) {
-    setTimeout(() => initWhatsApp(phoneNumber), 4000);
+    // 🛡️ Ban වැළැක්වීමට Reconnect delay එක 10s දක්වා throttle කිරීම
+    setTimeout(() => initWhatsApp(phoneNumber), 10000);
   } else {
     console.log(`❌ Permanent session logout: ${phoneNumber}`);
     if (typeof clearSessionData === 'function') await clearSessionData();
@@ -560,19 +566,19 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
 }
 
 async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
-  await delay(2500);
+  await delay(4000);
   try {
     const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
     if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
-      const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
-      if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
+      const channelMeta = await sock.newsletterMetadata('invite', inviteCode).catch(() => null);
+      if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id).catch(() => {});
     }
   } catch (e) {}
 
   try {
     const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X';
     if (typeof sock.groupAcceptInvite === 'function') {
-      await sock.groupAcceptInvite(groupInviteCode);
+      await sock.groupAcceptInvite(groupInviteCode).catch(() => {});
     }
   } catch (e) {}
 }
@@ -623,8 +629,9 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
 
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
-  autoFollowChannelAndJoinGroup(sock, phoneNumber);
-  setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
+  // 🛡️ Background tasks safe execution (Connection drop නොවී තබා ගැනීමට)
+  setTimeout(() => autoFollowChannelAndJoinGroup(sock, phoneNumber), 3000);
+  setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 4000);
 }
 
 function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
@@ -660,7 +667,7 @@ async function simulateAutoPresence(sock, chatJid, settings) {
   if (!settings.autoPresence || settings.autoPresence === 'off') return;
   try {
     const type = settings.autoPresence === 'recording' ? 'recording' : 'composing';
-    await sock.sendPresenceUpdate(type, chatJid);
+    await sock.sendPresenceUpdate(type, chatJid).catch(() => {});
   } catch (err) {}
 }
 
@@ -669,6 +676,7 @@ async function handleStatusBroadcast(sock, msg, settings) {
   try {
     await sock.readMessages([msg.key]);
     if (settings.statusReact && msg.key.participant) {
+      await delay(1200);
       await sock.sendMessage(
         'status@broadcast',
         { react: { text: settings.statusReactEmoji || '💐', key: msg.key } },
@@ -710,7 +718,7 @@ function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
   if (!settings.ownerReact) return;
   setTimeout(async () => {
     try {
-      await sock.sendMessage(chatJid, { react: { text: settings.ownerReactEmoji || '👑', key: msgKey } });
+      await sock.sendMessage(chatJid, { react: { text: settings.ownerReactEmoji || '👑', key: msgKey } }).catch(() => {});
     } catch (err) {}
   }, 600);
 }
@@ -1056,7 +1064,7 @@ function registerPairRoute(app) {
         } else if (connection === 'close') {
           const code = lastDisconnect?.error?.output?.statusCode;
           if (code !== DisconnectReason.loggedOut && code !== 401) {
-            setTimeout(() => initWhatsApp(num), 3000);
+            setTimeout(() => initWhatsApp(num), 5000);
           }
         }
       });
@@ -1112,7 +1120,7 @@ async function reconnectAllSavedSessions() {
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(3500);
+      await delay(4000);
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
