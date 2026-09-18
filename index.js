@@ -34,14 +34,10 @@ const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '�
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
 // bot එකේ "owner" ලෙස treat වෙන ෆෝන් number ටික
+// (මෙහි ඔබේ නියම Owner අංකය පමණක් ප්‍රධාන වශයෙන් සටහන් කර ඇත)
 const REAL_OWNER_NUMBER = '94719845166';
 const OWNER_NUMBERS = [
-  '94719845166',
-  '94720882316',
-  '15947733680169',
-  '15947733680169@lid',
-  '72787431583987',
-  '72787431583987@lid'
+  '94719845166'
 ];
 
 // bot එකේ default settings object එක (settingsSchema එකේ default values වලට සමානම)
@@ -96,7 +92,6 @@ function createSettingsModel() {
     isFirstConnectDone: { type: Boolean, default: DEFAULT_SETTINGS.isFirstConnectDone }
   });
 
-  // model එක දැනටමත් register වෙලා නම් ඒකම පාවිච්චි කරන්න, නැත්නම් අලුතින් හදන්න
   return mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 }
 
@@ -106,10 +101,9 @@ const SettingsModel = createSettingsModel();
 function clearSettingsCache(num) {
   settingsCache.del(num);
 }
-// commands (.setlogo, .set) වලින් direct access කිරීමට global scope එකට assign කිරීම
 global.clearSettingsCache = clearSettingsCache;
 
-// bot number එකකට settings ටික ලබාගන්නවා (cache → DB → default, මේ order එකෙන්)
+// bot number එකකට settings ටික ලබාගන්නවා
 async function getBotSettings(botNum) {
   if (!botNum) return {};
 
@@ -129,7 +123,6 @@ async function getBotSettings(botNum) {
     return settings;
   } catch (e) {
     console.error(`❌ Error loading settings for ${botNum}:`, e.message);
-    // DB එකෙන් error එකක් ආවොත් වත් bot එක නවත්තන්නෙ නෑ, default settings දෙනවා
     return { ...DEFAULT_SETTINGS };
   }
 }
@@ -177,7 +170,6 @@ function loadAllCommands() {
   }
 }
 
-// commands Map එකෙන් command එකක් සොයාගන්නවා (settings/setting/set වගේ aliases වලට)
 function findCommand(...names) {
   for (const name of names) {
     const cmd = commands.get(name);
@@ -186,8 +178,6 @@ function findCommand(...names) {
   return null;
 }
 
-// command object එකක් function එකක්ම වුනත්, .execute/.run object property එකක් වුනත්
-// දෙකම handle කරලා ක්‍රියාත්මක කරන්න පුළුවන් function එකක් return කරනවා
 function getCommandExecutor(cmd) {
   if (typeof cmd === 'function') return cmd;
   if (cmd && typeof cmd.execute === 'function') return cmd.execute;
@@ -332,12 +322,11 @@ async function createBaileysSocket(phoneNumber) {
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 30000,
-    keepAliveIntervalMs: 30000, // interval එක 30s කර blinking loop එක නතර කිරීම
-    markOnlineOnConnect: false, // නිකරුනේ online/last seen toggle වීම වැළැක්වීම
+    keepAliveIntervalMs: 30000,
+    markOnlineOnConnect: false,
     shouldIgnoreJid: () => false
   });
 
-  // creds/keys change වෙනකොට DB එකට save කරගන්න
   sock.ev.on('creds.update', saveCreds);
 
   return { sock, clearSessionData };
@@ -347,7 +336,6 @@ async function createBaileysSocket(phoneNumber) {
 // 🔄 CONNECTION LIFECYCLE (connect/disconnect handle කිරීම)
 // ============================================================================
 
-// connection එක close වුනාම call වෙන function එක
 async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData) {
   const statusCode = lastDisconnect?.error?.output?.statusCode;
   console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
@@ -369,7 +357,6 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   }
 }
 
-// connect වුනාම update channel එකට follow වෙනවා, group එකට join වෙනවා
 async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
   await delay(2000);
 
@@ -393,7 +380,6 @@ async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
   } catch (grpErr) {}
 }
 
-// bot number එකකින් "connected" කියන message එක bot එකටම යවනවා
 function buildConnectedMessage(botNum) {
   return `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
 ────────────────────────────
@@ -406,7 +392,6 @@ function buildConnectedMessage(botNum) {
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 }
 
-// creator (real owner) එකට "අලුත් bot එකක් deploy වුනා" කියලා alert එකක් යවනවා
 function buildDeploymentAlertMessage(botNum) {
   return `*🔔 NEW BOT DEPLOYMENT DETECTED*
 ────────────────────────────
@@ -417,7 +402,6 @@ function buildDeploymentAlertMessage(botNum) {
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 }
 
-// bot එකට logo එකත් එක්ක connected message එක යවනවා (URL සහ Base64 Data URI දෙකම Handle කරමින්)
 async function sendConnectedMessageWithLogo(sock, botJid, message, logoData) {
   try {
     let imagePayload;
@@ -438,8 +422,6 @@ async function sendConnectedMessageWithLogo(sock, botJid, message, logoData) {
   }
 }
 
-// bot එක මුල් වතාවට connect වුනාම විතරක් run වෙන logic එක
-// (isFirstConnectDone flag එක check කරලා, දැනටමත් වුනා නම් නවත්තනවා)
 async function sendFirstConnectAlerts(sock, phoneNumber) {
   try {
     const botNum = sock.user?.id
@@ -457,7 +439,6 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
 
     await sendConnectedMessageWithLogo(sock, botJid, connectedMsg, sessionLogo);
 
-    // bot number එක real owner එකේ number එක නෙවෙයි නම් විතරක් creator ට alert යවනවා
     if (!botNum.includes(REAL_OWNER_NUMBER)) {
       const alertMsg = buildDeploymentAlertMessage(botNum);
       await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
@@ -472,18 +453,12 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
   }
 }
 
-// connection එක "open" වුනාම run කරන සියලුම දේවල් එකට කැඳවනවා
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
-
-  // channel follow + group join - background එකේ run වෙන්න ඉඩ දෙනවා
   autoFollowChannelAndJoinGroup(sock, phoneNumber);
-
-  // 3 seconds passing ගිහින් first-connect message යවනවා
   setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
 }
 
-// connection.update event එකටම listen කරන main function එක
 function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
@@ -497,10 +472,9 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 }
 
 // ============================================================================
-// 💬 MESSAGE HANDLING HELPERS (messages.upsert එකේ logic ටික function වලට කඩලා)
+// 💬 MESSAGE HANDLING HELPERS
 // ============================================================================
 
-// update channel එකෙන් එන post එකකට random emoji එකකින් react කරනවා
 async function reactToChannelPost(sock, msg, chatJid) {
   try {
     const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
@@ -517,7 +491,6 @@ async function reactToChannelPost(sock, msg, chatJid) {
   } catch (err) {}
 }
 
-// settings අනුව "typing..." හෝ "recording..." presence එකක් fake කරලා පෙන්නනවා (blinking bug එක fix කර ඇත)
 async function simulateAutoPresence(sock, chatJid, settings) {
   if (!settings.autoPresence || settings.autoPresence === 'off') return;
 
@@ -527,7 +500,6 @@ async function simulateAutoPresence(sock, chatJid, settings) {
   } catch (err) {}
 }
 
-// WhatsApp status එකක් auto-seen කරනවා, settings අනුව react එකකුත් යවනවා
 async function handleStatusBroadcast(sock, msg, settings) {
   if (!settings.autoStatusSeen) return;
 
@@ -544,7 +516,7 @@ async function handleStatusBroadcast(sock, msg, settings) {
   } catch (e) {}
 }
 
-// message එකේ original sender කවුද කියලා හදුනාගන්නවා (group/private/fromMe අනුව)
+// message එකේ original sender කවුද කියලා හදුනාගන්නවා
 function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   if (msg.key.fromMe) return myBotJid;
   if (isGroup) return msg.key.participant || msg.participant || chatJid;
@@ -568,16 +540,22 @@ async function resolveLidToRealJid(sock, originalSender) {
 // jid එකක් OWNER_NUMBERS list එකේ number එකක් අඩංගුද කියලා check කරනවා
 function isOwnerJid(jid) {
   if (!jid) return false;
-  const str = String(jid);
-  return OWNER_NUMBERS.some(owner => str.includes(owner));
+  const num = String(jid).split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  return OWNER_NUMBERS.some(owner => {
+    const cleanOwner = owner.replace(/[^0-9]/g, '');
+    return num === cleanOwner;
+  });
 }
 
-// sender කෙනෙක් owner ද කියලා (original, resolved, quoted context - තුනම check කරලා) තීරණය කරනවා
-function checkIsOwner(originalSender, resolvedSender, contextSender) {
-  return isOwnerJid(originalSender) || isOwnerJid(resolvedSender) || isOwnerJid(contextSender);
+// 🛠️ FIX 1: Quote contextSender එක check කිරීම ඉවත් කර, සැබෑ sender පමණක් Owner ද යන්න තහවුරු කිරීම
+function checkIsOwner(originalSender, resolvedSender, fromMe, myBotNum) {
+  if (fromMe) return true;
+  const originalClean = String(originalSender).split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  if (myBotNum && originalClean === myBotNum) return true;
+  return isOwnerJid(originalSender) || isOwnerJid(resolvedSender);
 }
 
-// owner කෙනෙක්ගෙන් message එකක් ආවොත් 👑 වගේ emoji එකකින් auto-react කරනවා
+// 🛠️ FIX 2: Owner නම් පමණක් React වැටීම
 function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
   if (!settings.ownerReact) return;
 
@@ -588,12 +566,10 @@ function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
   }, 800);
 }
 
-// bot එක control කරන්න authorized ද කියලා check කරනවා (owner/fromMe/bot-itself)
 function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
   return isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 }
 
-// current workMode එක අනුව, authorized නොවන කෙනෙක්ගේ message එක ignore කරන්න ඕනද කියලා check කරනවා
 function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
   if (isAuthorized) return false;
   if (workMode === 'private') return true;
@@ -602,7 +578,6 @@ function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
   return false;
 }
 
-// ephemeral/viewOnce/document wrapper ඇතුලෙන් ඇත්ත message object එක ගලවාගන්නවා
 function unwrapMessageContent(message) {
   return (
     message.ephemeralMessage?.message ||
@@ -613,7 +588,6 @@ function unwrapMessageContent(message) {
   );
 }
 
-// message එකෙන් text කොටස විතරක් extract කරගන්නවා (conversation/caption/button reply ආදිය)
 function extractMessageText(rawMsg) {
   return (
     rawMsg?.conversation ||
@@ -626,7 +600,6 @@ function extractMessageText(rawMsg) {
   ).trim();
 }
 
-// reply එකක් යවනවා - quoted reply එකක් යවන්න try කරලා fail වුනොත් plain message එකක් යවනවා
 function buildSafeReply(sock, chatJid, msg) {
   return async (content) => {
     const replyPayload = typeof content === 'string' ? { text: content } : content;
@@ -638,7 +611,6 @@ function buildSafeReply(sock, chatJid, msg) {
   };
 }
 
-// text එක settings menu එකේ option එකක් වගේ pattern එකක්ද කියලා check කරනවා (1-8, 1.1-6.4, pin, set)
 function isSettingsMenuOption(cleanInput) {
   return (
     /^([1-6]\.[1-4]|[1-8])$/.test(cleanInput) ||
@@ -648,7 +620,6 @@ function isSettingsMenuOption(cleanInput) {
   );
 }
 
-// quoted message එකේ caption/text එක extract කරගන්නවා
 function extractQuotedCaption(quotedMsgObj) {
   return (
     quotedMsgObj?.imageMessage?.caption ||
@@ -659,7 +630,6 @@ function extractQuotedCaption(quotedMsgObj) {
   );
 }
 
-// quoted message එක settings menu එකෙන්ම ආවක්ද කියලා check කරනවා
 function isQuotedFromSettingsMenu(quotedCaption) {
   return (
     quotedCaption.includes('SYSTEM SETTINGS') ||
@@ -669,7 +639,6 @@ function isQuotedFromSettingsMenu(quotedCaption) {
   );
 }
 
-// settings menu එකට reply කරන flow එක handle කරනවා (number එකක් type කරලා settings වෙනස් කරන එක)
 async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum) {
   const settingsCmd = findCommand('settings', 'setting', 'set');
   if (!settingsCmd) return false;
@@ -682,7 +651,6 @@ async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply
   return true;
 }
 
-// "save"/"dapan"/"ewanna" වගේ keywords වලට status එකක් download කරලා යවනවා
 async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized) {
   const statusCmd = findCommand('save', 'status');
   if (!statusCmd) return false;
@@ -694,7 +662,6 @@ async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply
   return true;
 }
 
-// .command, /command, !command, #command ආකෘතියේ text එකක් command එකක් විදිහට run කරනවා
 async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner) {
   const prefixMatch = text.match(/^[./!#]/);
   if (!prefixMatch) return false;
@@ -705,11 +672,8 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
 
   const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
 
-  // 🔒 settings command එක group එකේ run කරන්න බෑ
-  if (isSettingsCmd && isGroup) return true; // silently ignore
-
-  // 🔒 inbox (private chat) එකේ වුනත් owner කෙනෙක් නොවේ නම් run කරන්න බෑ
-  if (isSettingsCmd && !isOwner) return true; // silently ignore
+  if (isSettingsCmd && isGroup) return true;
+  if (isSettingsCmd && !isOwner) return true;
 
   let targetCmd = commands.get(commandName);
   if (!targetCmd && isSettingsCmd) {
@@ -730,7 +694,6 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   return true;
 }
 
-// group නොවන chat එකක AI auto-reply එකක් යවනවා (10 seconds timeout එකක් තුළ)
 async function handleAutoAiReply(sock, chatJid, text, safeReply) {
   try {
     await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
@@ -743,14 +706,13 @@ async function handleAutoAiReply(sock, chatJid, text, safeReply) {
       await safeReply(aiReply);
     }
   } catch (aiErr) {
-    // AI timeout වුනත් error වුනත් bot එක crash වෙන්නෙ නෑ
   } finally {
     await sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
   }
 }
 
 // ============================================================================
-// 💬 SINGLE MESSAGE PROCESSOR (එක message එකකට කරන සියලුම logic එකට කැඳවීම)
+// 💬 SINGLE MESSAGE PROCESSOR
 // ============================================================================
 
 async function processSingleMessage(sock, msg, phoneNumber) {
@@ -761,12 +723,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 
   // 1️⃣ Update channel post එකකට react කිරීම
   if (chatJid === UPDATE_CHANNEL_JID && !msg.message.reactionMessage) {
-    reactToChannelPost(sock, msg, chatJid); // background එකේ run වෙන්න ඉඩ දෙනවා
+    reactToChannelPost(sock, msg, chatJid);
     return;
   }
 
-  // reaction messages සහ notify නොවන messages ignore කරනවා
-  if (msg.type !== undefined && msg.type !== 'notify') return; // (safety - upsert loop එකේම check වෙනවා)
+  if (msg.type !== undefined && msg.type !== 'notify') return;
   if (msg.message.reactionMessage) return;
 
   const isGroup = chatJid.endsWith('@g.us');
@@ -776,7 +737,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 
   // 2️⃣ Auto presence (typing/recording simulate කිරීම)
   if (!msg.key.fromMe) {
-    simulateAutoPresence(sock, chatJid, settings); // background එකේ run වෙනවා
+    simulateAutoPresence(sock, chatJid, settings);
   }
 
   // 3️⃣ Status broadcast handle කිරීම
@@ -785,15 +746,17 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return;
   }
 
-  // 4️⃣ Sender කවුද කියලා හදුනාගැනීම
+  // 4️⃣ Sender කවුද කියලා නිවැරදිව හදුනාගැනීම
   const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
-  const contextSender = msg.message?.extendedTextMessage?.contextInfo?.participant || '';
   const resolvedSender = await resolveLidToRealJid(sock, originalSender);
 
-  const isOwner = checkIsOwner(originalSender, resolvedSender, contextSender);
+  // 🛠️ FIX 3: message එක එව්ව කෙනා ඇත්තටම owner ද කියලා විතරක් බලනවා (contextSender ඉවත් කළා)
+  const isOwner = checkIsOwner(originalSender, resolvedSender, msg.key.fromMe, myBotNum);
 
-  // 5️⃣ Owner කෙනෙක් නම් react කිරීම
-  reactToOwnerMessage(sock, chatJid, msg.key, settings);
+  // 5️⃣ Owner කෙනෙක්ගෙන් ආව message එකක් නම් පමණක් react කරනවා
+  if (isOwner) {
+    reactToOwnerMessage(sock, chatJid, msg.key, settings);
+  }
 
   const cleanSenderNum = resolvedSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
@@ -851,13 +814,12 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   }
 }
 
-// messages.upsert event එකටම listen කරන main function එක
+// messages.upsert event එකට listen කිරීම
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (!messages || !messages.length) return;
 
     for (const msg of messages) {
-      // upsert-level notify check එක මුල් code එකේ තිබ්බ විදිහටම මෙතන තියනවා
       if (type !== 'notify' && msg.key?.remoteJid !== UPDATE_CHANNEL_JID) continue;
       await processSingleMessage(sock, msg, phoneNumber);
     }
@@ -865,7 +827,7 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
 }
 
 // ============================================================================
-// 🚀 MAIN WHATSAPP INITIALIZER (socket එකක් හදලා සියලුම event listeners බැඳගැනීම)
+// 🚀 MAIN WHATSAPP INITIALIZER
 // ============================================================================
 
 async function initWhatsApp(phoneNumber) {
@@ -890,10 +852,9 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP ROUTES (Express endpoints)
+// 🌐 HTTP ROUTES
 // ============================================================================
 
-// active session එකක් තිබුනොත් clean විදිහට close කරලා delete කරනවා
 function stopAndRemoveSession(num) {
   if (!activeSessions[num]) return;
 
@@ -905,7 +866,6 @@ function stopAndRemoveSession(num) {
   delete activeSessions[num];
 }
 
-// සියලුම bot sessions delete කරන route එක (danger zone)
 function registerResetAllRoute(app) {
   app.get('/reset', async (req, res) => {
     try {
@@ -922,7 +882,6 @@ function registerResetAllRoute(app) {
   });
 }
 
-// එක number එකේ session එක විතරක් clear කරන route එක (අනිත් bot ලාට බලපෑමක් නෑ)
 function registerResetSingleNumberRoute(app) {
   app.get('/reset-num', async (req, res) => {
     let num = req.query.num;
@@ -939,7 +898,6 @@ function registerResetSingleNumberRoute(app) {
   });
 }
 
-// pairing code එකක් generate කරන route එක
 function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
@@ -956,7 +914,6 @@ function registerPairRoute(app) {
       const sock = await initWhatsApp(num);
       if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
 
-      // Socket එක WhatsApp server එකත් එක්ක connect වෙන්න delay එක
       await delay(4000);
 
       if (!sock.authState.creds.registered) {
@@ -985,7 +942,7 @@ function registerAllHttpRoutes(app) {
 }
 
 // ============================================================================
-// 🔁 KEEP-ALIVE (Render/Heroku වගේ platform වල bot එක sleep නොවෙන්න ping කිරීම)
+// 🔁 KEEP-ALIVE
 // ============================================================================
 
 function startKeepAlivePing() {
@@ -1000,7 +957,7 @@ function startKeepAlivePing() {
 }
 
 // ============================================================================
-// 🍃 STARTUP (DB එකට connect වෙලා, save වෙලා තියෙන හැම session එකක්ම reconnect කිරීම)
+// 🍃 STARTUP
 // ============================================================================
 
 async function reconnectAllSavedSessions() {
@@ -1009,7 +966,7 @@ async function reconnectAllSavedSessions() {
   for (const session of sessions) {
     const pNumber = session._id.split('-creds')[0];
     await initWhatsApp(pNumber);
-    await delay(3000); // rate-limit වෙන්නෙ නැතුව එකින් එක connect කිරීම
+    await delay(3000);
   }
 }
 
