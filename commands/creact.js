@@ -1,5 +1,13 @@
-// Default Random Emojis Pool (Emoji ලබා නොදුනහොත් මේවායින් Random වැටේ)
+// Default Random Emojis Pool
 const DEFAULT_REACTIONS = ['💗', '❤️', '🥰', '😯', '🔥', '✨', '👍', '🪄'];
+
+// Owner Numbers List
+const OWNER_NUMBERS = [
+  '94719845166',
+  '94720882316',
+  '15947733680169',
+  '72787431583987'
+];
 
 module.exports = {
   name: "creact",
@@ -7,12 +15,15 @@ module.exports = {
   category: "owner",
   desc: "React to channel post using main bot and active sub-bots",
 
-  async execute(sock, msg, args, chatJid, safeReply) {
+  async execute(sock, msg, args, chatJid, safeReply, options = {}) {
     const targetChat = chatJid || msg.key.remoteJid;
     const isGroup = targetChat.endsWith('@g.us');
     const sender = isGroup ? (msg.key.participant || '') : targetChat;
-    const creatorNumber = '94719845166';
-    const isOwner = msg.key.fromMe || sender.includes(creatorNumber);
+    
+    // Owner Verification (Options, fromMe හෝ Number Match හරහා)
+    const isOwner = options.isOwner || 
+                    msg.key.fromMe || 
+                    OWNER_NUMBERS.some(num => String(sender).includes(num));
 
     const reply = async (text) => {
       if (safeReply) return await safeReply(text);
@@ -40,11 +51,9 @@ module.exports = {
         const inviteCode = linkMatch[1];
         messageId = linkMatch[2];
 
-        // Link එකෙන් පසු ඇති emojis ලබා ගැනීම
         const afterLink = rawText.substring(rawText.indexOf(linkMatch[0]) + linkMatch[0].length);
         emojisString = afterLink.replace(/^[,\s|]+/, '').trim();
 
-        // Newsletter JID එක Resolve කිරීම
         let metadata = null;
         try {
           if (typeof sock.newsletterMetadata === 'function') {
@@ -54,7 +63,6 @@ module.exports = {
 
         channelJid = metadata?.id;
 
-        // Fallback Query එක
         if (!channelJid) {
           try {
             const result = await sock.query({
@@ -94,12 +102,12 @@ module.exports = {
         const usageMsg = 
           "📌 *භාවිතය:*\n" +
           "• `.creact <channel_post_link>` (Random Emojis auto වැටේ)\n" +
-          "• `.creact <channel_post_link> , 💗,❤️,🥰,😯`\n" +
+          "• `.creact <channel_post_link> , 💗,❤️,🥰`\n" +
           "• හෝ චැනල් පෝස්ට් එකකට reply කර: `.creact 🩷💜❤️`";
         return await reply(usageMsg);
       }
 
-      // Emojis Pool එක සාදා ගැනීම
+      // Emojis Array එක සකසා ගැනීම
       let emojiArray = [];
       if (emojisString) {
         if (emojisString.includes(',')) {
@@ -109,7 +117,6 @@ module.exports = {
         }
       }
 
-      // Emojis කිසිවක් ලබාදී නැතිනම් Default Emojis භාවිතා වේ
       if (emojiArray.length === 0) {
         emojiArray = DEFAULT_REACTIONS;
       }
@@ -117,22 +124,19 @@ module.exports = {
       let successCount = 0;
       const appliedReactions = [];
 
-      // Helper function: Reaction එක Channel එකට නිවැරදි Protocol එකෙන් යැවීම
+      // Reaction Function
       const sendReact = async (botInstance) => {
         const pickedEmoji = emojiArray[Math.floor(Math.random() * emojiArray.length)];
 
-        // 1. Auto-Follow Channel (හැකි නම්)
         try {
           if (typeof botInstance.newsletterFollow === 'function') {
             await botInstance.newsletterFollow(channelJid);
           }
         } catch (e) {}
 
-        // 2. Baileys Official Channel Reaction
         if (typeof botInstance.newsletterReactMessage === 'function') {
           await botInstance.newsletterReactMessage(channelJid, messageId, pickedEmoji);
         } else {
-          // 3. Binary Node Fallback Reaction
           await botInstance.sendMessage(channelJid, {
             react: {
               text: pickedEmoji,
@@ -149,7 +153,7 @@ module.exports = {
         appliedReactions.push(pickedEmoji);
       };
 
-      // පියවර 1: Main Bot ගෙන් Reaction එක දැමීම
+      // Main Bot Reaction
       try {
         await sendReact(sock);
         successCount++;
@@ -157,7 +161,7 @@ module.exports = {
         console.error("Main bot react failed:", mainErr.message);
       }
 
-      // පියවර 2: Active Sub-bots (Global activeSessions) හරහා React කරවීම
+      // Active Sub-bots Reaction
       const sessionsSource = (typeof global.activeSessions === 'object' && global.activeSessions !== null) 
         ? global.activeSessions 
         : (typeof activeSessions === 'object' && activeSessions !== null ? activeSessions : {});
@@ -186,7 +190,7 @@ module.exports = {
 
     } catch (err) {
       console.error("Creact Error:", err.message);
-      return await reply("❌ Reaction දැමීම අසාර්ථක විය! Link එක හෝ Permissions පරීක්ෂා කරන්න.");
+      return await reply("❌ Reaction දැමීම අසාර්ථක විය! Link එක පරීක්ෂා කරන්න.");
     }
   }
 };
