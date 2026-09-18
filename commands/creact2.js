@@ -1,10 +1,13 @@
 const { delay } = require('@whiskeysockets/baileys');
 
+// Default Random Emojis list
+const DEFAULT_REACTIONS = ['💗', '❤️', '🥰', '😯', '🔥', '✨', '👍', '🪄'];
+
 module.exports = {
   name: 'creact',
   alias: ['channelreact', 'creaction'],
   category: 'owner',
-  desc: 'React to a WhatsApp Channel post using all active bot sessions',
+  desc: 'React with random emojis to a WhatsApp Channel post using all active bots',
 
   execute: async (sock, msg, args, chatJid, safeReply, { isOwner }) => {
     if (!isOwner) {
@@ -18,34 +21,36 @@ module.exports = {
     const linkMatch = rawText.match(/whatsapp\.com\/channel\/([a-zA-Z0-9]+)\/(\d+)/);
     if (!linkMatch) {
       return safeReply(
-        '*✦ CHANNEL REACTION BOOSTER ✦*\n\n' +
+        '*✦ RANDOM CHANNEL REACTION BOOSTER ✦*\n\n' +
         '📌 *භාවිතය:*\n' +
-        '`.creact <Channel_Link> , <Emoji>`\n\n' +
-        '💡 *උදාහරණ:*\n' +
-        '`.creact https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V/182 , ❤️`\n' +
-        '`.creact https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V/182 , 🔥`'
+        '1. Default Random Emojis:\n' +
+        '`.creact <Channel_Link>`\n\n' +
+        '2. Custom Random Emojis:\n' +
+        '`.creact <Channel_Link> , 💗,❤️,🥰,😯`'
       );
     }
 
     const inviteCode = linkMatch[1];
     const serverId = linkMatch[2];
 
+    // Emojis වෙන් කරගැනීම
     const afterLink = rawText.substring(rawText.indexOf(linkMatch[0]) + linkMatch[0].length);
-    const targetEmoji = afterLink.replace(/^[,\s|]+/, '').trim();
+    const cleanEmojis = afterLink.replace(/^[,\s|]+/, '').trim();
 
-    if (!targetEmoji) {
-      return safeReply('❌ කරුණාකර React කිරීමට අවශ්‍ය Emoji එක ඇතුළත් කරන්න (e.g. ❤️, 🔥, 👍).');
+    let emojiPool = DEFAULT_REACTIONS;
+    if (cleanEmojis) {
+      const customPool = cleanEmojis.split(',').map(e => e.trim()).filter(Boolean);
+      if (customPool.length > 0) emojiPool = customPool;
     }
 
-    const allSessions = Object.values(global.activeSessions || {});
+    let allSessions = Object.values(global.activeSessions || {});
     if (allSessions.length === 0) {
-      return safeReply('❌ Active bot sessions කිසිවක් හමු නොවීය.');
+      allSessions = [sock];
     }
 
     await safeReply(`⏳ Channel data පරීක්ෂා කරමින්... (Active Bots: ${allSessions.length})`);
 
     try {
-      // 1. Newsletter JID එක Resolve කරගැනීම
       let newsletterJid = null;
       if (typeof sock.newsletterMetadata === 'function') {
         const meta = await sock.newsletterMetadata('invite', inviteCode).catch(() => null);
@@ -80,29 +85,29 @@ module.exports = {
         return safeReply('❌ Channel එක සොයාගත නොහැකි විය. Link එක පරීක්ෂා කරන්න.');
       }
 
-      await safeReply(`🚀 *Reaction Boost ආරම්භ කළා!*\n🎯 Emoji: ${targetEmoji} | Bots: ${allSessions.length}`);
+      await safeReply(`🚀 *Random Reactions Boost ආරම්භ කළා!*\n🎯 Pool: [ ${emojiPool.join(' ')} ]\n🎯 Bots: ${allSessions.length}`);
 
       let successCount = 0;
       let failCount = 0;
+      const usedEmojis = [];
 
-      // 2. Active bots ලා සියලුදෙනා හරහා Reaction යැවීම
       for (const botSock of allSessions) {
         try {
-          // Channel එක auto-follow කිරීම
           try {
             if (typeof botSock.newsletterFollow === 'function') {
               await botSock.newsletterFollow(newsletterJid);
             }
           } catch (e) {}
 
-          // Method A: Native newsletterReactMessage helper
+          // සෑම bot කෙනෙකුටම අහඹු (Random) emoji එකක් තෝරා ගැනීම
+          const randomEmoji = emojiPool[Math.floor(Math.random() * emojiPool.length)];
+
           if (typeof botSock.newsletterReactMessage === 'function') {
-            await botSock.newsletterReactMessage(newsletterJid, serverId, targetEmoji);
+            await botSock.newsletterReactMessage(newsletterJid, serverId, randomEmoji);
           } else {
-            // Method B: Binary reaction payload
             await botSock.sendMessage(newsletterJid, {
               react: {
-                text: targetEmoji,
+                text: randomEmoji,
                 key: {
                   remoteJid: newsletterJid,
                   server_id: serverId,
@@ -113,8 +118,9 @@ module.exports = {
             });
           }
 
+          usedEmojis.push(randomEmoji);
           successCount++;
-          await delay(1500); // Flood detection වැළැක්වීමට පොඩි delay එකක්
+          await delay(1500); // Flood detection වැළැක්වීමට
         } catch (err) {
           failCount++;
         }
@@ -122,7 +128,7 @@ module.exports = {
 
       return safeReply(
         `*✦ REACTION SUMMARY ✦*\n━━━━━━━━━━━━━━━━━━━━━\n` +
-        `• *Emoji*       : ${targetEmoji}\n` +
+        `• *Reactions*   : ${usedEmojis.join(' ')}\n` +
         `• *සාර්ථකයි*    : ${successCount}\n` +
         `• *අසාර්ථකයි*  : ${failCount}\n` +
         `• *මුළු Bots*  : ${allSessions.length}\n` +
