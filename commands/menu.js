@@ -1,17 +1,6 @@
 // commands/menu.js
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
-const mongoose = require('mongoose');
-
-const FALLBACK_LOGO_URL = 'https://files.catbox.moe/a58add.jpeg';
-
-const SettingsSchema = new mongoose.Schema({
-  _id: { type: String, required: true },
-  botLogo: { type: String, default: FALLBACK_LOGO_URL }
-}, { strict: false });
-
-const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
 function formatUptime(seconds) {
     seconds = Math.floor(Number(seconds) || 0);
@@ -22,42 +11,13 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// Logo එක Buffer එකක් විදියට ලබාගැනීම
-async function fetchLogoBuffer(botNum) {
-    // 1. Local image check
-    const localFile = path.join(process.cwd(), `logo_${botNum}.jpg`);
-    if (fs.existsSync(localFile)) {
-        try {
-            return fs.readFileSync(localFile);
-        } catch (e) {}
+// Local Image Buffer එක ලබා ගැනීම
+function getBotLogo() {
+    const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
+    if (fs.existsSync(localLogoPath)) {
+        return fs.readFileSync(localLogoPath);
     }
-
-    // 2. DB URL check
-    let targetUrl = FALLBACK_LOGO_URL;
-    try {
-        const s = await SettingsModel.findById(botNum).lean();
-        if (s && s.botLogo && s.botLogo.startsWith('http')) {
-            targetUrl = s.botLogo;
-        }
-    } catch (e) {}
-
-    // 3. Download Buffer with User-Agent
-    try {
-        const res = await axios.get(targetUrl, {
-            responseType: 'arraybuffer',
-            timeout: 15000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-            }
-        });
-        if (res.status === 200 && res.data) {
-            return Buffer.from(res.data);
-        }
-    } catch (err) {
-        console.error("Logo buffer fetch failed, using direct URL:", err.message);
-    }
-
-    return { url: targetUrl };
+    return { url: 'https://files.catbox.moe/a58add.jpeg' };
 }
 
 module.exports = {
@@ -69,8 +29,6 @@ module.exports = {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
       ? chatJid 
       : msg.key.remoteJid;
-
-    const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
     let pushName = msg.pushName || "User";
     let firstName = pushName.split(/[\s_+-]+/)[0] || "User";
@@ -100,13 +58,14 @@ module.exports = {
     try {
       await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
-      const logo = await fetchLogoBuffer(myBotNum);
+      const logoBuffer = getBotLogo();
 
-      const messagePayload = Buffer.isBuffer(logo) 
-        ? { image: logo, caption: mainText, mimetype: 'image/jpeg' }
-        : { image: { url: FALLBACK_LOGO_URL }, caption: mainText };
+      const sentMenu = await sock.sendMessage(targetChat, {
+          image: logoBuffer,
+          caption: mainText,
+          mimetype: 'image/jpeg'
+      }, { quoted: msg });
 
-      const sentMenu = await sock.sendMessage(targetChat, messagePayload, { quoted: msg });
       const menuMessageId = sentMenu?.key?.id;
 
       const subMenus = {
@@ -174,6 +133,7 @@ module.exports = {
           if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
 
           const contextInfo = msgContent.extendedTextMessage?.contextInfo;
+          // Menu එකට Quote කර එවන reply එකක්ම විය යුතුය
           if (!contextInfo || contextInfo.stanzaId !== menuMessageId) return;
 
           const replyText = (
@@ -188,17 +148,19 @@ module.exports = {
             const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
             await sock.sendMessage(targetChat, { react: { text: emojis[replyText], key: replyMsg.key } }).catch(() => {});
 
-            const subLogo = await fetchLogoBuffer(myBotNum);
-            const subPayload = Buffer.isBuffer(subLogo)
-              ? { image: subLogo, caption: subMenus[replyText], mimetype: 'image/jpeg' }
-              : { image: { url: FALLBACK_LOGO_URL }, caption: subMenus[replyText] };
+            // Sub-menu එකටත් Logo Image Buffer එක යැවීම
+            const subLogoBuffer = getBotLogo();
 
-            await sock.sendMessage(targetChat, subPayload, { quoted: replyMsg }).catch(async () => {
+            await sock.sendMessage(targetChat, { 
+              image: subLogoBuffer,
+              caption: subMenus[replyText],
+              mimetype: 'image/jpeg'
+            }, { quoted: replyMsg }).catch(async () => {
               await sock.sendMessage(targetChat, { text: subMenus[replyText] }, { quoted: replyMsg });
             });
           }
         } catch (e) {
-          console.error("Menu Listener Error:", e.message);
+          console.error("Menu Reply Listener Error:", e.message);
         }
       };
 
@@ -206,10 +168,10 @@ module.exports = {
 
       setTimeout(() => {
         sock.ev.off('messages.upsert', replyListener);
-      }, 60000);
+      }, 45000);
 
     } catch (err) {
-      console.error('Error in menu command:', err.message);
+      console.error('Menu Execution Error:', err.message);
       await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg }).catch(() => {});
     }
   }
