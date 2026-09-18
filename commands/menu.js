@@ -75,7 +75,6 @@ module.exports = {
       ? chatJid 
       : msg.key.remoteJid;
 
-    const invokerJid = msg.key.participant || msg.key.remoteJid;
     const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
     let pushName = msg.pushName || "User";
@@ -197,9 +196,17 @@ module.exports = {
             const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
             await sock.sendMessage(targetChat, { react: { text: emojis[replyText], key: replyMsg.key } }).catch(() => {});
 
+            // Sub-menu එකටත් Logo එක load කර යැවීම
+            const subLogoImg = await fetchLogoForBot(myBotNum);
+
             await sock.sendMessage(targetChat, { 
-              text: subMenus[replyText] 
-            }, { quoted: replyMsg });
+              image: subLogoImg,
+              caption: subMenus[replyText] 
+            }, { quoted: replyMsg }).catch(async () => {
+              await sock.sendMessage(targetChat, { 
+                text: subMenus[replyText] 
+              }, { quoted: replyMsg });
+            });
           }
         } catch (e) {
           console.error("Menu Listener Error:", e.message);
