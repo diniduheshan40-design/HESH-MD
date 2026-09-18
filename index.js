@@ -1,5 +1,5 @@
 // ============================================================================
-// 📦 PACKAGES (අවශ්‍ය libraries import කරගැනීම)
+// 📦 PACKAGES
 // ============================================================================
 const express = require('express');
 const pino = require('pino');
@@ -17,18 +17,17 @@ const {
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
-// 🟢 Config & DB Models (අපේම වෙනම files වලින් ගන්නා දේවල්)
+// 🟢 Config & DB Models
 const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
 // ============================================================================
-// 🌍 GLOBAL CONSTANTS (වෙනස් නොවන settings/values)
+// 🌍 GLOBAL CONSTANTS
 // ============================================================================
 
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
-
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
 const REAL_OWNER_NUMBER = '94719845166';
@@ -96,18 +95,15 @@ global.clearSettingsCache = clearSettingsCache;
 
 async function getBotSettings(botNum) {
   if (!botNum) return { ...DEFAULT_SETTINGS };
-
   const cached = settingsCache.get(botNum);
   if (cached) return cached;
 
   try {
     let settings = await SettingsModel.findById(botNum).lean();
-
     if (!settings) {
       const created = await SettingsModel.create({ _id: botNum, ...DEFAULT_SETTINGS });
       settings = created.toObject();
     }
-
     settingsCache.set(botNum, settings);
     return settings;
   } catch (e) {
@@ -120,9 +116,7 @@ async function getBotSettings(botNum) {
 // ============================================================================
 
 function registerCommandAliases(cmd, cmdName) {
-  if (cmd && cmd.name) {
-    commands.set(cmd.name.toLowerCase(), cmd);
-  }
+  if (cmd && cmd.name) commands.set(cmd.name.toLowerCase(), cmd);
   commands.set(cmdName, cmd);
 
   if (cmd && cmd.alias) {
@@ -138,7 +132,6 @@ function loadCommandFile(cmdDir, file) {
   try {
     let cmd = require(path.join(cmdDir, file));
     if (cmd.default) cmd = cmd.default;
-
     const cmdName = file.replace('.js', '').toLowerCase();
     registerCommandAliases(cmd, cmdName);
   } catch (e) {
@@ -149,7 +142,6 @@ function loadCommandFile(cmdDir, file) {
 function loadAllCommands() {
   const cmdDir = path.join(__dirname, 'commands');
   if (!fs.existsSync(cmdDir)) return;
-
   const cmdFiles = fs.readdirSync(cmdDir).filter(f => f.endsWith('.js'));
   for (const file of cmdFiles) {
     loadCommandFile(cmdDir, file);
@@ -173,7 +165,7 @@ function getCommandExecutor(cmd) {
 }
 
 // ============================================================================
-// 🌐 WEB PORTAL (UI එකට Clean Button එක සහිතව)
+// 🌐 LUXURY RED-BLACK GLASSMORPHIC PORTAL
 // ============================================================================
 
 function renderPortalHtml(botName) {
@@ -183,95 +175,304 @@ function renderPortalHtml(botName) {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>${botName} • PORTAL</title>
-      <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Poppins:wght@400;600&family=JetBrains+Mono:wght@800&display=swap" rel="stylesheet">
+      <title>${botName} • PAIRING STATION</title>
+      <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
       <style>
+        :root {
+          --bg-core: #090305;
+          --panel-bg: rgba(20, 6, 10, 0.72);
+          --accent-red: #e11d48;
+          --accent-glow: rgba(225, 29, 72, 0.35);
+          --crimson-soft: #fb7185;
+          --border-glass: rgba(244, 63, 94, 0.22);
+          --border-focus: rgba(244, 63, 94, 0.65);
+          --text-main: #fcfcfd;
+          --text-muted: #9f8e93;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        
         body {
-          background: #050102;
-          background-image: radial-gradient(circle at 50% 0%, rgba(225, 29, 72, 0.25) 0%, transparent 70%);
-          color: #fff; font-family: 'Poppins', sans-serif;
-          display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px;
+          background-color: var(--bg-core);
+          background-image: 
+            radial-gradient(circle at 50% 0%, rgba(225, 29, 72, 0.18) 0%, transparent 60%),
+            radial-gradient(circle at 10% 90%, rgba(159, 18, 57, 0.12) 0%, transparent 45%);
+          color: var(--text-main);
+          font-family: 'Outfit', sans-serif;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 100vh;
+          padding: 24px;
         }
-        .glass-panel {
-          background: rgba(18, 5, 8, 0.8);
-          backdrop-filter: blur(16px);
-          border: 1px solid rgba(225, 29, 72, 0.3);
-          border-radius: 24px; padding: 40px 30px; width: 100%; max-width: 420px; text-align: center;
-          box-shadow: 0 0 35px rgba(225, 29, 72, 0.2);
+
+        .portal-card {
+          background: var(--panel-bg);
+          backdrop-filter: blur(28px) saturate(160%);
+          -webkit-backdrop-filter: blur(28px) saturate(160%);
+          border: 1px solid var(--border-glass);
+          border-radius: 28px;
+          padding: 44px 34px;
+          width: 100%;
+          max-width: 440px;
+          text-align: center;
+          box-shadow: 
+            0 24px 60px rgba(0, 0, 0, 0.65),
+            0 0 45px var(--accent-glow);
+          position: relative;
+          overflow: hidden;
         }
-        .title {
-          font-family: 'Orbitron', sans-serif; font-size: 26px; font-weight: 900;
-          background: linear-gradient(135deg, #fff, #ff4d6d, #e11d48);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px;
+
+        .portal-card::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 3px;
+          background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
         }
-        .subtitle { font-size: 13px; color: #a1a1aa; margin-bottom: 25px; }
-        input {
-          width: 100%; padding: 16px; border-radius: 14px; border: 1px solid rgba(225, 29, 72, 0.3);
-          background: rgba(10, 2, 4, 0.8); color: #ff4d6d; font-size: 16px; text-align: center;
-          margin-bottom: 20px; outline: none; transition: 0.3s;
+
+        .badge-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+          color: var(--crimson-soft);
+          background: rgba(225, 29, 72, 0.12);
+          border: 1px solid rgba(225, 29, 72, 0.28);
+          padding: 5px 14px;
+          border-radius: 30px;
+          margin-bottom: 20px;
         }
-        input:focus { border-color: #e11d48; box-shadow: 0 0 15px rgba(225, 29, 72, 0.4); }
-        button {
-          width: 100%; padding: 16px; border-radius: 14px; border: none;
-          background: linear-gradient(135deg, #b91c1c, #e11d48); color: #fff;
-          font-size: 15px; font-weight: 700; cursor: pointer; margin-bottom: 12px; transition: 0.3s;
+
+        .badge-dot {
+          width: 6px;
+          height: 6px;
+          background: var(--accent-red);
+          border-radius: 50%;
+          box-shadow: 0 0 8px var(--accent-red);
         }
-        button:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(225, 29, 72, 0.5); }
-        .btn-reset-num { background: rgba(225, 29, 72, 0.2); border: 1px solid rgba(225, 29, 72, 0.4); color: #fff; }
-        .code-display {
-          font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 800;
-          color: #ff2a55; letter-spacing: 5px; margin-top: 25px; display: none;
-          background: rgba(225, 29, 72, 0.08); padding: 15px; border-radius: 12px; border: 1px dashed rgba(225, 29, 72, 0.4);
+
+        .app-title {
+          font-size: 30px;
+          font-weight: 800;
+          letter-spacing: -0.5px;
+          background: linear-gradient(135deg, #ffffff 40%, var(--crimson-soft) 80%, var(--accent-red) 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          margin-bottom: 6px;
+        }
+
+        .app-desc {
+          font-size: 13.5px;
+          color: var(--text-muted);
+          margin-bottom: 30px;
+          font-weight: 400;
+        }
+
+        .input-wrap {
+          position: relative;
+          margin-bottom: 16px;
+        }
+
+        .phone-input {
+          width: 100%;
+          padding: 16px 20px;
+          border-radius: 16px;
+          border: 1px solid var(--border-glass);
+          background: rgba(12, 3, 6, 0.7);
+          color: var(--text-main);
+          font-size: 17px;
+          font-weight: 600;
+          letter-spacing: 0.8px;
+          text-align: center;
+          outline: none;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .phone-input::placeholder {
+          color: rgba(255, 255, 255, 0.25);
+          font-weight: 400;
+          letter-spacing: 0;
+        }
+
+        .phone-input:focus {
+          border-color: var(--border-focus);
+          box-shadow: 0 0 24px rgba(225, 29, 72, 0.35);
+          background: rgba(18, 4, 9, 0.9);
+        }
+
+        .btn-action {
+          width: 100%;
+          padding: 16px;
+          border-radius: 16px;
+          border: none;
+          background: linear-gradient(135deg, #be123c 0%, var(--accent-red) 100%);
+          color: #ffffff;
+          font-size: 14.5px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          cursor: pointer;
+          transition: all 0.25s ease;
+          box-shadow: 0 8px 24px rgba(225, 29, 72, 0.3);
+          margin-bottom: 12px;
+        }
+
+        .btn-action:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 30px rgba(225, 29, 72, 0.45);
+        }
+
+        .btn-action:active {
+          transform: translateY(0);
+        }
+
+        .btn-reset {
+          width: 100%;
+          padding: 13px;
+          border-radius: 14px;
+          border: 1px solid rgba(225, 29, 72, 0.25);
+          background: rgba(225, 29, 72, 0.08);
+          color: var(--crimson-soft);
+          font-size: 12.5px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.25s ease;
+        }
+
+        .btn-reset:hover {
+          background: rgba(225, 29, 72, 0.18);
+          border-color: rgba(225, 29, 72, 0.45);
+        }
+
+        .code-container {
+          display: none;
+          margin-top: 24px;
+          animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .code-box {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 32px;
+          font-weight: 800;
+          letter-spacing: 5px;
+          color: #ffe4e6;
+          background: rgba(225, 29, 72, 0.14);
+          border: 1.5px dashed rgba(251, 113, 133, 0.45);
+          padding: 18px;
+          border-radius: 16px;
+          cursor: pointer;
+          transition: all 0.25s ease;
+        }
+
+        .code-box:hover {
+          background: rgba(225, 29, 72, 0.22);
+          border-color: var(--crimson-soft);
+          transform: scale(1.02);
+        }
+
+        .copy-tag {
+          font-size: 11.5px;
+          color: var(--text-muted);
+          margin-top: 8px;
+          font-weight: 500;
+        }
+
+        .footer-note {
+          margin-top: 28px;
+          font-size: 11px;
+          letter-spacing: 1px;
+          color: rgba(255, 255, 255, 0.25);
+          text-transform: uppercase;
         }
       </style>
     </head>
     <body>
-      <div class="glass-panel">
-        <h1 class="title">${botName}</h1>
-        <p class="subtitle">Enter WhatsApp number with country code</p>
-        <input type="text" id="phone" placeholder="9470xxxxxxx" />
-        <button id="btn" onclick="getCode()">GENERATE PAIR CODE</button>
-        <button class="btn-reset-num" onclick="resetSingleNumber()">CLEAN THIS NUMBER SESSION</button>
-        <div class="code-display" id="codeBox"></div>
+      <div class="portal-card">
+        <div class="badge-status">
+          <span class="badge-dot"></span> Online System
+        </div>
+        <h1 class="app-title">${botName}</h1>
+        <p class="app-desc">Enter phone number with country code</p>
+
+        <div class="input-wrap">
+          <input type="text" id="phone" class="phone-input" placeholder="e.g. 9470xxxxxxx" />
+        </div>
+
+        <button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button>
+        <button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button>
+
+        <div class="code-container" id="codeWrapper">
+          <div class="code-box" id="codeDisplay" onclick="copyCode()"></div>
+          <div class="copy-tag">Click code to copy to clipboard</div>
+        </div>
+
+        <p class="footer-note">Powered by Heshan MD</p>
       </div>
+
       <script>
-        async function getCode() {
+        async function fetchPairCode() {
           const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
-          if (!phone) return alert('Please enter number!');
+          if (!phone || phone.length < 10) return alert('කරුණාකර නිවැරදි Country Code සහිත අංකය ඇතුළත් කරන්න!');
+
           const btn = document.getElementById('btn');
+          const wrapper = document.getElementById('codeWrapper');
+          const display = document.getElementById('codeDisplay');
+
           btn.innerText = 'GENERATING CODE...';
           btn.disabled = true;
+          wrapper.style.display = 'none';
+
           try {
             const res = await fetch('/pair?num=' + phone);
             const data = await res.json();
             if (data.code) {
-              const codeElement = document.getElementById('codeBox');
-              codeElement.innerText = data.code;
-              codeElement.style.display = 'block';
-              navigator.clipboard.writeText(data.code);
-              alert('✅ Pairing code copied: ' + data.code);
+              display.innerText = data.code;
+              wrapper.style.display = 'block';
+              navigator.clipboard.writeText(data.code).catch(()=>{});
+              alert('✅ Pairing Code: ' + data.code);
             } else {
-              alert(data.error || 'Failed to get code');
+              alert(data.error || 'Connection rate-limited. Please wait 15 seconds.');
             }
-          } catch(e) { alert('Server connection error!'); }
-          btn.innerText = 'GENERATE PAIR CODE';
+          } catch(e) {
+            alert('Server connection error. Refresh page and retry!');
+          }
+          btn.innerText = 'GET PAIRING CODE';
           btn.disabled = false;
         }
 
-        async function resetSingleNumber() {
+        async function cleanSessionSlot() {
           const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
-          if (!phone) return alert('Please enter the number to clean!');
-          if (confirm('Clear session only for +' + phone + '?')) {
+          if (!phone) return alert('Clean කිරීමට Phone Number එක ඇතුළත් කරන්න!');
+          if (confirm('+' + phone + ' සඳහා පැරණි session එක සම්පූර්ණයෙන්ම Clean කරන්නද?')) {
             try {
               const res = await fetch('/reset-num?num=' + phone);
               const data = await res.json();
               if (data.success) {
-                alert('✅ Successfully cleaned session for: +' + phone);
-              } else {
-                alert('❌ Error: ' + (data.error || 'Failed'));
+                alert('✅ Session Cleared! දැන් Pair Code එක Generate කරන්න.');
               }
-            } catch(e) { alert('Request failed'); }
+            } catch(e) {
+              alert('Clean request failed!');
+            }
+          }
+        }
+
+        function copyCode() {
+          const code = document.getElementById('codeDisplay').innerText;
+          if (code) {
+            navigator.clipboard.writeText(code);
+            alert('✅ Copied to clipboard: ' + code);
           }
         }
       </script>
@@ -294,7 +495,6 @@ async function createBaileysSocket(phoneNumber) {
   const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(phoneNumber);
   const logger = pino({ level: 'silent' });
   const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60 });
-
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
   const sock = makeWASocket({
@@ -302,7 +502,7 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.macOS('Desktop'),
+    browser: Browsers.macOS('Safari'),
     msgRetryCounterCache,
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
@@ -315,7 +515,6 @@ async function createBaileysSocket(phoneNumber) {
   });
 
   sock.ev.on('creds.update', saveCreds);
-
   return { sock, clearSessionData };
 }
 
@@ -339,29 +538,27 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   if (!isPermanentLogout) {
     setTimeout(() => initWhatsApp(phoneNumber), 4000);
   } else {
-    console.log(`❌ True session logout confirmed for: ${phoneNumber}`);
+    console.log(`❌ Permanent session logout: ${phoneNumber}`);
     if (typeof clearSessionData === 'function') await clearSessionData();
   }
 }
 
 async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
-  await delay(2000);
+  await delay(2500);
   try {
     const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
     if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
       const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
-      if (channelMeta?.id) {
-        await sock.newsletterFollow(channelMeta.id);
-      }
+      if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
     }
-  } catch (chErr) {}
+  } catch (e) {}
 
   try {
     const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X';
     if (typeof sock.groupAcceptInvite === 'function') {
       await sock.groupAcceptInvite(groupInviteCode);
     }
-  } catch (grpErr) {}
+  } catch (e) {}
 }
 
 function buildConnectedMessage(botNum) {
@@ -374,35 +571,6 @@ function buildConnectedMessage(botNum) {
 *💐 Status   :* Auto Seen Active
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
-}
-
-function buildDeploymentAlertMessage(botNum) {
-  return `*🔔 NEW BOT DEPLOYMENT DETECTED*
-────────────────────────────
-*👤 User    :* +${botNum}
-*🤖 Service :* ${BOT_NAME}
-*🟢 Status  :* Successfully Connected
-────────────────────────────
-> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
-}
-
-async function sendConnectedMessageWithLogo(sock, botJid, message, logoData) {
-  try {
-    let imagePayload;
-
-    if (logoData && typeof logoData === 'string' && logoData.startsWith('data:image')) {
-      const base64Content = logoData.split(',')[1];
-      imagePayload = Buffer.from(base64Content, 'base64');
-    } else if (logoData && typeof logoData === 'string' && logoData.startsWith('http')) {
-      imagePayload = { url: logoData };
-    } else {
-      imagePayload = { url: DEFAULT_BACKUP_LOGO };
-    }
-
-    await sock.sendMessage(botJid, { image: imagePayload, caption: message });
-  } catch (imgErr) {
-    await sock.sendMessage(botJid, { text: message }).catch(() => {});
-  }
 }
 
 async function sendFirstConnectAlerts(sock, phoneNumber) {
@@ -420,16 +588,18 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
     const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
     const connectedMsg = buildConnectedMessage(botNum);
 
-    await sendConnectedMessageWithLogo(sock, botJid, connectedMsg, sessionLogo);
+    await sock.sendMessage(botJid, { image: { url: sessionLogo }, caption: connectedMsg }).catch(() => {
+      sock.sendMessage(botJid, { text: connectedMsg }).catch(() => {});
+    });
 
     if (!botNum.includes(REAL_OWNER_NUMBER)) {
-      const alertMsg = buildDeploymentAlertMessage(botNum);
+      const alertMsg = `*🔔 NEW BOT CONNECTED: +${botNum}*`;
       await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
     }
 
     await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
     clearSettingsCache(botNum);
-  } catch (msgErr) {}
+  } catch (e) {}
 }
 
 function handleConnectionOpen(sock, phoneNumber) {
@@ -441,7 +611,6 @@ function handleConnectionOpen(sock, phoneNumber) {
 function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
-
     if (connection === 'close') {
       await handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData);
     } else if (connection === 'open') {
@@ -457,11 +626,9 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 async function reactToChannelPost(sock, msg, chatJid) {
   try {
     const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-    const randomDelay = Math.floor(Math.random() * 3500) + 1200;
-    await delay(randomDelay);
+    await delay(Math.floor(Math.random() * 3000) + 1200);
 
     const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
-
     if (typeof sock.newsletterReactMessage === 'function' && serverId) {
       await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
     } else {
@@ -472,19 +639,16 @@ async function reactToChannelPost(sock, msg, chatJid) {
 
 async function simulateAutoPresence(sock, chatJid, settings) {
   if (!settings.autoPresence || settings.autoPresence === 'off') return;
-
   try {
-    const presenceType = settings.autoPresence === 'recording' ? 'recording' : 'composing';
-    await sock.sendPresenceUpdate(presenceType, chatJid);
+    const type = settings.autoPresence === 'recording' ? 'recording' : 'composing';
+    await sock.sendPresenceUpdate(type, chatJid);
   } catch (err) {}
 }
 
 async function handleStatusBroadcast(sock, msg, settings) {
   if (!settings.autoStatusSeen) return;
-
   try {
     await sock.readMessages([msg.key]);
-
     if (settings.statusReact && msg.key.participant) {
       await sock.sendMessage(
         'status@broadcast',
@@ -505,7 +669,6 @@ async function resolveLidToRealJid(sock, originalSender) {
   if (!originalSender || !originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
     return originalSender;
   }
-
   try {
     const resolved = await sock.signalRepository.lidToJid(originalSender);
     return resolved || originalSender;
@@ -526,7 +689,6 @@ function checkIsOwner(originalSender, resolvedSender) {
 
 function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
   if (!settings.ownerReact) return;
-
   setTimeout(async () => {
     try {
       await sock.sendMessage(chatJid, { react: { text: settings.ownerReactEmoji || '👑', key: msgKey } });
@@ -540,14 +702,11 @@ function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
 
 function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
   if (isAuthorized) return false;
-
   const mode = String(workMode || 'public').toLowerCase().trim();
-
   if (mode === 'public') return false;
   if (mode === 'private' || mode === 'self') return true;
   if ((mode === 'groups' || mode === 'group') && !isGroup) return true;
   if (mode === 'inbox' && isGroup) return true;
-
   return false;
 }
 
@@ -615,7 +774,6 @@ function isQuotedFromSettingsMenu(quotedCaption) {
 async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum) {
   const settingsCmd = findCommand('settings', 'setting', 'set');
   if (!settingsCmd) return false;
-
   const cmdFunc = getCommandExecutor(settingsCmd);
   if (!cmdFunc) return false;
 
@@ -627,7 +785,6 @@ async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply
 async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized) {
   const statusCmd = findCommand('save', 'status');
   if (!statusCmd) return false;
-
   const cmdFunc = getCommandExecutor(statusCmd);
   if (!cmdFunc) return false;
 
@@ -644,7 +801,6 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   const commandName = args.shift().toLowerCase();
 
   const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
-
   if (isSettingsCmd && isGroup) return true;
   if (isSettingsCmd && !isOwner) return true;
 
@@ -653,10 +809,7 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   }
 
   let targetCmd = commands.get(commandName);
-  if (!targetCmd && isSettingsCmd) {
-    targetCmd = findCommand('settings', 'setting', 'set');
-  }
-
+  if (!targetCmd && isSettingsCmd) targetCmd = findCommand('settings', 'setting', 'set');
   if (!targetCmd) return false;
 
   try {
@@ -664,26 +817,18 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
     if (cmdFunc) {
       await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized });
     }
-  } catch (err) {
-    console.error(`Error executing .${commandName}:`, err.message);
-  }
-
+  } catch (err) {}
   return true;
 }
 
 async function handleAutoAiReply(sock, chatJid, text, safeReply) {
   try {
     await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
-
     const aiPromise = askAI(text);
     const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('AI_Timeout')), 10000));
     const aiReply = await Promise.race([aiPromise, timeoutPromise]);
-
-    if (aiReply) {
-      await safeReply(aiReply);
-    }
-  } catch (aiErr) {
-  } finally {
+    if (aiReply) await safeReply(aiReply);
+  } catch (aiErr) {} finally {
     await sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
   }
 }
@@ -694,14 +839,11 @@ async function handleAutoAiReply(sock, chatJid, text, safeReply) {
 
 async function processSingleMessage(sock, msg, phoneNumber) {
   if (!msg || !msg.message) return;
-
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
   if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
-    if (!msg.message.reactionMessage) {
-      reactToChannelPost(sock, msg, chatJid);
-    }
+    if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
     return;
   }
 
@@ -712,9 +854,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
-  if (!msg.key.fromMe) {
-    simulateAutoPresence(sock, chatJid, settings);
-  }
+  if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
 
   if (chatJid === 'status@broadcast') {
     await handleStatusBroadcast(sock, msg, settings);
@@ -733,9 +873,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
   const currentMode = settings.workMode || 'public';
 
-  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
-    return;
-  }
+  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) return;
 
   const rawMsg = unwrapMessageContent(msg.message);
   const text = extractMessageText(rawMsg);
@@ -755,12 +893,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     if (handled) return;
   }
 
-  const statusKeywords = [
-    'oni', 'ඕනි', 'ඕනෙ', 'one',
-    'dapan', 'දාපන්', 'dapn',
-    'ewanna', 'එවන්න', 'ewahn',
-    'save', 'status', 'send', 'send me', 'evanna'
-  ];
+  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
   if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanInput))) {
@@ -784,7 +917,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (!messages || !messages.length) return;
-
     for (const msg of messages) {
       const jid = msg.key?.remoteJid || '';
       if (type !== 'notify' && !jid.endsWith('@newsletter') && jid !== UPDATE_CHANNEL_JID && !msg.key?.fromMe) {
@@ -806,7 +938,6 @@ async function initWhatsApp(phoneNumber) {
 
   try {
     const { sock, clearSessionData } = await createBaileysSocket(phoneNumber);
-
     activeSessions[phoneNumber] = sock;
     delete isStarting[phoneNumber];
 
@@ -821,17 +952,15 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP ROUTES (Already Registered Error එක Fix කළ Pairing Route)
+// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE
 // ============================================================================
 
 function stopAndRemoveSession(num) {
   if (!activeSessions[num]) return;
-
   try {
     activeSessions[num].ev.removeAllListeners();
     activeSessions[num].ws?.close();
   } catch (e) {}
-
   delete activeSessions[num];
 }
 
@@ -867,44 +996,68 @@ function registerResetSingleNumberRoute(app) {
   });
 }
 
-// 🛠️ FIX: අලුතින් Code එකක් ඉල්ලන විට පෙර තිබූ හිරවුණු session එක auto-clear කර code එක ලබාදීම
 function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Number required' });
     num = num.replace(/[^0-9]/g, '');
 
+    stopAndRemoveSession(num);
+    await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+    await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
+    clearSettingsCache(num);
+
+    let pairSock = null;
+
     try {
-      stopAndRemoveSession(num);
+      const { state, saveCreds } = await useMongoDBAuthState(num);
+      const logger = pino({ level: 'silent' });
+      const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
-      // පැරණි session creds ඉවත් කර නව handshake එකක් ආරම්භ කිරීම
-      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-      await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
-      clearSettingsCache(num);
+      pairSock = makeWASocket({
+        version,
+        auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
+        logger,
+        printQRInTerminal: false,
+        browser: Browsers.macOS('Safari'),
+        connectTimeoutMs: 30000,
+        defaultQueryTimeoutMs: 25000,
+        keepAliveIntervalMs: 25000,
+        emitOwnEvents: false
+      });
 
-      const sock = await initWhatsApp(num);
-      if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
+      pairSock.ev.on('creds.update', saveCreds);
 
-      await delay(3500);
+      pairSock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === 'open') {
+          activeSessions[num] = pairSock;
+          registerConnectionUpdateHandler(pairSock, num);
+          registerMessageUpsertHandler(pairSock, num);
+          handleConnectionOpen(pairSock, num);
+        } else if (connection === 'close') {
+          const code = lastDisconnect?.error?.output?.statusCode;
+          if (code !== DisconnectReason.loggedOut && code !== 401) {
+            setTimeout(() => initWhatsApp(num), 3000);
+          }
+        }
+      });
 
-      // අංකය connect වී නොමැති නම් පමණක් code එක ලබාගැනීම
-      if (!sock.authState.creds.registered) {
-        let code = await Promise.race([
-          sock.requestPairingCode(num),
-          new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 25000))
-        ]);
+      await delay(2000);
 
+      if (!pairSock.authState.creds.registered) {
+        let code = await pairSock.requestPairingCode(num);
         code = code?.match(/.{1,4}/g)?.join('-') || code;
         return res.json({ code });
       } else {
-        // ලියාපදිංචි වී ඇතැයි පැවසුවහොත් session එක clean කර නැවත retry කිරීමට මඟ පෙන්වීම
         await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-        stopAndRemoveSession(num);
-        return res.status(400).json({ error: 'Session reset! Please click GENERATE PAIR CODE again.' });
+        return res.status(400).json({ error: 'Session cleared! Please click again.' });
       }
     } catch (err) {
-      console.error('Pairing Error:', err);
-      return res.status(500).json({ error: 'Pairing failed. Please wait 15 seconds and retry.' });
+      if (pairSock) {
+        try { pairSock.ws?.close(); } catch(e){}
+      }
+      return res.status(500).json({ error: 'Rate-limited. Wait 15 seconds and retry.' });
     }
   });
 }
@@ -941,7 +1094,7 @@ async function reconnectAllSavedSessions() {
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(4000);
+      await delay(3500);
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
