@@ -17,6 +17,14 @@ const {
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
+// 🛡️ Global Crash Guards (Process එක වැටෙන්නේ නැති වෙන්න)
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled Rejection:', err?.message || err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err?.message || err);
+});
+
 // 🟢 Config & DB Models
 const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
@@ -60,7 +68,7 @@ const DEFAULT_SETTINGS = {
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const activeSessions = {};
-global.activeSessions = activeSessions; // 🟢 Commands වලට Active bots access කිරීමට එක් කළා
+global.activeSessions = activeSessions;
 const isStarting = {};
 const commands = new Map();
 
@@ -769,7 +777,6 @@ function extractQuotedCaption(quotedMsgObj) {
 function isQuotedFromSettingsMenu(quotedCaption) {
   return (
     quotedCaption.includes('SYSTEM SETTINGS') ||
-    quotedCaption.includes('HESHAN-MD') ||
     quotedCaption.includes('WORK MODE') ||
     quotedCaption.includes('FAKE ACTION')
   );
@@ -888,11 +895,12 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const safeReply = buildSafeReply(sock, chatJid, msg);
   const cleanInput = text.toLowerCase().trim();
 
-  const settingsOption = isSettingsMenuOption(cleanInput);
+  // 🛡️ CRITICAL FIX: Settings trigger වෙන්නේ Settings menu එකට quote කරලා reply එකක් දුන්නොත් පමණි!
   const quotedCaption = extractQuotedCaption(quotedMsgObj);
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
+  const settingsOption = isSettingsMenuOption(cleanInput);
 
-  if (settingsOption && !isGroup && isAuthorized && (fromSettingsMenu || quotedMsgObj)) {
+  if (settingsOption && !isGroup && isAuthorized && fromSettingsMenu) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
   }
@@ -900,11 +908,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
-  if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanInput))) {
-    if (statusKeywords.includes(cleanInput)) {
-      const handled = await handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized);
-      if (handled) return;
-    }
+  if (quotedMsgObj && isQuotedFromStatus && statusKeywords.includes(cleanInput)) {
+    const handled = await handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized);
+    if (handled) return;
   }
 
   const commandHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode);
