@@ -2,8 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 
-const DEFAULT_BANNER = 'https://files.catbox.moe/a58add.jpeg';
-
 const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true },
   workMode: { type: String, default: 'public' },
@@ -13,7 +11,7 @@ const SettingsSchema = new mongoose.Schema({
   statusReactEmoji: { type: String, default: '💐' },
   ownerReact: { type: Boolean, default: true },
   ownerReactEmoji: { type: String, default: '👑' },
-  botLogo: { type: String, default: DEFAULT_BANNER },
+  botLogo: { type: String, default: './assets/logo.jpg' },
   autoPresence: { type: String, default: 'off' },
   securityPin: { type: String, default: '1234' },
   isFirstConnectDone: { type: Boolean, default: false }
@@ -48,32 +46,12 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
   }
 }
 
-async function getBannerForBot(botNum, settings) {
-  const specificLogo = path.join(process.cwd(), `logo_${botNum}.jpg`);
-  if (fs.existsSync(specificLogo)) {
-    try {
-      return fs.readFileSync(specificLogo);
-    } catch (e) {}
+function getBotLogo() {
+  const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
+  if (fs.existsSync(localLogoPath)) {
+    return fs.readFileSync(localLogoPath);
   }
-
-  if (settings && settings.botLogo) {
-    if (settings.botLogo.startsWith('data:image')) {
-      try {
-        const base64Data = settings.botLogo.split(',')[1];
-        return Buffer.from(base64Data, 'base64');
-      } catch (e) {}
-    }
-    if (fs.existsSync(settings.botLogo)) {
-      try {
-        return fs.readFileSync(settings.botLogo);
-      } catch (e) {}
-    }
-    if (settings.botLogo.startsWith('http')) {
-      return { url: settings.botLogo };
-    }
-  }
-
-  return { url: DEFAULT_BANNER };
+  return { url: 'https://files.catbox.moe/a58add.jpeg' };
 }
 
 module.exports = {
@@ -95,7 +73,6 @@ module.exports = {
 
     settings.ownerReact = true;
 
-    // Direct input check
     const rawMsg = msg.message?.conversation || 
                    msg.message?.extendedTextMessage?.text || 
                    '';
@@ -147,7 +124,6 @@ module.exports = {
       isUpdated = true;
     }
 
-    // Database Update
     if (isUpdated) {
       await settings.save();
       if (typeof global.clearSettingsCache === 'function') {
@@ -175,7 +151,6 @@ module.exports = {
       );
     }
 
-    // Display Menu
     const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
@@ -232,10 +207,11 @@ module.exports = {
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
     try {
-      const bannerPayload = await getBannerForBot(botNumber, settings);
+      const bannerPayload = getBotLogo();
       return await sock.sendMessage(chatJid, {
         image: bannerPayload,
-        caption: menu
+        caption: menu,
+        mimetype: 'image/jpeg'
       }, { quoted: msg });
     } catch (err) {
       return await safeReply(menu);
