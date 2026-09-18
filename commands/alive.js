@@ -1,19 +1,6 @@
 // commands/alive.js
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
-const mongoose = require('mongoose');
-
-// ස්ථිර Direct Fallback Logo URL එකක්
-const FALLBACK_LOGO_URL = 'https://files.catbox.moe/a58add.jpeg';
-
-// Database Schema
-const SettingsSchema = new mongoose.Schema({
-  _id: { type: String, required: true },
-  botLogo: { type: String, default: FALLBACK_LOGO_URL }
-}, { strict: false });
-
-const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
 
 function getEmojiTime(jid) {
     let tz = 'Asia/Colombo'; 
@@ -64,48 +51,12 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// අදාළ Bot Instance එකට ගැලපෙන Logo එක ලබා ගැනීම
-async function getLogoPayloadForBot(botNum) {
-    const specificLogo = path.join(process.cwd(), `logo_${botNum}.jpg`);
-    if (fs.existsSync(specificLogo)) {
-        try {
-            const data = fs.readFileSync(specificLogo);
-            if (data && data.length > 0) return data;
-        } catch (e) {}
+function getBotLogo() {
+    const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
+    if (fs.existsSync(localLogoPath)) {
+        return fs.readFileSync(localLogoPath);
     }
-
-    try {
-        const s = await SettingsModel.findById(botNum).lean();
-        if (s && s.botLogo) {
-            if (fs.existsSync(s.botLogo)) {
-                return fs.readFileSync(s.botLogo);
-            }
-            if (s.botLogo.startsWith('http')) {
-                const res = await axios.get(s.botLogo, {
-                    responseType: 'arraybuffer',
-                    headers: { 'User-Agent': 'Mozilla/5.0' },
-                    timeout: 10000,
-                    validateStatus: () => true
-                });
-                if (res.status === 200 && res.data) {
-                    return Buffer.from(res.data);
-                }
-            }
-        }
-    } catch (e) {}
-
-    try {
-        const res = await axios.get(FALLBACK_LOGO_URL, {
-            responseType: 'arraybuffer',
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 10000,
-            validateStatus: () => true
-        });
-        if (res.status === 200 && res.data) {
-            return Buffer.from(res.data);
-        }
-    } catch (err) {}
-    return { url: FALLBACK_LOGO_URL };
+    return { url: 'https://files.catbox.moe/a58add.jpeg' };
 }
 
 const triggerCommand = async (cmdName, sock, replyMsg) => {
@@ -140,7 +91,6 @@ module.exports = {
             ? chatJid 
             : msg.key.remoteJid;
 
-        const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const senderJid = msg.key.participant || targetChat;
 
         sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
@@ -173,15 +123,13 @@ module.exports = {
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            const logoPayload = await getLogoPayloadForBot(myBotNum);
+            const logoPayload = getBotLogo();
 
             const sentMsg = await sock.sendMessage(targetChat, {
                 image: logoPayload,
                 caption: aliveMsg,
                 mimetype: 'image/jpeg'
-            }, { quoted: msg }).catch(async () => {
-                return await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg });
-            });
+            }, { quoted: msg });
 
             const stanzaId = sentMsg?.key?.id;
             let cleanupTimer;
@@ -199,8 +147,6 @@ module.exports = {
                     if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
 
                     const msgContext = msgContent?.extendedTextMessage?.contextInfo;
-
-                    // Message එක alive message එකට quote කර තිබිය යුතුයි
                     if (!msgContext || msgContext.stanzaId !== stanzaId) return;
 
                     let replyText = msgContent.conversation || 
