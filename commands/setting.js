@@ -12,10 +12,10 @@ const SettingsSchema = new mongoose.Schema({
   autoStatusSeen: { type: Boolean, default: true },
   statusReact: { type: Boolean, default: true },
   statusReactEmoji: { type: String, default: '💐' },
-  ownerReact: { type: Boolean, default: true },
+  ownerReact: { type: Boolean, default: true }, // Always ON by default
   ownerReactEmoji: { type: String, default: '👑' },
   botLogo: { type: String, default: DEFAULT_BANNER },
-  autoPresence: { type: String, default: 'off' }, // 'off', 'typing', 'recording'
+  autoPresence: { type: String, default: 'off' },
   securityPin: { type: String, default: '1234' },
   isFirstConnectDone: { type: Boolean, default: false }
 });
@@ -94,6 +94,9 @@ module.exports = {
       settings = await SettingsModel.create({ _id: botNumber });
     }
 
+    // Owner React එක හැමවෙලේම ON මට්ටමේ තබා ගැනීම
+    settings.ownerReact = true;
+
     // Input Resolution
     const rawMsg = msg.message?.conversation || 
                    msg.message?.extendedTextMessage?.text || 
@@ -101,7 +104,6 @@ module.exports = {
                    
     let fullInput = (args && args.length > 0 ? args.join(' ') : rawMsg).trim().toLowerCase();
 
-    // Command prefix ඉවත් කිරීම (උදා: '.set 1.1' -> '1.1')
     fullInput = fullInput.replace(/^[./!#]?(settings|setting|set|config)\s*/i, '').trim();
 
     let isUpdated = false;
@@ -124,25 +126,21 @@ module.exports = {
     else if (fullInput === '4.1') { settings.statusReact = true; isUpdated = true; }
     else if (fullInput === '4.2') { settings.statusReact = false; isUpdated = true; }
 
-    // 5. OWNER REACT
-    else if (fullInput === '5.1') { settings.ownerReact = true; isUpdated = true; }
-    else if (fullInput === '5.2') { settings.ownerReact = false; isUpdated = true; }
+    // 5. FAKE ACTION (TYPING / RECORDING / OFF)
+    else if (fullInput === '5.1') { settings.autoPresence = 'typing'; isUpdated = true; }
+    else if (fullInput === '5.2') { settings.autoPresence = 'recording'; isUpdated = true; }
+    else if (fullInput === '5.3') { settings.autoPresence = 'off'; isUpdated = true; }
 
-    // 6. FAKE ACTION (TYPING / RECORDING / OFF)
-    else if (fullInput === '6.1') { settings.autoPresence = 'typing'; isUpdated = true; }
-    else if (fullInput === '6.2') { settings.autoPresence = 'recording'; isUpdated = true; }
-    else if (fullInput === '6.3') { settings.autoPresence = 'off'; isUpdated = true; }
-
-    // 7. CHANGE EMOJI (.set 7 🔥 or reply '7 🔥')
-    else if (fullInput.startsWith('7')) {
+    // 6. CHANGE EMOJI (.set 6 🔥 or reply '6 🔥')
+    else if (fullInput.startsWith('6')) {
       const parts = fullInput.split(/ +/);
       const emoji = parts[1];
-      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `7 🔥` හෝ `.set 7 🔥`)');
+      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `6 🔥` හෝ `.set 6 🔥`)');
       settings.ownerReactEmoji = emoji;
       isUpdated = true;
     }
 
-    // 8. CHANGE PIN (.set pin 5566 or reply 'pin 5566')
+    // 7. CHANGE PIN (.set pin 5566 or reply 'pin 5566')
     else if (fullInput.startsWith('pin')) {
       const parts = fullInput.split(/ +/);
       const newPin = parts[1];
@@ -218,24 +216,20 @@ module.exports = {
 │  ├ 4.1 React On
 │  └ 4.2 React Off
 │
-├─◈ *5. OWNER REACT* ⤿ [ ${stateBadge(settings.ownerReact)} ]
-│  ├ 5.1 Owner React On
-│  └ 5.2 Owner React Off
+├─◈ *5. FAKE ACTION* ⤿ [ ${presenceBadge} ]
+│  ├ 5.1 Fake Typing ✍️
+│  ├ 5.2 Fake Recording 🎙️
+│  └ 5.3 Turn Off 🔴
 │
-├─◈ *6. FAKE ACTION* ⤿ [ ${presenceBadge} ]
-│  ├ 6.1 Fake Typing ✍️
-│  ├ 6.2 Fake Recording 🎙️
-│  └ 6.3 Turn Off 🔴
+├─◈ *6. OWNER EMOJI* ⤿ [ ${settings.ownerReactEmoji || '👑'} ]
+│  └ ✦ Type: .set 6 <emoji>
 │
-├─◈ *7. OWNER EMOJI* ⤿ [ ${settings.ownerReactEmoji || '👑'} ]
-│  └ ✦ Type: .set 7 <emoji>
-│
-├─◈ *8. CHANGE PIN* ⤿ [ ${settings.securityPin || '1234'} ]
+├─◈ *7. CHANGE PIN* ⤿ [ ${settings.securityPin || '1234'} ]
 │  └ ✦ Type: .set pin <new_pin>
 │
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option අංකය කෙලින්ම Reply කරන්න (උදා: *3.1* හෝ *4.1*)
+• අදාළ Option අංකය කෙලින්ම Reply කරන්න (උදා: *3.1* හෝ *5.1*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
