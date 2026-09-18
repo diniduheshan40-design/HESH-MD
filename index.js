@@ -60,6 +60,7 @@ const DEFAULT_SETTINGS = {
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 const activeSessions = {};
+global.activeSessions = activeSessions; // 🟢 Commands වලට Active bots access කිරීමට එක් කළා
 const isStarting = {};
 const commands = new Map();
 
