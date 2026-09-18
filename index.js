@@ -748,7 +748,7 @@ function buildSafeReply(sock, chatJid, msg) {
 
 function isSettingsMenuOption(cleanInput) {
   return (
-    /^([1-6]\.[1-4]|[1-8])$/.test(cleanInput) ||
+    /^([1-8](\.[1-4])?)$/.test(cleanInput) ||
     cleanInput.startsWith('7 ') ||
     cleanInput.startsWith('pin ') ||
     cleanInput.startsWith('set ')
@@ -805,7 +805,7 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
 
   const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
   if (isSettingsCmd && isGroup) return true;
-  if (isSettingsCmd && !isOwner) return true;
+  if (isSettingsCmd && !isAuthorized) return true;
 
   if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
     return true;
@@ -891,7 +891,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const quotedCaption = extractQuotedCaption(quotedMsgObj);
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
 
-  if (settingsOption && !isGroup && isOwner && (fromSettingsMenu || quotedMsgObj)) {
+  if (settingsOption && !isGroup && isAuthorized && (fromSettingsMenu || quotedMsgObj)) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
   }
