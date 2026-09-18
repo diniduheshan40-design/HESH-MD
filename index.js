@@ -562,15 +562,14 @@ async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
 }
 
 function buildConnectedMessage(botNum) {
-  return `*⚡ HESHAN-MD SYSTEM INITIALIZED ⚡*
-────────────────────────────
-*🟢 Status   :* Online Operational
-*🤖 Bot Name :* ${BOT_NAME}
-*📱 Connected:* +${botNum}
-*⚙️ Engine   :* HESHAN-MD V2
-*💐 Status   :* Auto Seen Active
-────────────────────────────
-> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
+  return `*✦ ${BOT_NAME} CONNECTED ✦*
+━━━━━━━━━━━━━━━━━━━━━
+• *Number*    : +${botNum}
+• *Engine*    : HESHAN-MD V2
+• *Features*  : AI Inbox | Auto Status | Anti-Delete
+• *State*     : Online (24/7 Cloud)
+━━━━━━━━━━━━━━━━━━━━━
+> Type *.menu* to explore all commands.`.trim();
 }
 
 async function sendFirstConnectAlerts(sock, phoneNumber) {
@@ -593,7 +592,11 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
     });
 
     if (!botNum.includes(REAL_OWNER_NUMBER)) {
-      const alertMsg = `*🔔 NEW BOT CONNECTED: +${botNum}*`;
+      const alertMsg = `*🔔 ALERT : NEW SESSION CONNECTED*
+━━━━━━━━━━━━━━━━━━━━━
+• *Number* : +${botNum}
+• *System* : Initialized successfully
+━━━━━━━━━━━━━━━━━━━━━`;
       await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
     }
 
