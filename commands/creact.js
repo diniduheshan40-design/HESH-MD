@@ -1,5 +1,9 @@
+// Default Random Emojis Pool (Emoji ලබා නොදුනහොත් මේවායින් Random වැටේ)
+const DEFAULT_REACTIONS = ['💗', '❤️', '🥰', '😯', '🔥', '✨', '👍', '🪄'];
+
 module.exports = {
   name: "creact",
+  alias: ["channelreact", "creaction"],
   category: "owner",
   desc: "React to channel post using main bot and active sub-bots",
 
@@ -10,25 +14,37 @@ module.exports = {
     const creatorNumber = '94719845166';
     const isOwner = msg.key.fromMe || sender.includes(creatorNumber);
 
+    const reply = async (text) => {
+      if (safeReply) return await safeReply(text);
+      return await sock.sendMessage(targetChat, { text }, { quoted: msg });
+    };
+
     if (!isOwner) {
-      return await (safeReply ? safeReply("⛔ *Access Denied!* Only the owner can use this command.") : sock.sendMessage(targetChat, { text: "⛔ *Access Denied!*" }, { quoted: msg }));
+      return await reply("⛔ *Access Denied!* Only the owner can use this command.");
     }
 
     try {
       let channelJid;
       let messageId;
-      let emojisString;
+      let emojisString = "";
+
+      const rawText = msg.message?.conversation || 
+                      msg.message?.extendedTextMessage?.text || 
+                      args.join(' ');
 
       const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+      const linkMatch = rawText.match(/whatsapp\.com\/channel\/([a-zA-Z0-9]+)\/(\d+)/);
 
-      // 1. Link එක හරහා දත්ත ලබා ගැනීම: .creact <link> <emojis>
-      if (args[0] && args[0].includes('whatsapp.com/channel/')) {
-        const fullLink = args[0].trim();
-        const linkParts = fullLink.split('/');
-        messageId = linkParts[linkParts.length - 1].split('?')[0];
-        emojisString = args.slice(1).join("");
+      // 1. Link එක හරහා දත්ත ලබා ගැනීම
+      if (linkMatch) {
+        const inviteCode = linkMatch[1];
+        messageId = linkMatch[2];
 
-        const inviteCode = linkParts[4];
+        // Link එකෙන් පසු ඇති emojis ලබා ගැනීම
+        const afterLink = rawText.substring(rawText.indexOf(linkMatch[0]) + linkMatch[0].length);
+        emojisString = afterLink.replace(/^[,\s|]+/, '').trim();
+
+        // Newsletter JID එක Resolve කිරීම
         let metadata = null;
         try {
           if (typeof sock.newsletterMetadata === 'function') {
@@ -36,45 +52,101 @@ module.exports = {
           }
         } catch (e) {}
 
-        if (!metadata || !metadata.id) {
-          const errMsg = "❌ චැනල් ලින්ක් එක වැරදියි හෝ විස්තර ලබාගත නොහැක!";
-          return await (safeReply ? safeReply(errMsg) : sock.sendMessage(targetChat, { text: errMsg }, { quoted: msg }));
+        channelJid = metadata?.id;
+
+        // Fallback Query එක
+        if (!channelJid) {
+          try {
+            const result = await sock.query({
+              tag: 'iq',
+              attrs: { to: 's.whatsapp.net', xmlns: 'w:mex', type: 'get' },
+              content: [{
+                tag: 'query',
+                attrs: { query_id: '6620195908089573' },
+                content: Buffer.from(JSON.stringify({
+                  variables: { input: { key: inviteCode, type: 'INVITE' } }
+                }))
+              }]
+            });
+            const rawData = result?.content?.[0]?.content?.toString();
+            if (rawData) {
+              const parsed = JSON.parse(rawData);
+              channelJid = parsed?.data?.xwa2_newsletter?.id;
+            }
+          } catch (e) {}
         }
-        channelJid = metadata.id;
+
+        if (!channelJid) {
+          return await reply("❌ චැනල් ලින්ක් එක වැරදියි හෝ විස්තර ලබාගත නොහැක!");
+        }
       } 
-      // 2. Quoted Post එකක් හරහා: .creact <emojis>
+      // 2. Quoted Channel Post එකක් හරහා
       else if (quotedMsg) {
         const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
         channelJid = contextInfo?.remoteJid;
-        messageId = contextInfo?.stanzaId;
+        messageId = contextInfo?.server_id || contextInfo?.stanzaId;
         emojisString = args.join("");
+
+        if (!channelJid || !channelJid.endsWith('@newsletter')) {
+          return await reply("❌ කරුණාකර නිවැරදි Channel Post එකකට reply කරන්න.");
+        }
       } else {
-        const usageMsg = "📌 *භාවිතය:*\n• `.creact <channel_post_link> 🩷💜❤️🖤🤍`\n• හෝ චැනල් පෝස්ට් එකකට reply කර: `.creact 🩷💜❤️🖤🤍`";
-        return await (safeReply ? safeReply(usageMsg) : sock.sendMessage(targetChat, { text: usageMsg }, { quoted: msg }));
+        const usageMsg = 
+          "📌 *භාවිතය:*\n" +
+          "• `.creact <channel_post_link>` (Random Emojis auto වැටේ)\n" +
+          "• `.creact <channel_post_link> , 💗,❤️,🥰,😯`\n" +
+          "• හෝ චැනල් පෝස්ට් එකකට reply කර: `.creact 🩷💜❤️`";
+        return await reply(usageMsg);
       }
 
-      // Emojis Array එකකට වෙන් කරගැනීම
-      const emojiArray = Array.from(emojisString.trim());
+      // Emojis Pool එක සාදා ගැනීම
+      let emojiArray = [];
+      if (emojisString) {
+        if (emojisString.includes(',')) {
+          emojiArray = emojisString.split(',').map(e => e.trim()).filter(Boolean);
+        } else {
+          emojiArray = Array.from(emojisString.replace(/\s+/g, ''));
+        }
+      }
+
+      // Emojis කිසිවක් ලබාදී නැතිනම් Default Emojis භාවිතා වේ
       if (emojiArray.length === 0) {
-        const noEmojiMsg = "⚠️ කරුණාකර Reaction සඳහා Emoji එකක් හෝ කිහිපයක් ලබා දෙන්න!";
-        return await (safeReply ? safeReply(noEmojiMsg) : sock.sendMessage(targetChat, { text: noEmojiMsg }, { quoted: msg }));
+        emojiArray = DEFAULT_REACTIONS;
       }
 
       let successCount = 0;
+      const appliedReactions = [];
 
-      // Helper function: Reaction එක යැවීමට
+      // Helper function: Reaction එක Channel එකට නිවැරදි Protocol එකෙන් යැවීම
       const sendReact = async (botInstance) => {
         const pickedEmoji = emojiArray[Math.floor(Math.random() * emojiArray.length)];
-        await botInstance.sendMessage(channelJid, {
-          react: {
-            text: pickedEmoji,
-            key: {
-              remoteJid: channelJid,
-              id: messageId,
-              fromMe: false
-            }
+
+        // 1. Auto-Follow Channel (හැකි නම්)
+        try {
+          if (typeof botInstance.newsletterFollow === 'function') {
+            await botInstance.newsletterFollow(channelJid);
           }
-        });
+        } catch (e) {}
+
+        // 2. Baileys Official Channel Reaction
+        if (typeof botInstance.newsletterReactMessage === 'function') {
+          await botInstance.newsletterReactMessage(channelJid, messageId, pickedEmoji);
+        } else {
+          // 3. Binary Node Fallback Reaction
+          await botInstance.sendMessage(channelJid, {
+            react: {
+              text: pickedEmoji,
+              key: {
+                remoteJid: channelJid,
+                server_id: messageId,
+                id: messageId,
+                fromMe: false
+              }
+            }
+          });
+        }
+
+        appliedReactions.push(pickedEmoji);
       };
 
       // පියවර 1: Main Bot ගෙන් Reaction එක දැමීම
@@ -85,30 +157,37 @@ module.exports = {
         console.error("Main bot react failed:", mainErr.message);
       }
 
-      // පියවර 2: Active Sub-bots (activeSessions) හරහා React කරවීම
-      if (typeof activeSessions === 'object' && activeSessions !== null) {
-        const subBotKeys = Object.keys(activeSessions);
-        for (const botNum of subBotKeys) {
-          const subBot = activeSessions[botNum];
-          if (subBot && subBot !== sock && subBot.user && subBot.ws?.socket?.readyState === 1) {
-            try {
-              await new Promise(res => setTimeout(res, 600));
-              await sendReact(subBot);
-              successCount++;
-            } catch (subErr) {
-              console.log(`Sub-bot (+${botNum}) react failed:`, subErr.message);
-            }
+      // පියවර 2: Active Sub-bots (Global activeSessions) හරහා React කරවීම
+      const sessionsSource = (typeof global.activeSessions === 'object' && global.activeSessions !== null) 
+        ? global.activeSessions 
+        : (typeof activeSessions === 'object' && activeSessions !== null ? activeSessions : {});
+
+      const subBotKeys = Object.keys(sessionsSource);
+      for (const botNum of subBotKeys) {
+        const subBot = sessionsSource[botNum];
+        if (subBot && subBot !== sock && subBot.user) {
+          try {
+            await new Promise(res => setTimeout(res, 1200));
+            await sendReact(subBot);
+            successCount++;
+          } catch (subErr) {
+            console.log(`Sub-bot (+${botNum}) react failed:`, subErr.message);
           }
         }
       }
 
-      const successMsg = `✅ *සාර්ථකයි!*\n\nබොට්ලා ${successCount} දෙනෙකුගෙන් Reactions යැව්වා.`;
-      return await (safeReply ? safeReply(successMsg) : sock.sendMessage(targetChat, { text: successMsg }, { quoted: msg }));
+      const successMsg = 
+        `*✦ REACTION SUCCESSFUL ✦*\n━━━━━━━━━━━━━━━━━━━━━\n` +
+        `• *Reactions*   : ${appliedReactions.join(' ')}\n` +
+        `• *සාර්ථකයි*    : ${successCount} Bots\n` +
+        `━━━━━━━━━━━━━━━━━━━━━`;
+
+      return await reply(successMsg);
 
     } catch (err) {
       console.error("Creact Error:", err.message);
-      const failMsg = "❌ Reaction දැමීම අසාර්ථක විය! Link එක හෝ Permissions පරීක්ෂා කරන්න.";
-      return await (safeReply ? safeReply(failMsg) : sock.sendMessage(targetChat, { text: failMsg }, { quoted: msg }));
+      return await reply("❌ Reaction දැමීම අසාර්ථක විය! Link එක හෝ Permissions පරීක්ෂා කරන්න.");
     }
   }
 };
+
