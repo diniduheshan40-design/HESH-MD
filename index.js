@@ -17,26 +17,34 @@ const {
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
-// 🟢 Config & DB Models
+// 🟢 Config & DB Models (අපේම වෙනම files වලින් ගන්නා දේවල්)
 const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
 // ============================================================================
-// 🌍 GLOBAL CONSTANTS
+// 🌍 GLOBAL CONSTANTS (වෙනස් නොවන settings/values)
 // ============================================================================
 
+// bot එකේ update channel එකට react කරන emoji සහ channel id එක
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 
+// bot logo එකක් settings වල නැත්නම් default එකක් පාවිච්චි කරන්න
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
-// ඔබේ owner අංකය (digits පමණක් ඇතුළත් කරන්න)
+// bot එකේ "owner" ලෙස treat වෙන ෆෝන් number ටික (ඔබගේ මුල් කේතයේ තිබූ LID සියල්ල ඒ ආකාරයෙන්ම ඇත)
 const REAL_OWNER_NUMBER = '94719845166';
 const OWNER_NUMBERS = [
-  '94719845166'
+  '94719845166',
+  '94720882316',
+  '15947733680169',
+  '15947733680169@lid',
+  '72787431583987',
+  '72787431583987@lid'
 ];
 
+// bot එකේ default settings object එක
 const DEFAULT_SETTINGS = {
   workMode: 'public',
   autoAiInbox: true,
@@ -52,7 +60,7 @@ const DEFAULT_SETTINGS = {
 };
 
 // ============================================================================
-// 🧠 RUNTIME STATE
+// 🧠 RUNTIME STATE (program එක run වෙනකොට වෙනස් වන values ටික)
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
@@ -461,24 +469,22 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 // 💬 MESSAGE HANDLING HELPERS
 // ============================================================================
 
-// 🛠️ FIX 1: Newsletter / Channel React එකක් නිවැරදිව ක්‍රියාත්මක කිරීම
+// 🛠️ FIX 1: සියලුම Active Bots ලාගෙන් Channel Posts වලට හරියට React වීම
 async function reactToChannelPost(sock, msg, chatJid) {
   try {
     const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-    const randomDelay = Math.floor(Math.random() * 2000) + 1500;
+    // හැම bot ම එකම තත්පරේ නොදා Bots ලා rate-limit නොවී හැමෝගෙන්ම react වැටෙන්න random delay එකක්
+    const randomDelay = Math.floor(Math.random() * 3500) + 1000;
     await delay(randomDelay);
 
-    const serverId = msg.key?.server_id || msg.key?.id;
+    const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
 
     if (typeof sock.newsletterReactMessage === 'function' && serverId) {
       await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
     } else {
       await sock.sendMessage(chatJid, { react: { text: randomEmoji, key: msg.key } });
     }
-    console.log(`🪄 Reacted to Channel Post with ${randomEmoji}`);
-  } catch (err) {
-    console.error('Channel react error:', err.message);
-  }
+  } catch (err) {}
 }
 
 async function simulateAutoPresence(sock, chatJid, settings) {
@@ -506,12 +512,6 @@ async function handleStatusBroadcast(sock, msg, settings) {
   } catch (e) {}
 }
 
-// 🛠️ FIX 2: Message එකේ සැබෑ අංකය නිවැරදිව ලබාගැනීම
-function extractCleanNumber(jid) {
-  if (!jid) return '';
-  return String(jid).split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-}
-
 function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   if (msg.key.fromMe) return myBotJid;
   if (isGroup) return msg.key.participant || msg.participant || chatJid;
@@ -519,7 +519,7 @@ function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
 }
 
 async function resolveLidToRealJid(sock, originalSender) {
-  if (!originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
+  if (!originalSender || !originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
     return originalSender;
   }
 
@@ -531,27 +531,28 @@ async function resolveLidToRealJid(sock, originalSender) {
   }
 }
 
-// 🛠️ FIX 3: Owner ද යන්න නිවැරදිව සංසන්දනය කිරීම
-function checkIsOwner(senderNum, isFromMe, myBotNum) {
-  if (isFromMe) return true;
-  if (myBotNum && senderNum === myBotNum) return true;
-  return OWNER_NUMBERS.some(owner => {
-    const cleanOwner = owner.replace(/[^0-9]/g, '');
-    return senderNum === cleanOwner;
-  });
+// 🛠️ FIX 2: Owner පරීක්ෂාව - LID සහ සාමාන්‍ය JID දෙකම හඳුනාගනී
+function isOwnerJid(jid) {
+  if (!jid) return false;
+  const str = String(jid);
+  return OWNER_NUMBERS.some(owner => str.includes(owner));
 }
 
-// 🛠️ FIX 4: Owner React එක නියමිත delays සහිතව යැවීම
+// 🛠️ FIX 3: අනෙක් අයට React වැටීම වැළැක්වීම
+// (ඔබ මුලින් එවූ contextSender පරීක්ෂාව ඉවත් කර, සැබෑ sender පමණක් Owner ද යන්න බලයි)
+function checkIsOwner(originalSender, resolvedSender, fromMe) {
+  if (fromMe) return true;
+  return isOwnerJid(originalSender) || isOwnerJid(resolvedSender);
+}
+
 function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
   if (!settings.ownerReact) return;
 
   setTimeout(async () => {
     try {
       await sock.sendMessage(chatJid, { react: { text: settings.ownerReactEmoji || '👑', key: msgKey } });
-    } catch (err) {
-      console.error('Owner react error:', err.message);
-    }
-  }, 500);
+    } catch (err) {}
+  }, 600);
 }
 
 function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
@@ -709,7 +710,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
-  // 1️⃣ Update channel post එකක් නම් කෙලින්ම react කර return කිරීම
+  // 1️⃣ Update channel post එකකට react කිරීම
   if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
     if (!msg.message.reactionMessage) {
       reactToChannelPost(sock, msg, chatJid);
@@ -717,12 +718,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return;
   }
 
-  // Reaction messages ignore කිරීම
   if (msg.message.reactionMessage) return;
 
   const isGroup = chatJid.endsWith('@g.us');
   const myBotJid = sock.user?.id || '';
-  const myBotNum = extractCleanNumber(myBotJid) || extractCleanNumber(phoneNumber);
+  const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
   // 2️⃣ Auto presence
@@ -736,26 +736,26 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return;
   }
 
-  // 4️⃣ Sender හඳුනාගැනීම
+  // 4️⃣ Sender කවුද කියලා හදුනාගැනීම
   const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
   const resolvedSender = await resolveLidToRealJid(sock, originalSender);
-  const cleanSenderNum = extractCleanNumber(resolvedSender) || extractCleanNumber(originalSender);
 
-  // Owner පරීක්ෂාව
-  const isOwner = checkIsOwner(cleanSenderNum, msg.key.fromMe, myBotNum);
+  // Owner පරීක්ෂාව (contextSender අයින් කළ නිසා අනෙක් අය quote කරද්දී react වැටෙන්නේ නැත)
+  const isOwner = checkIsOwner(originalSender, resolvedSender, msg.key.fromMe);
 
-  // 5️⃣ Owner කෙනෙක් නම් react කිරීම (fromMe හෝ private/group ඕනෑම තැනකදී)
+  // 5️⃣ Owner කෙනෙක් නම් react කිරීම
   if (isOwner) {
     reactToOwnerMessage(sock, chatJid, msg.key, settings);
   }
 
+  const cleanSenderNum = resolvedSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
   const currentMode = settings.workMode || 'public';
 
-  // 6️⃣ Work mode check
+  // 6️⃣ Work mode පරීක්ෂාව
   if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) return;
 
-  // 7️⃣ Text extract
+  // 7️⃣ Text extract කිරීම
   const rawMsg = unwrapMessageContent(msg.message);
   const text = extractMessageText(rawMsg);
   if (!text) return;
@@ -791,11 +791,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🔟 Commands execute කිරීම
+  // 🔟 Commands
   const commandHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner);
   if (commandHandled) return;
 
-  // 1️⃣1️⃣ AI Inbox auto-reply
+  // 1️⃣1️⃣ AI Inbox
   const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
   const isNumericOnly = /^[0-9]+$/.test(cleanInput);
 
@@ -804,15 +804,15 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   }
 }
 
-// 🛠️ FIX 5: Message upsert filter එක ලිහිල් කර Channel සහ Messages සියල්ල capture කරගැනීම
+// 🛠️ FIX 4: messages.upsert එකේ channel posts සහ owner messages drop නොවී සියලුම bots ලාට ලැබීම
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (!messages || !messages.length) return;
 
     for (const msg of messages) {
-      // type !== 'notify' වුණත් channel updates හෝ self messages drop නොවීමට ඉඩ දෙයි
       const jid = msg.key?.remoteJid || '';
-      if (type !== 'notify' && !jid.endsWith('@newsletter') && !msg.key?.fromMe) {
+      // channel එකක් හෝ fromMe එකක් නම් type check එක bypass කර process කරයි
+      if (type !== 'notify' && !jid.endsWith('@newsletter') && jid !== UPDATE_CHANNEL_JID && !msg.key?.fromMe) {
         continue;
       }
       await processSingleMessage(sock, msg, phoneNumber);
