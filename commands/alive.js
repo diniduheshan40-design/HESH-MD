@@ -66,7 +66,6 @@ function formatUptime(seconds) {
 
 // අදාළ Bot Instance එකට ගැලපෙන Logo එක ලබා ගැනීම
 async function getLogoPayloadForBot(botNum) {
-    // 1. මේ Bot Number එකට වෙනම හදපු Local file එකක් තියෙනවාද බැලීම
     const specificLogo = path.join(process.cwd(), `logo_${botNum}.jpg`);
     if (fs.existsSync(specificLogo)) {
         try {
@@ -75,7 +74,6 @@ async function getLogoPayloadForBot(botNum) {
         } catch (e) {}
     }
 
-    // 2. Database එකේ මේ Bot ට link කර ඇති Logo එක බැලීම
     try {
         const s = await SettingsModel.findById(botNum).lean();
         if (s && s.botLogo) {
@@ -96,7 +94,6 @@ async function getLogoPayloadForBot(botNum) {
         }
     } catch (e) {}
 
-    // 3. කිසිවක් නැති විට Fallback Logo එක ගැනීම
     try {
         const res = await axios.get(FALLBACK_LOGO_URL, {
             responseType: 'arraybuffer',
@@ -107,32 +104,25 @@ async function getLogoPayloadForBot(botNum) {
         if (res.status === 200 && res.data) {
             return Buffer.from(res.data);
         }
-    } catch (err) {
-        console.error("Alive Logo Buffer Error:", err.message);
-    }
+    } catch (err) {}
     return { url: FALLBACK_LOGO_URL };
 }
 
-const triggerCommand = async (cmdName, fakeUserText, sock, replyMsg) => {
+const triggerCommand = async (cmdName, sock, replyMsg) => {
     try {
         const cmdPath = path.join(__dirname, `${cmdName}.js`);
         if (fs.existsSync(cmdPath)) {
-            delete require.cache[require.resolve(cmdPath)]; // Fresh load
             const cmdModule = require(cmdPath);
             const remoteJid = replyMsg.key.remoteJid;
-            const args = fakeUserText.trim().split(/\s+/).slice(1);
 
             const safeReply = async (content) => {
                 const payload = typeof content === 'string' ? { text: content } : content;
                 return await sock.sendMessage(remoteJid, payload, { quoted: replyMsg });
             };
 
-            if (typeof cmdModule.execute === 'function') {
-                await cmdModule.execute(sock, replyMsg, args, remoteJid, safeReply);
-            } else if (typeof cmdModule.run === 'function') {
-                await cmdModule.run({ sock, msg: replyMsg, args, from: remoteJid, reply: safeReply });
-            } else if (typeof cmdModule === 'function') {
-                await cmdModule(sock, replyMsg, args, remoteJid, safeReply);
+            const executor = cmdModule.execute || cmdModule.run || cmdModule;
+            if (typeof executor === 'function') {
+                await executor(sock, replyMsg, [], remoteJid, safeReply, { isOwner: true });
             }
         }
     } catch (e) {
@@ -150,7 +140,6 @@ module.exports = {
             ? chatJid 
             : msg.key.remoteJid;
 
-        // Command එක Run කරපු අදාළ Bot ගේ අංකය ගැනීම
         const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
         const senderJid = msg.key.participant || targetChat;
 
@@ -159,13 +148,6 @@ module.exports = {
         let pushName = msg.pushName || "User";  
         let firstName = pushName.split(/[\s_+-]+/)[0] || "User"; 
         if (firstName.length > 15) firstName = firstName.substring(0, 15);  
-
-        const rawText = msg.message?.conversation || 
-                        msg.message?.extendedTextMessage?.text || 
-                        msg.message?.imageMessage?.caption || 
-                        msg.message?.videoMessage?.caption || "";
-                        
-        const currentPrefix = (rawText && /^[.#/!]/.test(rawText.charAt(0))) ? rawText.charAt(0) : '.';
 
         const uptime = formatUptime(process.uptime());
         const emojiTime = getEmojiTime(senderJid);
@@ -191,7 +173,6 @@ module.exports = {
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            // මේ Bot Instance එකට අදාළ Logo එක ලබා ගැනීම
             const logoPayload = await getLogoPayloadForBot(myBotNum);
 
             const sentMsg = await sock.sendMessage(targetChat, {
@@ -219,16 +200,12 @@ module.exports = {
 
                     const msgContext = msgContent?.extendedTextMessage?.contextInfo;
 
-                    if (targetChat.endsWith('@g.us')) {
-                        if (!msgContext || msgContext.stanzaId !== stanzaId) return;
-                    } else {
-                        if (stanzaId && msgContext && msgContext.stanzaId !== stanzaId) return;
-                    }
+                    // Message එක alive message එකට quote කර තිබිය යුතුයි
+                    if (!msgContext || msgContext.stanzaId !== stanzaId) return;
 
                     let replyText = msgContent.conversation || 
                                     msgContent.extendedTextMessage?.text || 
-                                    msgContent.imageMessage?.caption || 
-                                    msgContent.videoMessage?.caption || "";
+                                    "";
 
                     replyText = replyText.trim().replace(/[\[\].]/g, '');
 
@@ -238,11 +215,11 @@ module.exports = {
 
                         if (replyText === "1") {  
                             await sock.sendMessage(replyChat, { react: { text: '📜', key: replyMsg.key } }).catch(() => {});  
-                            await triggerCommand('menu', `${currentPrefix}menu`, sock, replyMsg);
+                            await triggerCommand('menu', sock, replyMsg);
 
                         } else if (replyText === "2") {  
                             await sock.sendMessage(replyChat, { react: { text: '⚡', key: replyMsg.key } }).catch(() => {});
-                            await triggerCommand('ping', `${currentPrefix}ping`, sock, replyMsg);
+                            await triggerCommand('ping', sock, replyMsg);
 
                         } else if (replyText === "3") {  
                             await sock.sendMessage(replyChat, { react: { text: '👑', key: replyMsg.key } }).catch(() => {});
