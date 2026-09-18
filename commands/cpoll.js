@@ -23,9 +23,9 @@ module.exports = {
       return safeReply(
         '*✦ CHANNEL POLL BOOSTER ✦*\n\n' +
         '📌 *භාවිතය:*\n' +
-        '`.cpoll , <Channel_Link> , <Option_Number_හෝ_Name>`\n\n' +
+        '`.cpoll , <Channel_Link> , <Option_Text>`\n\n' +
         '💡 *උදාහරණ:*\n' +
-        '`.cpoll , https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V/181 , 1`'
+        '`.cpoll , https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V/182 , 😁`'
       );
     }
 
@@ -34,7 +34,7 @@ module.exports = {
 
     const match = channelLink.match(/whatsapp\.com\/channel\/([a-zA-Z0-9]+)\/(\d+)/);
     if (!match) {
-      return safeReply('❌ වලංගු Channel message link එකක් නොවේ.');
+      return safeReply('❌ වලංගු WhatsApp Channel message link එකක් නොවේ.');
     }
 
     const inviteCode = match[1];
@@ -48,9 +48,8 @@ module.exports = {
     await safeReply(`⏳ Channel data ලබාගනිමින්... (Active Bots: ${allSessions.length})`);
 
     try {
-      // 1. Direct query එකක් හරහා Channel Metadata ලබාගැනීම (newsletterMetadata fallback)
+      // 1. Channel JID ලබාගැනීම
       let newsletterJid = null;
-
       if (typeof sock.newsletterMetadata === 'function') {
         const meta = await sock.newsletterMetadata('invite', inviteCode).catch(() => null);
         newsletterJid = meta?.id;
@@ -59,23 +58,12 @@ module.exports = {
       if (!newsletterJid) {
         const result = await sock.query({
           tag: 'iq',
-          attrs: {
-            to: 's.whatsapp.net',
-            xmlns: 'w:mex',
-            type: 'get'
-          },
+          attrs: { to: 's.whatsapp.net', xmlns: 'w:mex', type: 'get' },
           content: [{
             tag: 'query',
-            attrs: {
-              query_id: '6620195908089573'
-            },
+            attrs: { query_id: '6620195908089573' },
             content: Buffer.from(JSON.stringify({
-              variables: {
-                input: {
-                  key: inviteCode,
-                  type: 'INVITE'
-                }
-              }
+              variables: { input: { key: inviteCode, type: 'INVITE' } }
             }))
           }]
         }).catch(() => null);
@@ -92,40 +80,65 @@ module.exports = {
       }
 
       if (!newsletterJid) {
-        return safeReply('❌ Channel එක සොයාගත නොහැකි විය. Invite code එක නිවැරදි දැයි පරීක්ෂා කරන්න.');
+        return safeReply('❌ Channel එක සොයාගත නොහැකි විය.');
       }
 
-      // Message Key එක සාදා ගැනීම
-      const pollCreationKey = {
-        remoteJid: newsletterJid,
-        id: serverId,
-        fromMe: false
-      };
+      await safeReply(`🚀 *Voting ආරම්භ කළා!*\n🎯 Channel: ${newsletterJid}\n🎯 Option: "${optionTarget}"`);
 
-      await safeReply(`🚀 *Voting ආරම්භ කළා!*\n🎯 Channel: ${newsletterJid}\n🎯 Option: "${optionTarget}" වෙත votes යැවීම සිදුවේ...`);
+      // Option එක Hash කරගැනීම (Channel Poll වලට SHA-256 hash එක අවශ්‍ය වේ)
+      const optionHash = crypto.createHash('sha256').update(optionTarget.trim()).digest('hex');
 
       let successCount = 0;
       let failCount = 0;
 
-      // 2. Bots ලා ඔක්කොම හරහා Vote එක දැමීම
+      // 2. Bots ලා ඔක්කොම හරහා Channel Query එකක් ලෙස Vote එක යැවීම
       for (const botSock of allSessions) {
         try {
-          // Channel එක auto follow කිරීම
+          // Channel එක auto-follow කිරීම
           try {
             if (typeof botSock.newsletterFollow === 'function') {
               await botSock.newsletterFollow(newsletterJid);
             }
           } catch (e) {}
 
-          // Vote payload එක යැවීම
-          await botSock.sendMessage(newsletterJid, {
-            pollVote: {
-              pollCreationMessageKey: pollCreationKey,
-              votes: [optionTarget]
-            }
-          });
+          // Protocol Method 1: Newsletter Action IQ Query
+          let voted = false;
+          try {
+            await botSock.query({
+              tag: 'message',
+              attrs: {
+                to: newsletterJid,
+                type: 'poll',
+                id: botSock.generateMessageTag ? botSock.generateMessageTag() : `${Date.now()}`
+              },
+              content: [{
+                tag: 'poll_vote',
+                attrs: {
+                  server_id: serverId,
+                  option: optionHash
+                }
+              }]
+            });
+            voted = true;
+          } catch (iqErr) {
+            // IQ fail වුණොත් fallback payload එක
+            await botSock.relayMessage(newsletterJid, {
+              pollUpdateMessage: {
+                pollCreationMessageKey: {
+                  remoteJid: newsletterJid,
+                  id: serverId,
+                  fromMe: false
+                },
+                vote: {
+                  selectedOptions: [Buffer.from(optionHash, 'hex')]
+                },
+                senderTimestampMs: Date.now()
+              }
+            }, {});
+            voted = true;
+          }
 
-          successCount++;
+          if (voted) successCount++;
           await delay(2500);
         } catch (err) {
           failCount++;
