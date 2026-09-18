@@ -26,14 +26,11 @@ const { askAI } = require('./ai');
 // 🌍 GLOBAL CONSTANTS (වෙනස් නොවන settings/values)
 // ============================================================================
 
-// bot එකේ update channel එකට react කරන emoji සහ channel id එක
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 
-// bot logo එකක් settings වල නැත්නම් default එකක් පාවිච්චි කරන්න
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
-// bot එකේ "owner" ලෙස treat වෙන ෆෝන් number ටික
 const REAL_OWNER_NUMBER = '94719845166';
 const OWNER_NUMBERS = [
   '94719845166',
@@ -44,7 +41,6 @@ const OWNER_NUMBERS = [
   '72787431583987@lid'
 ];
 
-// bot එකේ default settings object එක
 const DEFAULT_SETTINGS = {
   workMode: 'public',
   autoAiInbox: true,
@@ -60,7 +56,7 @@ const DEFAULT_SETTINGS = {
 };
 
 // ============================================================================
-// 🧠 RUNTIME STATE (program එක run වෙනකොට වෙනස් වන values ටික)
+// 🧠 RUNTIME STATE
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
@@ -108,7 +104,6 @@ async function getBotSettings(botNum) {
     let settings = await SettingsModel.findById(botNum).lean();
 
     if (!settings) {
-      console.log(`🍃 [${botNum}] Creating default database record...`);
       const created = await SettingsModel.create({ _id: botNum, ...DEFAULT_SETTINGS });
       settings = created.toObject();
     }
@@ -116,7 +111,6 @@ async function getBotSettings(botNum) {
     settingsCache.set(botNum, settings);
     return settings;
   } catch (e) {
-    console.error(`❌ Error loading settings for ${botNum}:`, e.message);
     return { ...DEFAULT_SETTINGS };
   }
 }
@@ -147,8 +141,6 @@ function loadCommandFile(cmdDir, file) {
 
     const cmdName = file.replace('.js', '').toLowerCase();
     registerCommandAliases(cmd, cmdName);
-
-    console.log(`✅ Loaded command: .${cmdName}`);
   } catch (e) {
     console.error(`❌ Error loading ${file}:`, e.message);
   }
@@ -295,7 +287,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION
+// 🔌 SOCKET CREATION (Logout & Anti-Ban Fix)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -305,19 +297,21 @@ async function createBaileysSocket(phoneNumber) {
 
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
+  // 🛠️ FIX 1: Browser Profile එක සහ Connection Settings නිවැරදි කිරීම (Ghost session logout වීම වැළැක්වීමට)
   const sock = makeWASocket({
     version,
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'),
+    browser: Browsers.macOS('Desktop'),
     msgRetryCounterCache,
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 30000,
-    keepAliveIntervalMs: 30000,
-    markOnlineOnConnect: false,
+    keepAliveIntervalMs: 25000,
+    markOnlineOnConnect: true, // WhatsApp backend session එක alive තබා ගැනීමට true විය යුතුය
+    emitOwnEvents: false,
     shouldIgnoreJid: () => false
   });
 
@@ -341,26 +335,26 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
 
   delete activeSessions[phoneNumber];
 
-  const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 401 && statusCode !== 403;
+  // 🛠️ FIX 2: නිකරුණේ Session Logout වීම වැළැක්වීම
+  const isPermanentLogout = statusCode === DisconnectReason.loggedOut;
 
-  if (shouldReconnect) {
-    setTimeout(() => initWhatsApp(phoneNumber), 5000);
+  if (!isPermanentLogout) {
+    console.log(`🔄 Reconnecting session for: ${phoneNumber}...`);
+    setTimeout(() => initWhatsApp(phoneNumber), 4000);
   } else {
-    console.log(`❌ Session logged out for: ${phoneNumber}`);
+    console.log(`❌ True session logout confirmed for: ${phoneNumber}`);
     if (typeof clearSessionData === 'function') await clearSessionData();
   }
 }
 
 async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
   await delay(2000);
-
   try {
     const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
     if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
       const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
       if (channelMeta?.id) {
         await sock.newsletterFollow(channelMeta.id);
-        console.log(`✅ [${phoneNumber}] Auto-followed Channel`);
       }
     }
   } catch (chErr) {}
@@ -369,7 +363,6 @@ async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
     const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X';
     if (typeof sock.groupAcceptInvite === 'function') {
       await sock.groupAcceptInvite(groupInviteCode);
-      console.log(`✅ [${phoneNumber}] Auto-joined Support Group`);
     }
   } catch (grpErr) {}
 }
@@ -411,8 +404,7 @@ async function sendConnectedMessageWithLogo(sock, botJid, message, logoData) {
 
     await sock.sendMessage(botJid, { image: imagePayload, caption: message });
   } catch (imgErr) {
-    console.error('Connected message logo send error, fallback to text:', imgErr.message);
-    await sock.sendMessage(botJid, { text: message });
+    await sock.sendMessage(botJid, { text: message }).catch(() => {});
   }
 }
 
@@ -440,11 +432,7 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
 
     await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
     clearSettingsCache(botNum);
-
-    console.log(`📬 First-time connect message successfully sent to: +${botNum}`);
-  } catch (msgErr) {
-    console.error('Initialization message error:', msgErr.message);
-  }
+  } catch (msgErr) {}
 }
 
 function handleConnectionOpen(sock, phoneNumber) {
@@ -553,7 +541,6 @@ function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
   return isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 }
 
-// 🛠️ FIX: Work Mode නිවැරදිව පරීක්ෂා කර සාමාන්‍ය users ලාව block කිරීම
 function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
   if (isAuthorized) return false;
 
@@ -651,7 +638,6 @@ async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply
   return true;
 }
 
-// 🛠️ FIX: Commands වලටත් Work Mode බලපාන බව තහවුරු කිරීම
 async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode) {
   const prefixMatch = text.match(/^[./!#]/);
   if (!prefixMatch) return false;
@@ -665,7 +651,6 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   if (isSettingsCmd && isGroup) return true;
   if (isSettingsCmd && !isOwner) return true;
 
-  // Work Mode අනුව commands ක්‍රියාත්මක වීම පාලනය
   if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
     return true;
   }
@@ -716,7 +701,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
-  // 1️⃣ Update channel post එකකට react කිරීම
   if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
     if (!msg.message.reactionMessage) {
       reactToChannelPost(sock, msg, chatJid);
@@ -731,24 +715,19 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
-  // 2️⃣ Auto presence
   if (!msg.key.fromMe) {
     simulateAutoPresence(sock, chatJid, settings);
   }
 
-  // 3️⃣ Status broadcast
   if (chatJid === 'status@broadcast') {
     await handleStatusBroadcast(sock, msg, settings);
     return;
   }
 
-  // 4️⃣ Sender හඳුනාගැනීම
   const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
   const resolvedSender = await resolveLidToRealJid(sock, originalSender);
-
   const isOwner = checkIsOwner(originalSender, resolvedSender);
 
-  // 5️⃣ Owner React
   if (isOwner && !msg.key.fromMe) {
     reactToOwnerMessage(sock, chatJid, msg.key, settings);
   }
@@ -757,12 +736,10 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
   const currentMode = settings.workMode || 'public';
 
-  // 6️⃣ Work mode අනුව unauthorized සාමාන්‍ය users ලාව සම්පූර්ණයෙන්ම drop කිරීම
   if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
     return;
   }
 
-  // 7️⃣ Text extract කිරීම
   const rawMsg = unwrapMessageContent(msg.message);
   const text = extractMessageText(rawMsg);
   if (!text) return;
@@ -772,7 +749,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const safeReply = buildSafeReply(sock, chatJid, msg);
   const cleanInput = text.toLowerCase().trim();
 
-  // 8️⃣ Settings menu reply (Owner ට පමණි)
   const settingsOption = isSettingsMenuOption(cleanInput);
   const quotedCaption = extractQuotedCaption(quotedMsgObj);
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
@@ -782,7 +758,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     if (handled) return;
   }
 
-  // 9️⃣ Status save keywords
   const statusKeywords = [
     'oni', 'ඕනි', 'ඕනෙ', 'one',
     'dapan', 'දාපන්', 'dapn',
@@ -798,11 +773,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🔟 Commands execute කිරීම
   const commandHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode);
   if (commandHandled) return;
 
-  // 1️⃣1️⃣ AI Inbox auto-reply
   const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
   const isNumericOnly = /^[0-9]+$/.test(cleanInput);
 
@@ -811,7 +784,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   }
 }
 
-// 🛠️ FIX: Message Upsert Non-blocking කර බොට්ගේ වේගය (Speed) උපරිම කිරීම
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (!messages || !messages.length) return;
@@ -821,10 +793,7 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
       if (type !== 'notify' && !jid.endsWith('@newsletter') && jid !== UPDATE_CHANNEL_JID && !msg.key?.fromMe) {
         continue;
       }
-      // loop එක හිර නොවී ක්ෂණිකව background එකේ process වීමට async execution
-      processSingleMessage(sock, msg, phoneNumber).catch(err => {
-        console.error('Message processing error:', err.message);
-      });
+      processSingleMessage(sock, msg, phoneNumber).catch(() => {});
     }
   });
 }
@@ -855,7 +824,7 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP ROUTES
+// 🌐 HTTP ROUTES (Pairing Fix)
 // ============================================================================
 
 function stopAndRemoveSession(num) {
@@ -901,6 +870,7 @@ function registerResetSingleNumberRoute(app) {
   });
 }
 
+// 🛠️ FIX 3: Pairing Code එක සාර්ථකව සහ ක්ෂණිකව Generate කරගැනීම
 function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
@@ -908,31 +878,30 @@ function registerPairRoute(app) {
     num = num.replace(/[^0-9]/g, '');
 
     try {
+      // ක්‍රියාත්මක වෙමින් පවතින socket එකක් තිබේ නම් ආරක්ෂිතව නවතමු
       stopAndRemoveSession(num);
-      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
 
+      // Session reset එකක් සිදුකරන්නේ creds නැති විට පමණි
+      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
       await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
       clearSettingsCache(num);
 
       const sock = await initWhatsApp(num);
       if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
 
-      await delay(4000);
+      // WebSocket handshake සඳහා සුළු විරාමයක්
+      await delay(3000);
 
       if (!sock.authState.creds.registered) {
-        const rawCode = await Promise.race([
-          sock.requestPairingCode(num),
-          new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 25000))
-        ]);
-
-        const formattedCode = rawCode?.match(/.{1,4}/g)?.join('-') || rawCode;
-        return res.json({ code: formattedCode });
+        let code = await sock.requestPairingCode(num);
+        code = code?.match(/.{1,4}/g)?.join('-') || code;
+        return res.json({ code });
       } else {
-        return res.status(400).json({ error: 'This number is already linked!' });
+        return res.status(400).json({ error: 'This number is already registered!' });
       }
     } catch (err) {
-      console.error('Pairing Error:', err);
-      return res.status(500).json({ error: 'Pairing failed or WhatsApp rate-limited. Please wait 1 minute and retry.' });
+      console.error('Pairing Route Error:', err);
+      return res.status(500).json({ error: 'Pairing failed. Wait 30 seconds and retry.' });
     }
   });
 }
@@ -964,12 +933,15 @@ function startKeepAlivePing() {
 // ============================================================================
 
 async function reconnectAllSavedSessions() {
-  const sessions = await Auth.find({ _id: /-creds$/ }).lean();
-
-  for (const session of sessions) {
-    const pNumber = session._id.split('-creds')[0];
-    await initWhatsApp(pNumber);
-    await delay(3000);
+  try {
+    const sessions = await Auth.find({ _id: /-creds$/ }).lean();
+    for (const session of sessions) {
+      const pNumber = session._id.split('-creds')[0];
+      await initWhatsApp(pNumber);
+      await delay(4000);
+    }
+  } catch (e) {
+    console.error('Error reconnecting sessions:', e.message);
   }
 }
 
