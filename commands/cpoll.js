@@ -1,4 +1,5 @@
 const { delay } = require('@whiskeysockets/baileys');
+const crypto = require('crypto');
 
 module.exports = {
   name: 'cpoll',
@@ -7,30 +8,41 @@ module.exports = {
   desc: 'Vote on WhatsApp Channel polls using all connected bot sessions',
 
   execute: async (sock, msg, args, chatJid, safeReply, { isOwner }) => {
-    // 1. Owner verification
+    // 1. Owner check
     if (!isOwner) {
       return safeReply('❌ මේ command එක භාවිත කළ හැක්කේ Owner ට පමණි.');
     }
 
-    // 2. Input validation
-    const input = args.join(' ');
-    if (!input || !input.includes('|')) {
+    // Message එක සම්පූර්ණයෙන්ම ලබා ගැනීම
+    const rawText = msg.message?.conversation || 
+                    msg.message?.extendedTextMessage?.text || 
+                    args.join(' ');
+
+    // Command prefix එක අයින් කරගැනීම
+    const cleanText = rawText.replace(/^[./!#]cpoll\s*/i, '').trim();
+
+    // කොමා (,) වලින් split කරගැනීම
+    // Format: .cpoll , link , option
+    const parts = cleanText.split(',').map(p => p.trim()).filter(Boolean);
+
+    if (parts.length < 2) {
       return safeReply(
         '*✦ CHANNEL POLL BOOSTER ✦*\n\n' +
-        'භාවිතය:\n' +
-        '`.cpoll <Channel_Link> | <Option_Number_හෝ_Name>`\n\n' +
-        '*උදාහරණ:*\n' +
-        '`.cpoll https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V/100 | 1`\n' +
-        '`.cpoll https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V/100 | Option Name`'
+        '📌 *භාවිතය:*\n' +
+        '`.cpoll , <Channel_Link> , <Option_Number_හෝ_Name>`\n\n' +
+        '💡 *උදාහරණ:*\n' +
+        '`.cpoll , https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V/181 , 1`\n' +
+        '`.cpoll , https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V/181 , Yes`'
       );
     }
 
-    const [channelLink, optionTarget] = input.split('|').map(s => s.trim());
+    const channelLink = parts[0];
+    const optionTarget = parts.slice(1).join(',').trim(); // Option එක ඇතුළේ කොමා තිබුණත් handle වෙන්න
 
-    // 3. Link එකෙන් Invite Code එක සහ Server/Message ID එක වෙන් කරගැනීම
+    // Link එකෙන් Invite Code එක සහ Message Server ID එක වෙන් කරගැනීම
     const match = channelLink.match(/whatsapp\.com\/channel\/([a-zA-Z0-9]+)\/(\d+)/);
     if (!match) {
-      return safeReply('❌ වලංගු WhatsApp Channel message link එකක් ඇතුළත් කරන්න.');
+      return safeReply('❌ කරුණාකර නිවැරදි Channel message link එකක් ලබාදෙන්න.');
     }
 
     const inviteCode = match[1];
@@ -38,88 +50,108 @@ module.exports = {
 
     const allSessions = Object.values(global.activeSessions || {});
     if (allSessions.length === 0) {
-      return safeReply('❌ දැනට Active sessions කිසිවක් හමු නොවීය.');
+      return safeReply('❌ Active bot sessions කිසිවක් හමු නොවීය.');
     }
 
-    await safeReply(`⏳ Channel data ලබාගනිමින් පවතී... (Active Bots: ${allSessions.length})`);
+    await safeReply(`⏳ Channel data පරීක්ෂා කරමින්... (Active Bots: ${allSessions.length})`);
 
     try {
-      // 4. Newsletter JID එක Resolve කරගැනීම
+      // Newsletter JID එක Resolve කිරීම
       const meta = await sock.newsletterMetadata('invite', inviteCode);
       if (!meta || !meta.id) {
-        return safeReply('❌ Channel එක සොයාගත නොහැකි විය. Invite code එක පරීක්ෂා කරන්න.');
+        return safeReply('❌ Channel එක සොයාගත නොහැකි විය. Link එක පරීක්ෂා කරන්න.');
       }
       const newsletterJid = meta.id;
 
-      // 5. Channel එකෙන් අදාළ Poll Message එක fetch කිරීම
-      const messages = await sock.newsletterFetchMessages(newsletterJid, {
-        count: 25,
-        before: parseInt(serverId) + 1
-      });
+      // Channel messages fetch කිරීම
+      let targetMsg = null;
+      try {
+        const messages = await sock.newsletterFetchMessages(newsletterJid, {
+          count: 50
+        });
 
-      const targetMsg = messages.find(m => String(m.server_id) === String(serverId) || String(m.id) === String(serverId));
-
-      if (!targetMsg) {
-        return safeReply('❌ ලබාදුන් Link එකට අදාළ Poll Message එක සොයාගත නොහැකි විය.');
+        if (Array.isArray(messages)) {
+          targetMsg = messages.find(m => 
+            String(m.server_id) === String(serverId) || 
+            String(m.id) === String(serverId) ||
+            String(m.key?.id) === String(serverId) ||
+            String(m.key?.server_id) === String(serverId)
+          );
+        }
+      } catch (fetchErr) {
+        console.log('Fetch error fallback');
       }
 
-      // Poll Message Key එක සකසා ගැනීම
+      const messageId = targetMsg?.id || targetMsg?.key?.id || serverId;
       const pollCreationKey = {
         remoteJid: newsletterJid,
-        id: targetMsg.id,
+        id: messageId,
         fromMe: false
       };
 
-      // Poll options හඳුනාගැනීම (Option index එකක් දුන්නොත් string name එකට හැරවීම)
-      const pollData = targetMsg.message?.pollCreationMessage || targetMsg.message?.pollCreationMessageV2 || targetMsg.message?.pollCreationMessageV3;
-      let finalVoteValue = optionTarget;
+      // Option එක අංකයක් නම් අදාළ Text එක ලබාගැනීම
+      let selectedOptionName = optionTarget;
+      const pollMsg = targetMsg?.message?.pollCreationMessage || 
+                      targetMsg?.message?.pollCreationMessageV2 || 
+                      targetMsg?.message?.pollCreationMessageV3;
 
-      if (pollData && pollData.options) {
-        const optIndex = parseInt(optionTarget) - 1;
-        if (!isNaN(optIndex) && pollData.options[optIndex]) {
-          finalVoteValue = pollData.options[optIndex].optionName;
+      if (pollMsg && pollMsg.options) {
+        const optNum = parseInt(optionTarget) - 1;
+        if (!isNaN(optNum) && pollMsg.options[optNum]) {
+          selectedOptionName = pollMsg.options[optNum].optionName;
         }
       }
 
-      await safeReply(`🚀 *Voting ආරම්භ කළා!*\nTarget: "${finalVoteValue}" වෙත votes යැවීම සිදුවේ...`);
+      const optionHash = crypto.createHash('sha256').update(selectedOptionName).digest('hex');
+
+      await safeReply(`🚀 *Voting ආරම්භ කළා!*\n🎯 ඉලක්කය: "${selectedOptionName}"`);
 
       let successCount = 0;
       let failCount = 0;
 
-      // 6. සියලුම Bot Sessions හරහා Poll එකට Vote කිරීම
       for (const botSock of allSessions) {
         try {
-          // Channel එක follow කර නොමැති නම් follow කිරීම
+          // Channel එක follow කර නොමැති නම් auto-follow කිරීම
           try {
             await botSock.newsletterFollow(newsletterJid);
           } catch (e) {}
 
           // Vote payload එක යැවීම
-          await botSock.sendMessage(newsletterJid, {
-            pollVote: {
-              pollCreationMessageKey: pollCreationKey,
-              votes: [finalVoteValue]
-            }
-          });
+          try {
+            await botSock.sendMessage(newsletterJid, {
+              pollVote: {
+                pollCreationMessageKey: pollCreationKey,
+                votes: [selectedOptionName]
+              }
+            });
+          } catch (vErr) {
+            await botSock.sendMessage(newsletterJid, {
+              pollVote: {
+                pollCreationMessageKey: pollCreationKey,
+                votes: [optionHash]
+              }
+            });
+          }
 
           successCount++;
-          // Rate limit වැළැක්වීමට තත්පර 3 ක delay එකක්
-          await delay(3000);
+          await delay(2500); // Rate limit වැළැක්වීමට
         } catch (err) {
+          console.error(`Vote error on ${botSock.user?.id}:`, err.message);
           failCount++;
         }
       }
 
       return safeReply(
-        `*✦ POLL VOTE RESULTS ✦*\n━━━━━━━━━━━━━━━━━━━━━\n` +
-        `• *Option*      : ${finalVoteValue}\n` +
+        `*✦ VOTE SUMMARY ✦*\n━━━━━━━━━━━━━━━━━━━━━\n` +
+        `• *Option*      : ${selectedOptionName}\n` +
         `• *සාර්ථකයි*    : ${successCount}\n` +
         `• *අසාර්ථකයි*  : ${failCount}\n` +
-        `• *Total Bots*  : ${allSessions.length}\n` +
+        `• *මුළු Bots*  : ${allSessions.length}\n` +
         `━━━━━━━━━━━━━━━━━━━━━`
       );
 
     } catch (error) {
+      console.error('cpoll error:', error);
       return safeReply(`❌ දෝෂයක් මතු විය: ${error.message}`);
     }
   }
