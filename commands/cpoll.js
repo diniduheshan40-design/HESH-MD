@@ -45,10 +45,10 @@ module.exports = {
       return safeReply('❌ Active bot sessions කිසිවක් හමු නොවීය.');
     }
 
-    await safeReply(`⏳ Channel data ලබාගනිමින්... (Active Bots: ${allSessions.length})`);
+    await safeReply(`⏳ Channel data පරීක්ෂා කරමින්... (Active Bots: ${allSessions.length})`);
 
     try {
-      // 1. Channel JID ලබාගැනීම
+      // 1. Channel JID එක ලබාගැනීම
       let newsletterJid = null;
       if (typeof sock.newsletterMetadata === 'function') {
         const meta = await sock.newsletterMetadata('invite', inviteCode).catch(() => null);
@@ -80,66 +80,94 @@ module.exports = {
       }
 
       if (!newsletterJid) {
-        return safeReply('❌ Channel එක සොයාගත නොහැකි විය.');
+        return safeReply('❌ Channel එක සොයාගත නොහැකි විය. Invite code එක පරීක්ෂා කරන්න.');
       }
 
-      await safeReply(`🚀 *Voting ආරම්භ කළා!*\n🎯 Channel: ${newsletterJid}\n🎯 Option: "${optionTarget}"`);
+      // 2. Channel එකෙන් Poll Message එක සහ එහි Hash Keys ලබාගැනීම
+      let targetMsg = null;
+      if (typeof sock.newsletterFetchMessages === 'function') {
+        try {
+          const fetched = await sock.newsletterFetchMessages(newsletterJid, { count: 30 });
+          if (Array.isArray(fetched)) {
+            targetMsg = fetched.find(m => String(m.server_id) === String(serverId) || String(m.id) === String(serverId));
+          }
+        } catch (e) {}
+      }
 
-      // Option එක Hash කරගැනීම (Channel Poll වලට SHA-256 hash එක අවශ්‍ය වේ)
-      const optionHash = crypto.createHash('sha256').update(optionTarget.trim()).digest('hex');
+      // Poll Creation Key සකස් කිරීම
+      const msgId = targetMsg?.id || serverId;
+      const pollCreationKey = {
+        remoteJid: newsletterJid,
+        id: msgId,
+        fromMe: false
+      };
+
+      // Option Name හඳුනාගැනීම සහ SHA256 Hash එක හැදීම
+      let optionName = optionTarget;
+      const pollData = targetMsg?.message?.pollCreationMessage || 
+                      targetMsg?.message?.pollCreationMessageV2 || 
+                      targetMsg?.message?.pollCreationMessageV3;
+
+      if (pollData && pollData.options) {
+        const optNum = parseInt(optionTarget) - 1;
+        if (!isNaN(optNum) && pollData.options[optNum]) {
+          optionName = pollData.options[optNum].optionName;
+        }
+      }
+
+      const optionHashHex = crypto.createHash('sha256').update(optionName.trim()).digest('hex');
+      const optionHashBuffer = Buffer.from(optionHashHex, 'hex');
+
+      await safeReply(`🚀 *Voting ආරම්භ කළා!*\n🎯 Option: "${optionName}" වෙත active bots ලාගෙන් vote යවමින් පවතී...`);
 
       let successCount = 0;
       let failCount = 0;
 
-      // 2. Bots ලා ඔක්කොම හරහා Channel Query එකක් ලෙස Vote එක යැවීම
+      // 3. සියලුම Bots ලාගෙන් Vote එක Relay කිරීම
       for (const botSock of allSessions) {
         try {
-          // Channel එක auto-follow කිරීම
+          // Channel එක Follow කර නැත්නම් Follow කරවීම
           try {
             if (typeof botSock.newsletterFollow === 'function') {
               await botSock.newsletterFollow(newsletterJid);
             }
           } catch (e) {}
 
-          // Protocol Method 1: Newsletter Action IQ Query
-          let voted = false;
+          let hasVoted = false;
+
+          // ක්‍රමය A: WhatsApp Native PollUpdateMessage Relay (වඩාත්ම සාර්ථක ක්‍රමය)
           try {
-            await botSock.query({
-              tag: 'message',
-              attrs: {
-                to: newsletterJid,
-                type: 'poll',
-                id: botSock.generateMessageTag ? botSock.generateMessageTag() : `${Date.now()}`
-              },
-              content: [{
-                tag: 'poll_vote',
-                attrs: {
-                  server_id: serverId,
-                  option: optionHash
-                }
-              }]
-            });
-            voted = true;
-          } catch (iqErr) {
-            // IQ fail වුණොත් fallback payload එක
             await botSock.relayMessage(newsletterJid, {
               pollUpdateMessage: {
-                pollCreationMessageKey: {
-                  remoteJid: newsletterJid,
-                  id: serverId,
-                  fromMe: false
-                },
+                pollCreationMessageKey: pollCreationKey,
                 vote: {
-                  selectedOptions: [Buffer.from(optionHash, 'hex')]
+                  selectedOptions: [optionHashBuffer]
                 },
                 senderTimestampMs: Date.now()
               }
-            }, {});
-            voted = true;
+            }, { messageId: botSock.generateMessageTag ? botSock.generateMessageTag() : `${Date.now()}` });
+            hasVoted = true;
+          } catch (errA) {
+            // ක්‍රමය B: Standard PollVote Fallback
+            try {
+              await botSock.sendMessage(newsletterJid, {
+                pollVote: {
+                  pollCreationMessageKey: pollCreationKey,
+                  votes: [optionName]
+                }
+              });
+              hasVoted = true;
+            } catch (errB) {}
           }
 
-          if (voted) successCount++;
-          await delay(2500);
+          if (hasVoted) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+
+          // Spam filters වලට අහු නොවෙන්න තත්පර 2 ක delay එකක්
+          await delay(2000);
         } catch (err) {
           failCount++;
         }
@@ -147,7 +175,7 @@ module.exports = {
 
       return safeReply(
         `*✦ VOTE SUMMARY ✦*\n━━━━━━━━━━━━━━━━━━━━━\n` +
-        `• *Option*      : ${optionTarget}\n` +
+        `• *Target*      : ${optionName}\n` +
         `• *සාර්ථකයි*    : ${successCount}\n` +
         `• *අසාර්ථකයි*  : ${failCount}\n` +
         `• *මුළු Bots*  : ${allSessions.length}\n` +
