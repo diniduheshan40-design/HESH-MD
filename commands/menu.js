@@ -11,13 +11,22 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// Local Image Buffer එක ලබා ගැනීම
+// 🛡️ 100% Solid Logo Finder (DB හෝ Catbox මත depend නොවේ)
 function getBotLogo() {
-    const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
+    // 1. commands folder එකෙන් එළියේ තියෙන logo.jpg කියවීම
+    const localLogoPath = path.join(__dirname, '../logo.jpg');
     if (fs.existsSync(localLogoPath)) {
         return fs.readFileSync(localLogoPath);
     }
-    return { url: 'https://files.catbox.moe/a58add.jpeg' };
+    
+    // 2. Root එකේ බැලීම
+    const rootPath = path.join(process.cwd(), 'logo.jpg');
+    if (fs.existsSync(rootPath)) {
+        return fs.readFileSync(rootPath);
+    }
+
+    // 3. GitHub එකේ තියෙන Direct Raw Image Link එක (කවදාවත් fail වෙන්නේ නැත)
+    return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
 
 module.exports = {
@@ -58,10 +67,10 @@ module.exports = {
     try {
       await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
-      const logoBuffer = getBotLogo();
+      const logo = getBotLogo();
 
       const sentMenu = await sock.sendMessage(targetChat, {
-          image: logoBuffer,
+          image: logo,
           caption: mainText,
           mimetype: 'image/jpeg'
       }, { quoted: msg });
@@ -133,7 +142,6 @@ module.exports = {
           if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
 
           const contextInfo = msgContent.extendedTextMessage?.contextInfo;
-          // Menu එකට Quote කර එවන reply එකක්ම විය යුතුය
           if (!contextInfo || contextInfo.stanzaId !== menuMessageId) return;
 
           const replyText = (
@@ -148,11 +156,8 @@ module.exports = {
             const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
             await sock.sendMessage(targetChat, { react: { text: emojis[replyText], key: replyMsg.key } }).catch(() => {});
 
-            // Sub-menu එකටත් Logo Image Buffer එක යැවීම
-            const subLogoBuffer = getBotLogo();
-
             await sock.sendMessage(targetChat, { 
-              image: subLogoBuffer,
+              image: getBotLogo(),
               caption: subMenus[replyText],
               mimetype: 'image/jpeg'
             }, { quoted: replyMsg }).catch(async () => {
@@ -160,7 +165,7 @@ module.exports = {
             });
           }
         } catch (e) {
-          console.error("Menu Reply Listener Error:", e.message);
+          console.error("Menu Reply Error:", e.message);
         }
       };
 
