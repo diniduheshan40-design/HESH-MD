@@ -35,7 +35,6 @@ module.exports = {
 
       // ඉතිරි අකුරු එකින් එක edit කිරීම
       for (let i = 1; i < chars.length; i++) {
-        // WhatsApp rate limit එකට හසු නොවීමට 850ms delay එකක් ලබාදෙයි
         await sleep(850);
         currentProgress += chars[i];
 
@@ -48,7 +47,6 @@ module.exports = {
             edit: animMsg.key 
           });
         } catch (editErr) {
-          // Request එකක් drop වුණොත් තත්පරයක් රැඳී නැවත try කරයි
           await sleep(1000);
           await sock.sendMessage(targetChat, { 
             text: `*👑 ARCHITECT :* ${currentProgress}${cursor}`, 
@@ -76,7 +74,7 @@ module.exports = {
 ╰──────────────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
 
-      // 4. Photo Buffer ලබා ගැනීම
+      // 4. Photo Buffer ලබා ගැනීම (ඔයාගේ Catbox Link එක)
       let imgPayload = null;
       const localPhotoPath = path.join(process.cwd(), 'owner.jpg');
 
@@ -84,7 +82,7 @@ module.exports = {
         imgPayload = fs.readFileSync(localPhotoPath);
       } else {
         try {
-          const res = await fetch('https://files.catbox.moe/qlulrw.jpeg', { timeout: 6000 });
+          const res = await fetch('https://files.catbox.moe/0fmhj2.jpeg', { timeout: 8000 });
           if (res.ok) imgPayload = await res.buffer();
         } catch (e) {}
       }
@@ -99,7 +97,7 @@ module.exports = {
         await sock.sendMessage(targetChat, { text: profileCaption }, { quoted: msg });
       }
 
-      // 6. Zero-Comma Clean Structured Contact Card
+      // 6. Structured Contact Card
       const vcard = 'BEGIN:VCARD\n'
         + 'VERSION:3.0\n'
         + `FN:${ownerName} ${ownerCrown}\n`
