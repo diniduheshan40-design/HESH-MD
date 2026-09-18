@@ -83,7 +83,7 @@ module.exports = {
   description: 'Manage individual bot settings',
   async execute(sock, msg, args, chatJid, safeReply, { isOwner }) {
     if (!isOwner) {
-      return await safeReply('⛔ *Access Denied!* Only Owner can modify settings.');
+      return await safeReply('⛔ *Access Denied!* Only Bot Controller can modify settings.');
     }
 
     const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
@@ -235,7 +235,7 @@ module.exports = {
 │
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option අංකය කෙලින්ම Reply කරන්න (උදා: *6.1* හෝ *6.2*)
+• අදාළ Option අංකය කෙලින්ම Reply කරන්න (උදා: *3.1* හෝ *4.1*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
