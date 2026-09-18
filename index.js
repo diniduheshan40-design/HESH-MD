@@ -17,7 +17,7 @@ const {
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
-// 🛡️ Global Crash Guards (Process එක වැටෙන්නේ නැති වෙන්න)
+// 🛡️ Global Crash Protection
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err?.message || err);
 });
@@ -36,7 +36,14 @@ const { askAI } = require('./ai');
 
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
-const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
+
+function getLocalLogoBuffer() {
+  const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
+  if (fs.existsSync(localLogoPath)) {
+    return fs.readFileSync(localLogoPath);
+  }
+  return { url: 'https://files.catbox.moe/a58add.jpeg' };
+}
 
 const REAL_OWNER_NUMBER = '94719845166';
 const OWNER_NUMBERS = [
@@ -56,7 +63,7 @@ const DEFAULT_SETTINGS = {
   statusReactEmoji: '💐',
   ownerReact: true,
   ownerReactEmoji: '👑',
-  botLogo: DEFAULT_BACKUP_LOGO,
+  botLogo: './assets/logo.jpg',
   autoPresence: 'off',
   securityPin: '1234',
   isFirstConnectDone: false
@@ -593,10 +600,10 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
     const currentSettings = await getBotSettings(botNum);
     if (currentSettings.isFirstConnectDone) return;
 
-    const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
+    const logoBuffer = getLocalLogoBuffer();
     const connectedMsg = buildConnectedMessage(botNum);
 
-    await sock.sendMessage(botJid, { image: { url: sessionLogo }, caption: connectedMsg }).catch(() => {
+    await sock.sendMessage(botJid, { image: logoBuffer, caption: connectedMsg, mimetype: 'image/jpeg' }).catch(() => {
       sock.sendMessage(botJid, { text: connectedMsg }).catch(() => {});
     });
 
@@ -895,7 +902,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const safeReply = buildSafeReply(sock, chatJid, msg);
   const cleanInput = text.toLowerCase().trim();
 
-  // 🛡️ CRITICAL FIX: Settings trigger වෙන්නේ Settings menu එකට quote කරලා reply එකක් දුන්නොත් පමණි!
+  // 🛡️ CRITICAL FIX: Settings command එක run වෙන්නේ Settings message එකට quote කර reply කළොත් පමණි!
   const quotedCaption = extractQuotedCaption(quotedMsgObj);
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
   const settingsOption = isSettingsMenuOption(cleanInput);
@@ -917,8 +924,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   if (commandHandled) return;
 
   const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
-  const isNumericOnly = /^[0-9]+$/.test(cleanInput);
+  const isNumericOnly = /^[0-9.]+$/.test(cleanInput);
 
+  // ඉලක්කම් පමණක් ඇති replies AI Inbox එකෙන් drop වීම වළක්වයි
   if (!isSelfBotMsg && !isGroup && settings.autoAiInbox && !isNumericOnly) {
     await handleAutoAiReply(sock, chatJid, text, safeReply);
   }
