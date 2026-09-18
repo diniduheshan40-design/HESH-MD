@@ -173,7 +173,7 @@ function getCommandExecutor(cmd) {
 }
 
 // ============================================================================
-// 🌐 WEB PORTAL
+// 🌐 WEB PORTAL (UI එකට Clean Button එක සහිතව)
 // ============================================================================
 
 function renderPortalHtml(botName) {
@@ -287,7 +287,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION (Logout & Anti-Ban Fix)
+// 🔌 SOCKET CREATION
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -297,7 +297,6 @@ async function createBaileysSocket(phoneNumber) {
 
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
-  // 🛠️ FIX 1: Browser Profile එක සහ Connection Settings නිවැරදි කිරීම (Ghost session logout වීම වැළැක්වීමට)
   const sock = makeWASocket({
     version,
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
@@ -310,7 +309,7 @@ async function createBaileysSocket(phoneNumber) {
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 30000,
     keepAliveIntervalMs: 25000,
-    markOnlineOnConnect: true, // WhatsApp backend session එක alive තබා ගැනීමට true විය යුතුය
+    markOnlineOnConnect: true,
     emitOwnEvents: false,
     shouldIgnoreJid: () => false
   });
@@ -335,11 +334,9 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
 
   delete activeSessions[phoneNumber];
 
-  // 🛠️ FIX 2: නිකරුණේ Session Logout වීම වැළැක්වීම
   const isPermanentLogout = statusCode === DisconnectReason.loggedOut;
 
   if (!isPermanentLogout) {
-    console.log(`🔄 Reconnecting session for: ${phoneNumber}...`);
     setTimeout(() => initWhatsApp(phoneNumber), 4000);
   } else {
     console.log(`❌ True session logout confirmed for: ${phoneNumber}`);
@@ -824,7 +821,7 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP ROUTES (Pairing Fix)
+// 🌐 HTTP ROUTES (Already Registered Error එක Fix කළ Pairing Route)
 // ============================================================================
 
 function stopAndRemoveSession(num) {
@@ -870,7 +867,7 @@ function registerResetSingleNumberRoute(app) {
   });
 }
 
-// 🛠️ FIX 3: Pairing Code එක සාර්ථකව සහ ක්ෂණිකව Generate කරගැනීම
+// 🛠️ FIX: අලුතින් Code එකක් ඉල්ලන විට පෙර තිබූ හිරවුණු session එක auto-clear කර code එක ලබාදීම
 function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
@@ -878,10 +875,9 @@ function registerPairRoute(app) {
     num = num.replace(/[^0-9]/g, '');
 
     try {
-      // ක්‍රියාත්මක වෙමින් පවතින socket එකක් තිබේ නම් ආරක්ෂිතව නවතමු
       stopAndRemoveSession(num);
 
-      // Session reset එකක් සිදුකරන්නේ creds නැති විට පමණි
+      // පැරණි session creds ඉවත් කර නව handshake එකක් ආරම්භ කිරීම
       await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
       await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
       clearSettingsCache(num);
@@ -889,19 +885,26 @@ function registerPairRoute(app) {
       const sock = await initWhatsApp(num);
       if (!sock) return res.status(500).json({ error: 'Failed to initialize socket' });
 
-      // WebSocket handshake සඳහා සුළු විරාමයක්
-      await delay(3000);
+      await delay(3500);
 
+      // අංකය connect වී නොමැති නම් පමණක් code එක ලබාගැනීම
       if (!sock.authState.creds.registered) {
-        let code = await sock.requestPairingCode(num);
+        let code = await Promise.race([
+          sock.requestPairingCode(num),
+          new Promise((_, r) => setTimeout(() => r(new Error('Timeout')), 25000))
+        ]);
+
         code = code?.match(/.{1,4}/g)?.join('-') || code;
         return res.json({ code });
       } else {
-        return res.status(400).json({ error: 'This number is already registered!' });
+        // ලියාපදිංචි වී ඇතැයි පැවසුවහොත් session එක clean කර නැවත retry කිරීමට මඟ පෙන්වීම
+        await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+        stopAndRemoveSession(num);
+        return res.status(400).json({ error: 'Session reset! Please click GENERATE PAIR CODE again.' });
       }
     } catch (err) {
-      console.error('Pairing Route Error:', err);
-      return res.status(500).json({ error: 'Pairing failed. Wait 30 seconds and retry.' });
+      console.error('Pairing Error:', err);
+      return res.status(500).json({ error: 'Pairing failed. Please wait 15 seconds and retry.' });
     }
   });
 }
