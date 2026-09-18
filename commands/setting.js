@@ -36,11 +36,11 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
     let initialMsg = await sock.sendMessage(chatJid, { text: loadingFrames[0] }, { quoted: quotedMsg });
 
     for (let i = 1; i < loadingFrames.length; i++) {
-      await sleep(150);
+      await sleep(100);
       await sock.sendMessage(chatJid, { text: loadingFrames[i], edit: initialMsg.key }).catch(() => {});
     }
 
-    await sleep(150);
+    await sleep(100);
     await sock.sendMessage(chatJid, { text: finalContent, edit: initialMsg.key }).catch(async () => {
       await sock.sendMessage(chatJid, { text: finalContent }, { quoted: quotedMsg });
     });
@@ -50,7 +50,6 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
 }
 
 async function getBannerForBot(botNum, settings) {
-  // 1. Local storage එකේ file එක තියෙනවා නම් direct read කරනවා
   const specificLogo = path.join(process.cwd(), `logo_${botNum}.jpg`);
   if (fs.existsSync(specificLogo)) {
     try {
@@ -58,7 +57,6 @@ async function getBannerForBot(botNum, settings) {
     } catch (e) {}
   }
 
-  // 2. Database එකෙන් Base64 data URI හෝ URL එක හරහා load කරගන්නවා (Restart-proof)
   if (settings && settings.botLogo) {
     if (settings.botLogo.startsWith('data:image')) {
       try {
@@ -96,14 +94,14 @@ module.exports = {
       settings = await SettingsModel.create({ _id: botNumber });
     }
 
-    // Input Resolution (Direct Command or Reply to Menu)
+    // Input Resolution
     const rawMsg = msg.message?.conversation || 
                    msg.message?.extendedTextMessage?.text || 
                    '';
                    
     let fullInput = (args && args.length > 0 ? args.join(' ') : rawMsg).trim().toLowerCase();
 
-    // Remove command prefixes if present (e.g., '.set 1.1' -> '1.1')
+    // Command prefix ඉවත් කිරීම (උදා: '.set 1.1' -> '1.1')
     fullInput = fullInput.replace(/^[./!#]?(settings|setting|set|config)\s*/i, '').trim();
 
     let isUpdated = false;
@@ -156,20 +154,22 @@ module.exports = {
     // Database Update & Cache Eviction
     if (isUpdated) {
       await settings.save();
-      if (global.clearSettingsCache) global.clearSettingsCache(botNumber);
+      if (typeof global.clearSettingsCache === 'function') {
+        global.clearSettingsCache(botNumber);
+      }
 
       const modeBadge = {
         public: 'PUBLIC 🌐',
         private: 'PRIVATE 🔒',
         inbox: 'INBOX 📥',
         groups: 'GROUPS 👥'
-      }[settings.workMode || 'public'];
+      }[settings.workMode || 'public'] || 'PUBLIC 🌐';
 
       const presenceBadge = {
         typing: 'TYPING ✍️',
         recording: 'RECORDING 🎙️',
         off: 'OFF 🔴'
-      }[settings.autoPresence || 'off'];
+      }[settings.autoPresence || 'off'] || 'OFF 🔴';
 
       return await applyWithLoader(
         sock, 
