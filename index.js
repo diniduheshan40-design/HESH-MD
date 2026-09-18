@@ -469,7 +469,6 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 // 💬 MESSAGE HANDLING HELPERS
 // ============================================================================
 
-// Channel posts වලට bots ලා හැමෝම එකිනෙකට rate-limit නොවී react කිරීම
 async function reactToChannelPost(sock, msg, chatJid) {
   try {
     const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
@@ -530,19 +529,16 @@ async function resolveLidToRealJid(sock, originalSender) {
   }
 }
 
-// JID හෝ LID එකක් OWNER_NUMBERS ලැයිස්තුවේ අඩංගුදැයි බැලීම
 function isOwnerJid(jid) {
   if (!jid) return false;
   const str = String(jid);
   return OWNER_NUMBERS.some(owner => str.includes(owner));
 }
 
-// 🛠️ සැබෑ sender පමණක් Owner ද යන්න තහවුරු කිරීම (bot user හට react නොවීමට fromMe හෝ quote contextSender මගහරිමු)
 function checkIsOwner(originalSender, resolvedSender) {
   return isOwnerJid(originalSender) || isOwnerJid(resolvedSender);
 }
 
-// Owner මැසේජ් එකක් නම් පමණක් react කිරීම
 function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
   if (!settings.ownerReact) return;
 
@@ -553,16 +549,21 @@ function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
   }, 600);
 }
 
-// Bot commands පාලනය කිරීමට bot owner ට හෝ bot user ට අවසර දීම
 function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
   return isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 }
 
+// 🛠️ FIX: Work Mode නිවැරදිව පරීක්ෂා කර සාමාන්‍ය users ලාව block කිරීම
 function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
   if (isAuthorized) return false;
-  if (workMode === 'private') return true;
-  if (workMode === 'inbox' && isGroup) return true;
-  if (workMode === 'groups' && !isGroup) return true;
+
+  const mode = String(workMode || 'public').toLowerCase().trim();
+
+  if (mode === 'public') return false;
+  if (mode === 'private' || mode === 'self') return true;
+  if ((mode === 'groups' || mode === 'group') && !isGroup) return true;
+  if (mode === 'inbox' && isGroup) return true;
+
   return false;
 }
 
@@ -650,7 +651,8 @@ async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply
   return true;
 }
 
-async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner) {
+// 🛠️ FIX: Commands වලටත් Work Mode බලපාන බව තහවුරු කිරීම
+async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode) {
   const prefixMatch = text.match(/^[./!#]/);
   if (!prefixMatch) return false;
 
@@ -662,6 +664,11 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
 
   if (isSettingsCmd && isGroup) return true;
   if (isSettingsCmd && !isOwner) return true;
+
+  // Work Mode අනුව commands ක්‍රියාත්මක වීම පාලනය
+  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
+    return true;
+  }
 
   let targetCmd = commands.get(commandName);
   if (!targetCmd && isSettingsCmd) {
@@ -739,10 +746,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
   const resolvedSender = await resolveLidToRealJid(sock, originalSender);
 
-  // Owner පරීක්ෂාව (සැබෑ Owner JID/LID පමණක් තහවුරු කරයි)
   const isOwner = checkIsOwner(originalSender, resolvedSender);
 
-  // 5️⃣ Owner කෙනෙක්ගෙන් ආ මැසේජ් එකක් නම් පමණක් React කිරීම (fromMe වූ Bot User හට react නොවේ)
+  // 5️⃣ Owner React
   if (isOwner && !msg.key.fromMe) {
     reactToOwnerMessage(sock, chatJid, msg.key, settings);
   }
@@ -751,8 +757,10 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
   const currentMode = settings.workMode || 'public';
 
-  // 6️⃣ Work mode
-  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) return;
+  // 6️⃣ Work mode අනුව unauthorized සාමාන්‍ය users ලාව සම්පූර්ණයෙන්ම drop කිරීම
+  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
+    return;
+  }
 
   // 7️⃣ Text extract කිරීම
   const rawMsg = unwrapMessageContent(msg.message);
@@ -764,7 +772,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const safeReply = buildSafeReply(sock, chatJid, msg);
   const cleanInput = text.toLowerCase().trim();
 
-  // 8️⃣ Settings menu reply
+  // 8️⃣ Settings menu reply (Owner ට පමණි)
   const settingsOption = isSettingsMenuOption(cleanInput);
   const quotedCaption = extractQuotedCaption(quotedMsgObj);
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
@@ -790,11 +798,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🔟 Commands
-  const commandHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner);
+  // 🔟 Commands execute කිරීම
+  const commandHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode);
   if (commandHandled) return;
 
-  // 1️⃣1️⃣ AI Inbox
+  // 1️⃣1️⃣ AI Inbox auto-reply
   const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
   const isNumericOnly = /^[0-9]+$/.test(cleanInput);
 
@@ -803,9 +811,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   }
 }
 
-// messages.upsert event එක listen කිරීම
+// 🛠️ FIX: Message Upsert Non-blocking කර බොට්ගේ වේගය (Speed) උපරිම කිරීම
 function registerMessageUpsertHandler(sock, phoneNumber) {
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+  sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (!messages || !messages.length) return;
 
     for (const msg of messages) {
@@ -813,7 +821,10 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
       if (type !== 'notify' && !jid.endsWith('@newsletter') && jid !== UPDATE_CHANNEL_JID && !msg.key?.fromMe) {
         continue;
       }
-      await processSingleMessage(sock, msg, phoneNumber);
+      // loop එක හිර නොවී ක්ෂණිකව background එකේ process වීමට async execution
+      processSingleMessage(sock, msg, phoneNumber).catch(err => {
+        console.error('Message processing error:', err.message);
+      });
     }
   });
 }
