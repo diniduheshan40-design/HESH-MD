@@ -20,7 +20,7 @@ module.exports = {
     const isGroup = targetChat.endsWith('@g.us');
     const sender = isGroup ? (msg.key.participant || '') : targetChat;
     
-    // Owner Verification (Options, fromMe හෝ Number Match හරහා)
+    // Owner Verification
     const isOwner = options.isOwner || 
                     msg.key.fromMe || 
                     OWNER_NUMBERS.some(num => String(sender).includes(num));
@@ -44,16 +44,19 @@ module.exports = {
                       args.join(' ');
 
       const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+
+      // 1. Link එක සහ Message ID එක හරියටම Regex එකෙන් extract කරගැනීම (digits පමණක් වෙන් කරගනී)
       const linkMatch = rawText.match(/whatsapp\.com\/channel\/([a-zA-Z0-9]+)\/(\d+)/);
 
-      // 1. Link එක හරහා දත්ත ලබා ගැනීම
       if (linkMatch) {
         const inviteCode = linkMatch[1];
-        messageId = linkMatch[2];
+        messageId = linkMatch[2]; // පිරිසිදු post number එක (උදා: 890, 415)
 
+        // Link එකෙන් පසු ඇති සියල්ල Emojis ලෙස ගැනීම
         const afterLink = rawText.substring(rawText.indexOf(linkMatch[0]) + linkMatch[0].length);
         emojisString = afterLink.replace(/^[,\s|]+/, '').trim();
 
+        // Newsletter JID එක ලබාගැනීම
         let metadata = null;
         try {
           if (typeof sock.newsletterMetadata === 'function') {
@@ -63,6 +66,7 @@ module.exports = {
 
         channelJid = metadata?.id;
 
+        // Fallback MEX Query එක
         if (!channelJid) {
           try {
             const result = await sock.query({
@@ -82,6 +86,14 @@ module.exports = {
               channelJid = parsed?.data?.xwa2_newsletter?.id;
             }
           } catch (e) {}
+        }
+
+        // තවමත් JID එක නොලැබුණහොත් Invite Code එකෙන් Direct Metadata JID එක සෙවීම
+        if (!channelJid) {
+          try {
+            const res = await sock.newsletterMetadata('invite', inviteCode);
+            channelJid = res?.id;
+          } catch (err) {}
         }
 
         if (!channelJid) {
@@ -113,7 +125,7 @@ module.exports = {
         if (emojisString.includes(',')) {
           emojiArray = emojisString.split(',').map(e => e.trim()).filter(Boolean);
         } else {
-          emojiArray = Array.from(emojisString.replace(/\s+/g, ''));
+          emojiArray = Array.from(emojisString.replace(/[\s,]+/g, ''));
         }
       }
 
@@ -124,7 +136,7 @@ module.exports = {
       let successCount = 0;
       const appliedReactions = [];
 
-      // Reaction Function
+      // Reaction යැවීමේ Function එක
       const sendReact = async (botInstance) => {
         const pickedEmoji = emojiArray[Math.floor(Math.random() * emojiArray.length)];
 
