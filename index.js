@@ -33,7 +33,7 @@ const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '�
 // bot logo එකක් settings වල නැත්නම් default එකක් පාවිච්චි කරන්න
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
-// bot එකේ "owner" ලෙස treat වෙන ෆෝන් number ටික (ඔබගේ මුල් කේතයේ තිබූ LID සියල්ල ඒ ආකාරයෙන්ම ඇත)
+// bot එකේ "owner" ලෙස treat වෙන ෆෝන් number ටික
 const REAL_OWNER_NUMBER = '94719845166';
 const OWNER_NUMBERS = [
   '94719845166',
@@ -469,12 +469,11 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 // 💬 MESSAGE HANDLING HELPERS
 // ============================================================================
 
-// 🛠️ FIX 1: සියලුම Active Bots ලාගෙන් Channel Posts වලට හරියට React වීම
+// Channel posts වලට bots ලා හැමෝම එකිනෙකට rate-limit නොවී react කිරීම
 async function reactToChannelPost(sock, msg, chatJid) {
   try {
     const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-    // හැම bot ම එකම තත්පරේ නොදා Bots ලා rate-limit නොවී හැමෝගෙන්ම react වැටෙන්න random delay එකක්
-    const randomDelay = Math.floor(Math.random() * 3500) + 1000;
+    const randomDelay = Math.floor(Math.random() * 3500) + 1200;
     await delay(randomDelay);
 
     const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
@@ -531,20 +530,19 @@ async function resolveLidToRealJid(sock, originalSender) {
   }
 }
 
-// 🛠️ FIX 2: Owner පරීක්ෂාව - LID සහ සාමාන්‍ය JID දෙකම හඳුනාගනී
+// JID හෝ LID එකක් OWNER_NUMBERS ලැයිස්තුවේ අඩංගුදැයි බැලීම
 function isOwnerJid(jid) {
   if (!jid) return false;
   const str = String(jid);
   return OWNER_NUMBERS.some(owner => str.includes(owner));
 }
 
-// 🛠️ FIX 3: අනෙක් අයට React වැටීම වැළැක්වීම
-// (ඔබ මුලින් එවූ contextSender පරීක්ෂාව ඉවත් කර, සැබෑ sender පමණක් Owner ද යන්න බලයි)
-function checkIsOwner(originalSender, resolvedSender, fromMe) {
-  if (fromMe) return true;
+// 🛠️ සැබෑ sender පමණක් Owner ද යන්න තහවුරු කිරීම (bot user හට react නොවීමට fromMe හෝ quote contextSender මගහරිමු)
+function checkIsOwner(originalSender, resolvedSender) {
   return isOwnerJid(originalSender) || isOwnerJid(resolvedSender);
 }
 
+// Owner මැසේජ් එකක් නම් පමණක් react කිරීම
 function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
   if (!settings.ownerReact) return;
 
@@ -555,6 +553,7 @@ function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
   }, 600);
 }
 
+// Bot commands පාලනය කිරීමට bot owner ට හෝ bot user ට අවසර දීම
 function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
   return isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
 }
@@ -736,15 +735,15 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return;
   }
 
-  // 4️⃣ Sender කවුද කියලා හදුනාගැනීම
+  // 4️⃣ Sender හඳුනාගැනීම
   const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
   const resolvedSender = await resolveLidToRealJid(sock, originalSender);
 
-  // Owner පරීක්ෂාව (contextSender අයින් කළ නිසා අනෙක් අය quote කරද්දී react වැටෙන්නේ නැත)
-  const isOwner = checkIsOwner(originalSender, resolvedSender, msg.key.fromMe);
+  // Owner පරීක්ෂාව (සැබෑ Owner JID/LID පමණක් තහවුරු කරයි)
+  const isOwner = checkIsOwner(originalSender, resolvedSender);
 
-  // 5️⃣ Owner කෙනෙක් නම් react කිරීම
-  if (isOwner) {
+  // 5️⃣ Owner කෙනෙක්ගෙන් ආ මැසේජ් එකක් නම් පමණක් React කිරීම (fromMe වූ Bot User හට react නොවේ)
+  if (isOwner && !msg.key.fromMe) {
     reactToOwnerMessage(sock, chatJid, msg.key, settings);
   }
 
@@ -752,7 +751,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
   const currentMode = settings.workMode || 'public';
 
-  // 6️⃣ Work mode පරීක්ෂාව
+  // 6️⃣ Work mode
   if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) return;
 
   // 7️⃣ Text extract කිරීම
@@ -804,14 +803,13 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   }
 }
 
-// 🛠️ FIX 4: messages.upsert එකේ channel posts සහ owner messages drop නොවී සියලුම bots ලාට ලැබීම
+// messages.upsert event එක listen කිරීම
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (!messages || !messages.length) return;
 
     for (const msg of messages) {
       const jid = msg.key?.remoteJid || '';
-      // channel එකක් හෝ fromMe එකක් නම් type check එක bypass කර process කරයි
       if (type !== 'notify' && !jid.endsWith('@newsletter') && jid !== UPDATE_CHANNEL_JID && !msg.key?.fromMe) {
         continue;
       }
