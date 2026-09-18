@@ -25,7 +25,6 @@ function formatUptime(seconds) {
 
 // එක් එක් Bot Instance එකට ගැලපෙන Logo එක කියවා ගැනීම
 async function fetchLogoForBot(botNum) {
-    // 1. මේ Bot Number එකට වෙනම හදපු Local file එකක් තියෙනවාද බැලීම
     const specificLogo = path.join(process.cwd(), `logo_${botNum}.jpg`);
     if (fs.existsSync(specificLogo)) {
         try {
@@ -33,7 +32,6 @@ async function fetchLogoForBot(botNum) {
         } catch (e) {}
     }
 
-    // 2. Database එකෙන් Bot Logo එක check කිරීම
     try {
         const s = await SettingsModel.findById(botNum).lean();
         if (s && s.botLogo) {
@@ -41,22 +39,30 @@ async function fetchLogoForBot(botNum) {
                 return fs.readFileSync(s.botLogo);
             }
             if (s.botLogo.startsWith('http')) {
-                const response = await axios.get(s.botLogo, { responseType: 'arraybuffer', timeout: 10000 });
-                return Buffer.from(response.data);
+                const response = await axios.get(s.botLogo, { 
+                    responseType: 'arraybuffer', 
+                    timeout: 10000,
+                    validateStatus: () => true 
+                });
+                if (response.status === 200 && response.data) {
+                    return Buffer.from(response.data);
+                }
             }
         }
     } catch (e) {}
 
-    // 3. Fallback Default Logo
     try {
         const response = await axios.get(FALLBACK_LOGO_URL, { 
             responseType: 'arraybuffer',
-            timeout: 10000 
+            timeout: 10000,
+            validateStatus: () => true
         });
-        return Buffer.from(response.data);
-    } catch (e) {
-        return { url: FALLBACK_LOGO_URL };
-    }
+        if (response.status === 200 && response.data) {
+            return Buffer.from(response.data);
+        }
+    } catch (e) {}
+
+    return { url: FALLBACK_LOGO_URL };
 }
 
 module.exports = {
@@ -69,10 +75,7 @@ module.exports = {
       ? chatJid 
       : msg.key.remoteJid;
 
-    // .menu command එක run කරපු කෙනාගේ jid එක මතක තියාගන්නවා (group එකේ quote නොකර reply කරන්න ඉඩ දෙන්න)
     const invokerJid = msg.key.participant || msg.key.remoteJid;
-
-    // Active Bot ගේ අංකය ලබාගැනීම
     const myBotNum = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
     let pushName = msg.pushName || "User";
@@ -103,14 +106,12 @@ module.exports = {
     try {
       await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
-      // මේ Bot Instance එකට විතරක් අදාළ Logo එක ලබාගැනීම
       const logoImg = await fetchLogoForBot(myBotNum);
 
       const sentMenu = await sock.sendMessage(targetChat, {
           image: logoImg,
           caption: mainText
-      }, { quoted: msg }).catch(async (imgErr) => {
-          console.error("Image Send Error:", imgErr.message);
+      }, { quoted: msg }).catch(async () => {
           return await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg });
       });
 
@@ -180,6 +181,10 @@ module.exports = {
           if (msgContent.ephemeralMessage) msgContent = msgContent.ephemeralMessage.message;
           if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
 
+          const contextInfo = msgContent.extendedTextMessage?.contextInfo;
+          // Menu එකට quote කරපු message එකක්ම විය යුතුයි
+          if (!contextInfo || contextInfo.stanzaId !== menuMessageId) return;
+
           const replyText = (
             msgContent.conversation || 
             msgContent.extendedTextMessage?.text || 
@@ -187,16 +192,6 @@ module.exports = {
           ).trim().replace(/[\[\].]/g, '');
 
           if (["1", "2", "3", "4"].includes(replyText)) {
-            const contextInfo = msgContent.extendedTextMessage?.contextInfo;
-            const isQuotedMenu = contextInfo && contextInfo.stanzaId === menuMessageId;
-            const replySenderJid = replyMsg.key.participant || replyMsg.key.remoteJid;
-            const isSameInvoker = replySenderJid === invokerJid;
-
-            // Group එකේ: menu message එක quote කළත්, .menu command එක run කරපු කෙනාම
-            // quote නොකර කෙලින්ම type කළත් - දෙකම accept කරනවා. වෙන කෙනෙක් random number
-            // එකක් type කළොත් (quote නොකර) ignore කරනවා.
-            if (targetChat.endsWith('@g.us') && !isQuotedMenu && !isSameInvoker) return;
-
             sock.ev.off('messages.upsert', replyListener);
 
             const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
@@ -223,3 +218,4 @@ module.exports = {
     }
   }
 };
+
