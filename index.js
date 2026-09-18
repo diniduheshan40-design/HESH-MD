@@ -748,8 +748,8 @@ function buildSafeReply(sock, chatJid, msg) {
 
 function isSettingsMenuOption(cleanInput) {
   return (
-    /^([1-8](\.[1-4])?)$/.test(cleanInput) ||
-    cleanInput.startsWith('7 ') ||
+    /^([1-7](\.[1-4])?)$/.test(cleanInput) ||
+    cleanInput.startsWith('6 ') ||
     cleanInput.startsWith('pin ') ||
     cleanInput.startsWith('set ')
   );
