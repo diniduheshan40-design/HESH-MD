@@ -21,66 +21,63 @@ module.exports = {
             }, { quoted: msg });
         }
 
+        // Instant Reaction
+        sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
+
         const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
         const apiUrl = `https://api.chamindu.site/api/v1/apk/an1/infodl?q=${encodeURIComponent(url.trim())}&api_key=${API_KEY}`;
 
         try {
-            await sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
-
-            const res = await axios.get(apiUrl, { timeout: 30000 });
+            const res = await axios.get(apiUrl, { timeout: 15000 });
             const data = res.data?.data;
 
             if (!data || !Array.isArray(data.downloads) || data.downloads.length === 0) {
-                await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+                sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
                 return await sock.sendMessage(targetChat, { 
                     text: `❌ *APK තොරතුරු ලබා ගැනීමට නොහැකි විය. Link එක නිවැරදි දැයි පරීක්ෂා කරන්න!*${DEFAULT_FOOTER}` 
                 }, { quoted: msg });
             }
 
-            // 1. .apk direct link එක සොයාගැනීම
+            // Direct .apk link extraction
             const apkItem = data.downloads.find(d => d.direct_link && d.direct_link.endsWith('.apk')) || data.downloads[0];
 
             if (!apkItem || !apkItem.direct_link) {
-                await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+                sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
                 return await sock.sendMessage(targetChat, { 
                     text: `❌ *Download කරගත හැකි APK Link එකක් හමු නොවීය!*${DEFAULT_FOOTER}` 
                 }, { quoted: msg });
             }
 
             const title = data.title || "Android App";
-            const fileName = apkItem.direct_link.split('/').pop() || `${title.replace(/\s+/g, '_')}.apk`;
+            const cleanTitle = title.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const fileName = apkItem.name 
+                ? apkItem.name.replace(/[^a-zA-Z0-9._-]/g, '_') 
+                : `${cleanTitle}.apk`;
 
-            // 2. Info Card එක Image එක සමඟ මුලින් යැවීම
-            const infoText = `*📦 𝗔𝗣𝗞 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗𝗘𝗥 📦*\n\n` +
-                             `📌 *Name:* ${title}\n` +
-                             `📁 *File:* ${apkItem.name || fileName}\n` +
-                             `🔗 *Size:* ${apkItem.name.match(/\d+(\.\d+)?\s*(Mb|MB|Gb|GB|Kb|KB)/i)?.[0] || 'Unknown'}\n\n` +
-                             `⏳ *Sending APK file, please wait...*${DEFAULT_FOOTER}`;
+            const sizeMatch = apkItem.name?.match(/\d+(\.\d+)?\s*(Mb|MB|Gb|GB|Kb|KB)/i)?.[0] || 'Unknown';
 
-            if (data.image) {
-                await sock.sendMessage(targetChat, {
-                    image: { url: data.image },
-                    caption: infoText
-                }, { quoted: msg }).catch(() => {});
-            }
+            // Send APK document with full details in caption (Faster single-message delivery)
+            const captionText = `*📦 𝗔𝗣𝗞 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗𝗘𝗥 📦*\n\n` +
+                                `📌 *Name:* ${title}\n` +
+                                `📁 *File:* ${fileName}\n` +
+                                `🔗 *Size:* ${sizeMatch}\n\n` +
+                                `✅ *Download Completed!*${DEFAULT_FOOTER}`;
 
-            // 3. Document එකක් ලෙස APK එක යැවීම
             await sock.sendMessage(targetChat, {
                 document: { url: apkItem.direct_link },
-                fileName: fileName,
+                fileName: fileName.endsWith('.apk') ? fileName : `${fileName}.apk`,
                 mimetype: 'application/vnd.android.package-archive',
-                caption: `✅ *Download Completed:* ${title}${DEFAULT_FOOTER}`
+                caption: captionText
             }, { quoted: msg });
 
-            await sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
+            sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
         } catch (err) {
             console.error('APK DL Error:', err.message);
-            await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+            sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
             await sock.sendMessage(targetChat, { 
-                text: `❌ *APK Download Error:* ${err.message}${DEFAULT_FOOTER}` 
+                text: `❌ *APK Download Error:* සර්වර් එක කාර්යබහුලයි හෝ Link එක කල් ඉකුත් වී ඇත.${DEFAULT_FOOTER}` 
             }, { quoted: msg });
         }
     }
 };
-
