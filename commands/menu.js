@@ -4,30 +4,43 @@ const path = require('path');
 
 function formatUptime(seconds) {
     seconds = Math.floor(Number(seconds) || 0);
-    const d = Math.floor(seconds / (3600 * 24));
-    const h = Math.floor((seconds % (3600 * 24)) / 3600);
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// 🛡️ 100% Solid Logo Finder (DB හෝ Catbox මත depend නොවේ)
+// ⚡ Buffer Cache for Zero Disk-Read Latency
+let cachedLogo = null;
 function getBotLogo() {
-    // 1. commands folder එකෙන් එළියේ තියෙන logo.jpg කියවීම
-    const localLogoPath = path.join(__dirname, '../logo.jpg');
-    if (fs.existsSync(localLogoPath)) {
-        return fs.readFileSync(localLogoPath);
-    }
-    
-    // 2. Root එකේ බැලීම
-    const rootPath = path.join(process.cwd(), 'logo.jpg');
-    if (fs.existsSync(rootPath)) {
-        return fs.readFileSync(rootPath);
-    }
+    if (cachedLogo) return cachedLogo;
 
-    // 3. GitHub එකේ තියෙන Direct Raw Image Link එක (කවදාවත් fail වෙන්නේ නැත)
+    try {
+        const localLogoPath = path.join(__dirname, '../logo.jpg');
+        if (fs.existsSync(localLogoPath)) {
+            cachedLogo = fs.readFileSync(localLogoPath);
+            return cachedLogo;
+        }
+
+        const rootPath = path.join(process.cwd(), 'logo.jpg');
+        if (fs.existsSync(rootPath)) {
+            cachedLogo = fs.readFileSync(rootPath);
+            return cachedLogo;
+        }
+
+        const assetsPath = path.join(process.cwd(), 'assets', 'logo.jpg');
+        if (fs.existsSync(assetsPath)) {
+            cachedLogo = fs.readFileSync(assetsPath);
+            return cachedLogo;
+        }
+    } catch (e) {}
+
     return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
+
+// ⚡ Active Menu Session Registry (Memory Leak & Zombie Listener Prevention)
+const activeMenuSessions = new Map();
 
 module.exports = {
   name: 'menu',
@@ -65,7 +78,8 @@ module.exports = {
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
 
     try {
-      await sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
+      // Non-blocking reaction
+      sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
       const logo = getBotLogo();
 
@@ -76,6 +90,14 @@ module.exports = {
       }, { quoted: msg });
 
       const menuMessageId = sentMenu?.key?.id;
+      if (!menuMessageId) return;
+
+      // පරණ pending session එකක් ඇත්නම් listener එක අයින් කිරීම
+      if (activeMenuSessions.has(targetChat)) {
+        const prev = activeMenuSessions.get(targetChat);
+        clearTimeout(prev.timeout);
+        sock.ev.off('messages.upsert', prev.listener);
+      }
 
       const subMenus = {
         "1": `┏━━━❮ 📥 *DOWNLOAD MENU* ❯━━━┓
@@ -132,7 +154,7 @@ module.exports = {
       const replyListener = async (m) => {
         try {
           const replyMsg = m.messages?.[0];
-          if (!replyMsg || !replyMsg.message || replyMsg.key.fromMe) return;
+          if (!replyMsg?.message || replyMsg.key.fromMe) return;
 
           const fromChat = replyMsg.key?.remoteJid;
           if (fromChat !== targetChat) return;
@@ -140,8 +162,9 @@ module.exports = {
           let msgContent = replyMsg.message;
           if (msgContent.ephemeralMessage) msgContent = msgContent.ephemeralMessage.message;
           if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
+          if (msgContent.viewOnceMessageV2) msgContent = msgContent.viewOnceMessageV2.message;
 
-          const contextInfo = msgContent.extendedTextMessage?.contextInfo;
+          const contextInfo = msgContent?.extendedTextMessage?.contextInfo;
           if (!contextInfo || contextInfo.stanzaId !== menuMessageId) return;
 
           const replyText = (
@@ -152,9 +175,13 @@ module.exports = {
 
           if (["1", "2", "3", "4"].includes(replyText)) {
             sock.ev.off('messages.upsert', replyListener);
+            if (activeMenuSessions.has(targetChat)) {
+              clearTimeout(activeMenuSessions.get(targetChat).timeout);
+              activeMenuSessions.delete(targetChat);
+            }
 
             const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
-            await sock.sendMessage(targetChat, { react: { text: emojis[replyText], key: replyMsg.key } }).catch(() => {});
+            sock.sendMessage(targetChat, { react: { text: emojis[replyText], key: replyMsg.key } }).catch(() => {});
 
             await sock.sendMessage(targetChat, { 
               image: getBotLogo(),
@@ -169,11 +196,13 @@ module.exports = {
         }
       };
 
-      sock.ev.on('messages.upsert', replyListener);
-
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         sock.ev.off('messages.upsert', replyListener);
+        activeMenuSessions.delete(targetChat);
       }, 45000);
+
+      activeMenuSessions.set(targetChat, { listener: replyListener, timeout });
+      sock.ev.on('messages.upsert', replyListener);
 
     } catch (err) {
       console.error('Menu Execution Error:', err.message);
