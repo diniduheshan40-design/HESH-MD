@@ -3,21 +3,19 @@ const axios = require('axios');
 
 module.exports = {
     name: 'img',
+    alias: ['image', 'gimage'],
     category: 'download',
     desc: 'Search and download Google images',
 
     async execute(sock, msg, args, chatJid) {
-        // Target chat එක සහ sender හඳුනා ගැනීම
         const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
             ? chatJid 
             : msg.key.remoteJid;
 
-        // Message එකෙන් text එක ලබා ගැනීම
         const rawText = msg.message?.conversation || 
                          msg.message?.extendedTextMessage?.text || 
                          msg.message?.imageMessage?.caption || "";
 
-        // Query එක ලබා ගැනීම (args හරහා හෝ rawText එකෙන්)
         let query = args && args.length > 0 ? args.join(' ') : "";
         if (!query && rawText) {
             const parts = rawText.trim().split(/\s+/);
@@ -30,47 +28,56 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        // Processing reaction එකක් දැමීම
+        // Fast Non-blocking Reaction
         sock.sendMessage(targetChat, { react: { text: "🔍", key: msg.key } }).catch(() => {});
 
         try {
             const apiKey = 'supun-tvo5olfxylo98b8l6b9lq174';
             const apiUrl = `https://supunofc.site/api/search/google-image-search/search?q=${encodeURIComponent(query)}&apikey=${apiKey}`;
 
-            const response = await axios.get(apiUrl);
+            // ⚡ 8s Fast Network Timeout
+            const response = await axios.get(apiUrl, { timeout: 8000 });
             const data = response.data;
 
-            if (!data.success || !data.result || data.result.length === 0) {
+            if (!data?.success || !Array.isArray(data.result) || data.result.length === 0) {
                 sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
                 return await sock.sendMessage(targetChat, { 
                     text: `❌ *${query}* සඳහා කිසිදු පින්තූරයක් හමු නොවීය.` 
                 }, { quoted: msg });
             }
 
-            // සාර්ථක වූ විට Reaction එකක්
             sock.sendMessage(targetChat, { react: { text: "📸", key: msg.key } }).catch(() => {});
 
-            // මුල් පින්තූර 3ක් යැවීම (අවශ්‍ය නම් සංඛ්‍යාව වෙනස් කළ හැක)
-            const count = Math.min(data.result.length, 3);
+            // Filter out valid image URLs
+            const validImages = data.result
+                .map(item => (typeof item === 'string' ? item : item?.url || item?.image))
+                .filter(url => typeof url === 'string' && url.startsWith('http'))
+                .slice(0, 3);
 
-            for (let i = 0; i < count; i++) {
-                const imageUrl = data.result[i];
-                const caption = `┏━━━〔 🖼️ 𝐆𝐎𝐎𝐆𝐋𝐄 𝐈𝐌𝐀𝐆𝐄 〕━━━┓\n` +
-                                `┃\n` +
-                                `┃  🔍 *Query* ⌁ ${query}\n` +
-                                `┃  📸 *Image* ⌁ ${i + 1}/${count}\n` +
-                                `┃\n` +
-                                `┗━━━━━━━━━━━━━━━━━━━━━━┛\n` +
-                                `> 🔐 *heshan ofc • all rights reserved*`;
-
-                await sock.sendMessage(targetChat, {
-                    image: { url: imageUrl },
-                    caption: caption
-                }, { quoted: msg });
+            if (validImages.length === 0) {
+                throw new Error('Valid image links not found');
             }
 
+            // ⚡ Parallel Image Dispatching with Fallback Safety
+            await Promise.allSettled(
+                validImages.map((imageUrl, index) => {
+                    const caption = `┏━━━〔 🖼️ 𝐆𝐎𝐎𝐆𝐋𝐄 𝐈𝐌𝐀𝐆𝐄 〕━━━┓\n` +
+                                    `┃\n` +
+                                    `┃  🔍 *Query* ⌁ ${query}\n` +
+                                    `┃  📸 *Image* ⌁ ${index + 1}/${validImages.length}\n` +
+                                    `┃\n` +
+                                    `┗━━━━━━━━━━━━━━━━━━━━━━┛\n` +
+                                    `> 🔐 *heshan ofc • all rights reserved*`;
+
+                    return sock.sendMessage(targetChat, {
+                        image: { url: imageUrl },
+                        caption: caption
+                    }, { quoted: msg }).catch(() => {});
+                })
+            );
+
         } catch (err) {
-            console.error("Image Command Error:", err.message);
+            console.error("Image Command Error:", err?.message || err);
             sock.sendMessage(targetChat, { react: { text: "⚠️", key: msg.key } }).catch(() => {});
             await sock.sendMessage(targetChat, { 
                 text: '⚠️ පින්තූර ලබා ගැනීමේදී දෝෂයක් ඇති විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.' 
