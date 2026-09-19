@@ -2,35 +2,29 @@
 const fs = require('fs');
 const path = require('path');
 
-// ⚡ 100% Solid & Cached Logo Finder (menu.js එකේ ක්‍රමයටම buffer cache සහිතව)
+// ⚡ Solid & Cached Logo Finder (Memory-safe)
 let cachedLogo = null;
 function getBotLogo() {
     if (cachedLogo) return cachedLogo;
 
     try {
-        // 1. commands folder එකෙන් එළියේ තියෙන logo.jpg කියවීම
-        const localLogoPath = path.join(__dirname, '../logo.jpg');
-        if (fs.existsSync(localLogoPath)) {
-            cachedLogo = fs.readFileSync(localLogoPath);
-            return cachedLogo;
-        }
+        const paths = [
+            path.join(__dirname, '../logo.jpg'),
+            path.join(process.cwd(), 'logo.jpg'),
+            path.join(process.cwd(), 'assets', 'logo.jpg')
+        ];
 
-        // 2. Root එකේ බැලීම
-        const rootPath = path.join(process.cwd(), 'logo.jpg');
-        if (fs.existsSync(rootPath)) {
-            cachedLogo = fs.readFileSync(rootPath);
-            return cachedLogo;
+        for (const p of paths) {
+            if (fs.existsSync(p)) {
+                cachedLogo = fs.readFileSync(p);
+                return cachedLogo;
+            }
         }
+    } catch (e) {
+        console.error("Logo cache error:", e.message);
+    }
 
-        // 3. Assets folder එකේ බැලීම
-        const assetsLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
-        if (fs.existsSync(assetsLogoPath)) {
-            cachedLogo = fs.readFileSync(assetsLogoPath);
-            return cachedLogo;
-        }
-    } catch (e) {}
-
-    // 4. GitHub එකේ තියෙන Direct Raw Image Link එක (කවදාවත් fail නොවේ)
+    // Direct Web Fallback
     return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
 
@@ -94,31 +88,6 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// Memory leaks වළක්වා ගැනීමට active sessions map එකක්
-const activeAlivePrompts = new Map();
-
-const triggerCommand = async (cmdName, sock, replyMsg) => {
-    try {
-        const cmdPath = path.join(__dirname, `${cmdName}.js`);
-        if (fs.existsSync(cmdPath)) {
-            const cmdModule = require(cmdPath);
-            const remoteJid = replyMsg.key.remoteJid;
-
-            const safeReply = async (content) => {
-                const payload = typeof content === 'string' ? { text: content } : content;
-                return await sock.sendMessage(remoteJid, payload, { quoted: replyMsg });
-            };
-
-            const executor = cmdModule.execute || cmdModule.run || cmdModule;
-            if (typeof executor === 'function') {
-                await executor(sock, replyMsg, [], remoteJid, safeReply, { isOwner: true });
-            }
-        }
-    } catch (e) {
-        console.error(`❌ Error triggering ${cmdName}:`, e.message);
-    }
-};
-
 module.exports = {
     name: 'alive',
     category: 'general',
@@ -152,100 +121,24 @@ module.exports = {
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━━┛
 
-┌───「 𝗥𝗲𝗽𝗹𝘆 𝗡𝘂𝗺𝗯𝗲𝗿 」───┐
+┌───「 𝗙𝗲𝗮𝘁𝘂𝗿𝗲𝘀 」───┐
 │
-│  [1] ➜ 📜 𝗠𝗮𝗶𝗻 𝗠𝗲𝗻𝘂
-│  [2] ➜ ⚡ 𝗣𝗶𝗻𝗴 / 𝗦𝗽𝗲𝗲𝗱
-│  [3] ➜ 👑 𝗢𝘄𝗻𝗲𝗿 𝗜𝗻𝗳𝗼
+│  ➜ *.menu*  - Main Commands
+│  ➜ *.ping*  - Speed Test
+│  ➜ *.owner* - Owner Details
 │
-└────────────────────────┘
+└─────────────────────┘
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
             const logo = getBotLogo();
-
-            const sentMsg = await sock.sendMessage(targetChat, {
+            await sock.sendMessage(targetChat, {
                 image: logo,
                 caption: aliveMsg,
                 mimetype: 'image/jpeg'
             }, { quoted: msg });
-
-            const stanzaId = sentMsg?.key?.id;
-            if (!stanzaId) return;
-
-            // පරණ duplicate listeners ඉවත් කිරීම
-            if (activeAlivePrompts.has(targetChat)) {
-                const prev = activeAlivePrompts.get(targetChat);
-                clearTimeout(prev.timeout);
-                sock.ev.off('messages.upsert', prev.listener);
-            }
-
-            const replyListener = async (m) => {  
-                try {  
-                    const replyMsg = m.messages?.[0];  
-                    if (!replyMsg || !replyMsg.message || replyMsg.key.fromMe) return; 
-
-                    const replyChat = replyMsg.key.remoteJid;
-                    if (replyChat !== targetChat) return;
-
-                    let msgContent = replyMsg.message;
-                    if (msgContent.ephemeralMessage) msgContent = msgContent.ephemeralMessage.message;
-                    if (msgContent.viewOnceMessage) msgContent = msgContent.viewOnceMessage.message;
-
-                    const msgContext = msgContent?.extendedTextMessage?.contextInfo;
-                    if (!msgContext || msgContext.stanzaId !== stanzaId) return;
-
-                    let replyText = msgContent.conversation || 
-                                    msgContent.extendedTextMessage?.text || 
-                                    "";
-
-                    replyText = replyText.trim().replace(/[\[\].]/g, '');
-
-                    if (["1", "2", "3"].includes(replyText)) {
-                        sock.ev.off('messages.upsert', replyListener);
-                        if (activeAlivePrompts.has(targetChat)) {
-                            clearTimeout(activeAlivePrompts.get(targetChat).timeout);
-                            activeAlivePrompts.delete(targetChat);
-                        }
-
-                        if (replyText === "1") {  
-                            sock.sendMessage(replyChat, { react: { text: '📜', key: replyMsg.key } }).catch(() => {});  
-                            await triggerCommand('menu', sock, replyMsg);
-                        } else if (replyText === "2") {  
-                            sock.sendMessage(replyChat, { react: { text: '⚡', key: replyMsg.key } }).catch(() => {});
-                            await triggerCommand('ping', sock, replyMsg);
-                        } else if (replyText === "3") {  
-                            sock.sendMessage(replyChat, { react: { text: '👑', key: replyMsg.key } }).catch(() => {});
-                            const ownerDetails = `*👑 HESHAN-MD OWNER INFO*\n\n` +
-                                                 `*• Name:* Dinidu Heshan\n` +
-                                                 `*• Status:* Active\n` +
-                                                 `*• Contact:* wa.me/94719845166\n\n` +
-                                                 `> 🔐 *heshan ofc • all rights reserved*`;
-                            
-                            await sock.sendMessage(replyChat, { 
-                                image: getBotLogo(), 
-                                caption: ownerDetails, 
-                                mimetype: 'image/jpeg' 
-                            }, { quoted: replyMsg }).catch(async () => {
-                                await sock.sendMessage(replyChat, { text: ownerDetails }, { quoted: replyMsg });
-                            });
-                        }  
-                    }
-                } catch (error) {  
-                    console.error("Alive Listener Error:", error.message);  
-                }  
-            };  
-
-            const timeout = setTimeout(() => {  
-                sock.ev.off('messages.upsert', replyListener);  
-                activeAlivePrompts.delete(targetChat);
-            }, 60000);
-
-            activeAlivePrompts.set(targetChat, { listener: replyListener, timeout });
-            sock.ev.on('messages.upsert', replyListener);
-
         } catch (err) {
-            console.error("Alive Execution Error:", err.message);
+            console.error("Alive Execution Error (Fallback to text):", err.message);
             await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg }).catch(() => {});
         }
     }
