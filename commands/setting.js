@@ -27,6 +27,11 @@ function getBotLogo() {
   return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
 
+// Model lookup helper
+function getModel() {
+  return mongoose.models.BotSettings || mongoose.model('BotSettings');
+}
+
 module.exports = {
   name: 'settings',
   alias: ['setting', 'set', 'config'],
@@ -50,44 +55,49 @@ module.exports = {
       return await reply('⛔ *Access Denied!* Only Bot Owner can modify settings.');
     }
 
-    // Reaction without awaiting to keep it async non-blocking
     sock.sendMessage(targetChat, { react: { text: "⚙️", key: msg.key } }).catch(() => {});
 
-    // Target bot number identification
+    // Identify target bot number
     const botNumber = (sock.user?.id || '').split(':')[0].split('@')[0].replace(/\D/g, '');
     if (!botNumber) return await reply('⚠️ Bot Number හඳුනාගත නොහැකි විය.');
 
-    let settings = {
+    const defaultValues = {
       workMode: 'public',
-      autoAiInbox: true,
       autoStatusSeen: true,
       statusReact: true,
+      statusReactEmoji: '💐',
       autoPresence: 'off',
-      securityPin: '1234',
-      ownerReactEmoji: '👑'
+      securityPin: '1234'
     };
 
-    // 1. Fast Cache Fetch (No DB lag)
+    let settings = { ...defaultValues };
+
+    // 1. Fetch current settings from Cache or Mongo Model
     if (memSettingsCache.has(botNumber)) {
       settings = Object.assign(settings, memSettingsCache.get(botNumber));
     } else {
       try {
-        if (mongoose.connection.readyState === 1 && mongoose.connection.db) {
-          const doc = await mongoose.connection.db.collection('botsettings').findOne({ _id: botNumber });
-          if (doc) {
-            settings = Object.assign(settings, doc);
-            memSettingsCache.set(botNumber, settings);
-          }
+        const SettingsModel = getModel();
+        const doc = await SettingsModel.findById(botNumber).lean();
+        if (doc) {
+          settings = Object.assign(settings, doc);
+          memSettingsCache.set(botNumber, settings);
         }
       } catch (e) {
-        console.error("Settings DB Fetch Error:", e.message);
+        console.error("Settings Fetch Error:", e.message);
       }
     }
 
-    // Input parsing
-    let input = (args && args.length > 0) ? args.join(' ').trim().toLowerCase() : "";
+    // Input parsing (Works for `.set 1.1` as well as direct reply `1.1`)
+    let input = "";
+    if (Array.isArray(args) && args.length > 0) {
+      input = args.join(' ').trim().toLowerCase();
+    }
+    
     if (!input) {
-      const rawText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+      const rawText = msg.message?.conversation || 
+                      msg.message?.extendedTextMessage?.text || 
+                      '';
       input = rawText.trim().toLowerCase().replace(/^[./!#]?(settings|setting|set|config)\s*/i, '').trim();
     }
 
@@ -99,42 +109,39 @@ module.exports = {
     else if (input === '1.3') { settings.workMode = 'inbox'; isUpdated = true; }
     else if (input === '1.4') { settings.workMode = 'groups'; isUpdated = true; }
 
-    // 2. AUTO AI INBOX
-    else if (input === '2.1') { settings.autoAiInbox = true; isUpdated = true; }
-    else if (input === '2.2') { settings.autoAiInbox = false; isUpdated = true; }
+    // 2. AUTO STATUS SEEN
+    else if (input === '2.1') { settings.autoStatusSeen = true; isUpdated = true; }
+    else if (input === '2.2') { settings.autoStatusSeen = false; isUpdated = true; }
 
-    // 3. AUTO STATUS SEEN
-    else if (input === '3.1') { settings.autoStatusSeen = true; isUpdated = true; }
-    else if (input === '3.2') { settings.autoStatusSeen = false; isUpdated = true; }
+    // 3. STATUS REACTION
+    else if (input === '3.1') { settings.statusReact = true; isUpdated = true; }
+    else if (input === '3.2') { settings.statusReact = false; isUpdated = true; }
 
-    // 4. STATUS REACT
-    else if (input === '4.1') { settings.statusReact = true; isUpdated = true; }
-    else if (input === '4.2') { settings.statusReact = false; isUpdated = true; }
+    // 4. STATUS REACT EMOJI
+    else if (input.startsWith('4')) {
+      const parts = input.split(' ');
+      if (parts[1]) {
+        settings.statusReactEmoji = parts[1].trim();
+        isUpdated = true;
+      } else {
+        return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 4 🌸`)');
+      }
+    }
 
-    // 5. FAKE ACTION
+    // 5. FAKE ACTION (PRESENCE)
     else if (input === '5.1') { settings.autoPresence = 'composing'; isUpdated = true; }
     else if (input === '5.2') { settings.autoPresence = 'recording'; isUpdated = true; }
     else if (input === '5.3') { settings.autoPresence = 'off'; isUpdated = true; }
 
-    // 6. OWNER EMOJI
-    else if (input.startsWith('6')) {
+    // 6. CHANGE PIN
+    else if (input.startsWith('pin') || input.startsWith('6')) {
       const parts = input.split(' ');
-      if (parts[1]) {
-        settings.ownerReactEmoji = parts[1].trim();
+      const newPin = parts[1] ? parts[1].trim() : '';
+      if (newPin && newPin.length >= 4) {
+        settings.securityPin = newPin;
         isUpdated = true;
       } else {
-        return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 6 🔥`)');
-      }
-    }
-
-    // 7. CHANGE PIN
-    else if (input.startsWith('pin')) {
-      const parts = input.split(' ');
-      if (parts[1] && parts[1].length >= 4) {
-        settings.securityPin = parts[1].trim();
-        isUpdated = true;
-      } else {
-        return await reply('⚠️ අවම අංක 4ක PIN එකක් ලබාදෙන්න! (උදා: `.set pin 7788`)');
+        return await reply('⚠️ අවම අංක 4ක PIN එකක් ලබාදෙන්න! (උදා: `.set pin 7788` හෝ `.set 6 7788`)');
       }
     }
 
@@ -142,13 +149,15 @@ module.exports = {
     if (isUpdated) {
       memSettingsCache.set(botNumber, settings);
 
-      // Async Non-blocking DB write
-      if (mongoose.connection.readyState === 1 && mongoose.connection.db) {
-        mongoose.connection.db.collection('botsettings').updateOne(
-          { _id: botNumber },
+      try {
+        const SettingsModel = getModel();
+        await SettingsModel.findByIdAndUpdate(
+          botNumber,
           { $set: settings },
-          { upsert: true }
-        ).catch(e => console.error("Settings save error:", e.message));
+          { upsert: true, new: true }
+        );
+      } catch (e) {
+        console.error("Settings DB Save Error:", e.message);
       }
 
       if (typeof global.clearSettingsCache === 'function') {
@@ -170,14 +179,14 @@ module.exports = {
 
       return await reply(
         `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n\n` +
-        `• Work Mode   : *${modeBadge}*\n` +
-        `• Fake Action : *${presenceBadge}*\n` +
-        `• AI Inbox    : *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-        `• Status Seen : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*`
+        `• Work Mode     : *${modeBadge}*\n` +
+        `• Auto Status   : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        `• Status React  : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'} (${settings.statusReactEmoji || '💐'})*\n` +
+        `• Fake Action   : *${presenceBadge}*`
       );
     }
 
-    // DISPLAY MENU
+    // DISPLAY SETTINGS MENU
     const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
@@ -204,32 +213,29 @@ module.exports = {
 │  ├ 1.3 Inbox Only
 │  └ 1.4 Group Only
 │
-├─◈ *2. AUTO AI INBOX* ⤿ [ ${stateBadge(settings.autoAiInbox)} ]
-│  ├ 2.1 Turn AI On
-│  └ 2.2 Turn AI Off
+├─◈ *2. AUTO STATUS SEEN* ⤿ [ ${stateBadge(settings.autoStatusSeen)} ]
+│  ├ 2.1 Status Seen On
+│  └ 2.2 Status Seen Off
 │
-├─◈ *3. AUTO STATUS SEEN* ⤿ [ ${stateBadge(settings.autoStatusSeen)} ]
-│  ├ 3.1 Status Seen On
-│  └ 3.2 Status Seen Off
+├─◈ *3. STATUS REACTION* ⤿ [ ${stateBadge(settings.statusReact)} ]
+│  ├ 3.1 React On
+│  └ 3.2 React Off
 │
-├─◈ *4. STATUS REACTION* ⤿ [ ${stateBadge(settings.statusReact)} ]
-│  ├ 4.1 React On
-│  └ 4.2 React Off
+├─◈ *4. STATUS EMOJI* ⤿ [ ${settings.statusReactEmoji || '💐'} ]
+│  └ ✦ Type: .set 4 <emoji>
 │
 ├─◈ *5. FAKE ACTION* ⤿ [ ${presenceBadge} ]
 │  ├ 5.1 Fake Typing ✍️
 │  ├ 5.2 Fake Recording 🎙️
 │  └ 5.3 Turn Off 🔴
 │
-├─◈ *6. OWNER EMOJI* ⤿ [ ${settings.ownerReactEmoji || '👑'} ]
-│  └ ✦ Type: .set 6 <emoji>
-│
-├─◈ *7. CHANGE PIN* ⤿ [ ${settings.securityPin || '1234'} ]
-│  └ ✦ Type: .set pin <new_pin>
+├─◈ *6. CHANGE PIN* ⤿ [ ${settings.securityPin || '1234'} ]
+│  └ ✦ Type: .set 6 <new_pin>  (හෝ .set pin <pin>)
 │
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option එක Type කරන්න (උදා: *.set 3.1* හෝ *.set 1.2*)
+• අදාළ Option එක Type කරන්න (උදා: *.set 2.1* හෝ *.set 1.2*)
+• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *1.2*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
