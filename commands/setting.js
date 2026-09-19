@@ -3,16 +3,27 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 
-// Cache logo memory level
+// In-memory cache to prevent database hammering & freeze
+const memSettingsCache = new Map();
+
 let cachedLogo = null;
 function getBotLogo() {
   if (cachedLogo) return cachedLogo;
   try {
-    const p1 = path.join(process.cwd(), 'logo.jpg');
-    if (fs.existsSync(p1)) return (cachedLogo = fs.readFileSync(p1));
-    const p2 = path.join(process.cwd(), 'assets', 'logo.jpg');
-    if (fs.existsSync(p2)) return (cachedLogo = fs.readFileSync(p2));
-  } catch (e) {}
+    const paths = [
+      path.join(process.cwd(), 'logo.jpg'),
+      path.join(__dirname, '../logo.jpg'),
+      path.join(process.cwd(), 'assets', 'logo.jpg')
+    ];
+    for (const p of paths) {
+      if (fs.existsSync(p)) {
+        cachedLogo = fs.readFileSync(p);
+        return cachedLogo;
+      }
+    }
+  } catch (e) {
+    console.error("Logo error:", e.message);
+  }
   return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
 
@@ -27,24 +38,24 @@ module.exports = {
     const isOwner = options.isOwner || msg.key.fromMe;
 
     const reply = async (content) => {
-      if (typeof safeReply === 'function') return await safeReply(content);
-      return await sock.sendMessage(targetChat, typeof content === 'string' ? { text: content } : content, { quoted: msg });
+      try {
+        if (typeof safeReply === 'function') return await safeReply(content);
+        return await sock.sendMessage(targetChat, typeof content === 'string' ? { text: content } : content, { quoted: msg });
+      } catch (err) {
+        console.error("Reply sending failed:", err.message);
+      }
     };
 
     if (!isOwner) {
-      return await reply('⛔ *Access Denied!* Only Bot Controller can modify settings.');
+      return await reply('⛔ *Access Denied!* Only Bot Owner can modify settings.');
     }
 
-    // Reaction instant
+    // Reaction without awaiting to keep it async non-blocking
     sock.sendMessage(targetChat, { react: { text: "⚙️", key: msg.key } }).catch(() => {});
 
     // Target bot number identification
-    const botNumber = (sock.user?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+    const botNumber = (sock.user?.id || '').split(':')[0].split('@')[0].replace(/\D/g, '');
     if (!botNumber) return await reply('⚠️ Bot Number හඳුනාගත නොහැකි විය.');
-
-    // ⚡ Direct Native Mongo Collection access (Deadlock & Schema Recompilation 100% bypass කරයි)
-    const db = mongoose.connection.db;
-    const settingsCollection = db ? db.collection('botsettings') : null;
 
     let settings = {
       workMode: 'public',
@@ -56,17 +67,24 @@ module.exports = {
       ownerReactEmoji: '👑'
     };
 
-    if (settingsCollection) {
+    // 1. Fast Cache Fetch (No DB lag)
+    if (memSettingsCache.has(botNumber)) {
+      settings = Object.assign(settings, memSettingsCache.get(botNumber));
+    } else {
       try {
-        const found = await Promise.race([
-          settingsCollection.findOne({ _id: botNumber }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2500))
-        ]);
-        if (found) settings = Object.assign(settings, found);
-      } catch (e) {}
+        if (mongoose.connection.readyState === 1 && mongoose.connection.db) {
+          const doc = await mongoose.connection.db.collection('botsettings').findOne({ _id: botNumber });
+          if (doc) {
+            settings = Object.assign(settings, doc);
+            memSettingsCache.set(botNumber, settings);
+          }
+        }
+      } catch (e) {
+        console.error("Settings DB Fetch Error:", e.message);
+      }
     }
 
-    // Input cleaning
+    // Input parsing
     let input = (args && args.length > 0) ? args.join(' ').trim().toLowerCase() : "";
     if (!input) {
       const rawText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
@@ -100,9 +118,9 @@ module.exports = {
 
     // 6. OWNER EMOJI
     else if (input.startsWith('6')) {
-      const parts = input.split(/\s+/);
+      const parts = input.split(' ');
       if (parts[1]) {
-        settings.ownerReactEmoji = parts[1];
+        settings.ownerReactEmoji = parts[1].trim();
         isUpdated = true;
       } else {
         return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 6 🔥`)');
@@ -111,9 +129,9 @@ module.exports = {
 
     // 7. CHANGE PIN
     else if (input.startsWith('pin')) {
-      const parts = input.split(/\s+/);
+      const parts = input.split(' ');
       if (parts[1] && parts[1].length >= 4) {
-        settings.securityPin = parts[1];
+        settings.securityPin = parts[1].trim();
         isUpdated = true;
       } else {
         return await reply('⚠️ අවම අංක 4ක PIN එකක් ලබාදෙන්න! (උදා: `.set pin 7788`)');
@@ -122,12 +140,15 @@ module.exports = {
 
     // UPDATE EXECUTOR
     if (isUpdated) {
-      if (settingsCollection) {
-        await settingsCollection.updateOne(
+      memSettingsCache.set(botNumber, settings);
+
+      // Async Non-blocking DB write
+      if (mongoose.connection.readyState === 1 && mongoose.connection.db) {
+        mongoose.connection.db.collection('botsettings').updateOne(
           { _id: botNumber },
           { $set: settings },
           { upsert: true }
-        ).catch(() => {});
+        ).catch(e => console.error("Settings save error:", e.message));
       }
 
       if (typeof global.clearSettingsCache === 'function') {
@@ -208,7 +229,7 @@ module.exports = {
 │
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option අංකය කෙලින්ම Reply කරන්න (උදා: *3.1* හෝ *5.1*)
+• අදාළ Option එක Type කරන්න (උදා: *.set 3.1* හෝ *.set 1.2*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
