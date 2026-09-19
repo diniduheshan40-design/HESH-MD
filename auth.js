@@ -12,8 +12,8 @@ const AuthSchema = new mongoose.Schema(
 
 const Auth = mongoose.models.Auth || mongoose.model('Auth', AuthSchema);
 
-// ⚡ High-Performance In-Memory Cache (Handshake & Keys zero-latency access)
-const keyCache = new NodeCache({ stdTTL: 1800, checkperiod: 300 });
+// ⚡ High-Performance RAM Cache (Memory Leak වැළැක්වීමට maxKeys සීමා කර ඇත)
+const keyCache = new NodeCache({ stdTTL: 1800, checkperiod: 300, maxKeys: 4000 });
 
 async function useMongoDBAuthState(sessionId) {
   const cleanSessionId = String(sessionId).replace(/[^0-9]/g, '');
@@ -24,7 +24,6 @@ async function useMongoDBAuthState(sessionId) {
       const cacheKey = `${cleanSessionId}-${id}`;
       keyCache.set(cacheKey, serialized);
       
-      // Async non-blocking database sync
       Auth.updateOne(
         { _id: cacheKey },
         { $set: { data: serialized } },
@@ -64,7 +63,6 @@ async function useMongoDBAuthState(sessionId) {
           const data = {};
           const missingIds = [];
 
-          // 1. Instant RAM Cache fetch
           for (const id of ids) {
             const cacheKey = `${cleanSessionId}-${type}-${id}`;
             const cachedVal = keyCache.get(cacheKey);
@@ -85,7 +83,6 @@ async function useMongoDBAuthState(sessionId) {
 
           if (missingIds.length === 0) return data;
 
-          // 2. Batch fetch missing keys from MongoDB
           try {
             const queryIds = missingIds.map(id => `${cleanSessionId}-${type}-${id}`);
             const records = await Auth.find({ _id: { $in: queryIds } }).lean();
@@ -162,7 +159,7 @@ async function useMongoDBAuthState(sessionId) {
           }
         }
         await Auth.deleteMany({
-          _id: { $gte: prefix,$lt: `${cleanSessionId}/\uffff` }
+          _id: new RegExp('^' + cleanSessionId + '-')
         });
       } catch (e) {
         console.error('❌ Session delete error:', e.message);
