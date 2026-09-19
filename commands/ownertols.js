@@ -1,22 +1,27 @@
 // commands/ownertools.js
 const util = require('util');
+const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
 module.exports = {
   name: 'ownertools',
   alias: ['eval', 'bc', 'broadcast', 'block', 'unblock', 'join', 'leave', 'setpp', 'restart'],
+  category: 'owner',
   description: 'Master Owner Control Suite',
-  async execute(sock, msg, args, chatJid, safeReply, { isOwner }) {
+
+  async execute(sock, msg, args, chatJid, safeReply, options = {}) {
+    const isOwner = options.isOwner;
     if (!isOwner) {
       return await safeReply('⛔ *Access Denied!* This control suite is reserved for the Master Owner.');
     }
 
+    const targetChat = chatJid || msg.key.remoteJid;
     const rawMsg = msg.message?.conversation || 
                    msg.message?.extendedTextMessage?.text || 
                    msg.message?.imageMessage?.caption || 
                    '';
     const usedCmd = rawMsg.slice(1).trim().split(/ +/)[0].toLowerCase();
 
-    // 🟢 1. JAVASCRIPT EVAL
+    // 🟢 1. JAVASCRIPT EVAL (.eval / >)
     if (usedCmd === 'eval' || usedCmd === '>') {
       const code = args.join(' ');
       if (!code) return await safeReply('⚠️ කරුණාකර execute කිරීමට JS code එක ලබාදෙන්න.');
@@ -39,29 +44,41 @@ module.exports = {
 
       const bcMsg = `*⚡ HESHAN-MD OFFICIAL BROADCAST ⚡*\n────────────────────────────\n${text}\n────────────────────────────\n> 👑 ꜱᴇɴᴛ ʙʏ ᴍᴀꜱᴛᴇʀ ᴏᴡɴᴇʀ`;
 
+      // Active sessions වල chats target කිරීම
       const chats = Object.keys(sock.chats || {});
-      await safeReply(`📢 Broadcasting started... (${chats.length} chats target)`);
+      await safeReply(`📢 Broadcasting started in background...`);
 
-      let count = 0;
-      for (const id of chats) {
-        try {
-          if (!id.includes('broadcast')) {
-            await sock.sendMessage(id, { text: bcMsg });
-            count++;
-            await new Promise(res => setTimeout(res, 800));
-          }
-        } catch (e) {}
-      }
-      return await safeReply(`✅ Broadcast successfully sent to *${count}* chats!`);
+      // ⚡ Non-blocking background worker
+      setImmediate(async () => {
+        let count = 0;
+        for (const id of chats) {
+          try {
+            if (!id.includes('broadcast') && (id.endsWith('@s.whatsapp.net') || id.endsWith('@g.us'))) {
+              await sock.sendMessage(id, { text: bcMsg }).catch(() => {});
+              count++;
+              await new Promise(res => setTimeout(res, 500));
+            }
+          } catch (e) {}
+        }
+        await sock.sendMessage(targetChat, { text: `✅ Broadcast successfully delivered to *${count}* chats!` }).catch(() => {});
+      });
+      return;
     }
 
     // 🟢 3. BLOCK USER (.block)
     if (usedCmd === 'block') {
-      let target = msg.message?.extendedTextMessage?.contextInfo?.participant || 
-                   args[0]?.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
+      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+      let target = contextInfo?.participant || 
+                   (args[0] ? args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : '');
+
       if (!target || target === '@s.whatsapp.net') {
         return await safeReply('⚠️ කරුණාකර user කෙනෙක්ගේ මැසේජ් එකකට reply කරන්න හෝ number එක දෙන්න.');
       }
+
+      if (target.endsWith('@lid') && sock.signalRepository?.lidToJid) {
+        try { target = await sock.signalRepository.lidToJid(target) || target; } catch(e){}
+      }
+
       try {
         await sock.updateBlockStatus(target, 'block');
         return await safeReply(`🚫 Successfully blocked: @${target.split('@')[0]}`, { mentions: [target] });
@@ -72,11 +89,18 @@ module.exports = {
 
     // 🟢 4. UNBLOCK USER (.unblock)
     if (usedCmd === 'unblock') {
-      let target = msg.message?.extendedTextMessage?.contextInfo?.participant || 
-                   args[0]?.replace(/[^0-9]/g, '') + '@s.whatsapp.net';
+      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+      let target = contextInfo?.participant || 
+                   (args[0] ? args[0].replace(/[^0-9]/g, '') + '@s.whatsapp.net' : '');
+
       if (!target || target === '@s.whatsapp.net') {
         return await safeReply('⚠️ කරුණාකර user කෙනෙක්ගේ මැසේජ් එකකට reply කරන්න හෝ number එක දෙන්න.');
       }
+
+      if (target.endsWith('@lid') && sock.signalRepository?.lidToJid) {
+        try { target = await sock.signalRepository.lidToJid(target) || target; } catch(e){}
+      }
+
       try {
         await sock.updateBlockStatus(target, 'unblock');
         return await safeReply(`✅ Successfully unblocked: @${target.split('@')[0]}`, { mentions: [target] });
@@ -102,11 +126,11 @@ module.exports = {
 
     // 🟢 6. LEAVE GROUP (.leave)
     if (usedCmd === 'leave') {
-      if (!chatJid.endsWith('@g.us')) {
+      if (!targetChat.endsWith('@g.us')) {
         return await safeReply('⚠️ මේ command එක groups වල පමණක් භාවිතා කරන්න.');
       }
       await safeReply('👋 Goodbye! Master requested me to leave.');
-      return await sock.groupLeave(chatJid);
+      return await sock.groupLeave(targetChat);
     }
 
     // 🟢 7. PROFILE PICTURE (.setpp)
@@ -117,10 +141,10 @@ module.exports = {
         return await safeReply('⚠️ කරුණාකර Profile Picture එකට දැමීමට image එකකට reply කර `.setpp` යොදන්න.');
       }
       try {
-        const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
         const stream = await downloadContentFromMessage(quoted.imageMessage, 'image');
-        let buffer = Buffer.from([]);
-        for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+        const chunks = [];
+        for await (const chunk of stream) chunks.push(chunk);
+        const buffer = Buffer.concat(chunks);
 
         const botJid = sock.user?.id ? sock.user.id.split(':')[0] + '@s.whatsapp.net' : '';
         await sock.updateProfilePicture(botJid, buffer);
@@ -133,7 +157,10 @@ module.exports = {
     // 🟢 8. RESTART (.restart)
     if (usedCmd === 'restart') {
       await safeReply('🔄 *Restarting Bot Engine...* Please wait a few seconds.');
-      setTimeout(() => process.exit(0), 1000);
+      setTimeout(() => {
+        try { sock.ws?.close(); } catch(e){}
+        process.exit(0);
+      }, 1000);
       return;
     }
 
