@@ -11,7 +11,7 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// ⚡ Buffer Cache for Zero Disk-Read Latency
+// ⚡ Solid Logo Buffer Finder
 let cachedLogo = null;
 function getBotLogo() {
     if (cachedLogo) return cachedLogo;
@@ -39,11 +39,11 @@ function getBotLogo() {
     return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
 
-// ⚡ Active Menu Session Registry (Memory Leak & Zombie Listener Prevention)
 const activeMenuSessions = new Map();
 
 module.exports = {
   name: 'menu',
+  alias: ['help', 'list', 'commands'],
   category: 'general',
   desc: 'Interactive categorized command menu',
 
@@ -77,30 +77,8 @@ module.exports = {
 *👉 Select a category by replying with (1, 2, 3, or 4)*
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
 
-    try {
-      // Non-blocking reaction
-      sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
-
-      const logo = getBotLogo();
-
-      const sentMenu = await sock.sendMessage(targetChat, {
-          image: logo,
-          caption: mainText,
-          mimetype: 'image/jpeg'
-      }, { quoted: msg });
-
-      const menuMessageId = sentMenu?.key?.id;
-      if (!menuMessageId) return;
-
-      // පරණ pending session එකක් ඇත්නම් listener එක අයින් කිරීම
-      if (activeMenuSessions.has(targetChat)) {
-        const prev = activeMenuSessions.get(targetChat);
-        clearTimeout(prev.timeout);
-        sock.ev.off('messages.upsert', prev.listener);
-      }
-
-      const subMenus = {
-        "1": `┏━━━❮ 📥 *DOWNLOAD MENU* ❯━━━┓
+    const subMenus = {
+      "1": `┏━━━❮ 📥 *DOWNLOAD MENU* ❯━━━┓
 ┃
 ┃ ◈ \`.song\`      ⌁ _<music mp3>_
 ┃ ◈ \`.video\`     ⌁ _<youtube mp4>_
@@ -112,7 +90,7 @@ module.exports = {
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
-        "2": `┏━━━❮ 🛠️ *TOOLS & UTILITY* ❯━━━┓
+      "2": `┏━━━❮ 🛠️ *TOOLS & UTILITY* ❯━━━┓
 ┃
 ┃ ◈ \`.pt\`         ⌁ _<photo to sticker/tool>_
 ┃ ◈ \`.tourl\`      ⌁ _<media to link>_
@@ -122,7 +100,7 @@ module.exports = {
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
-        "3": `┏━━━❮ 👥 *GROUP & ADMIN MENU* ❯━━━┓
+      "3": `┏━━━❮ 👥 *GROUP & ADMIN MENU* ❯━━━┓
 ┃
 ┃ ◈ \`.tagall\`     ⌁ _<mention all members>_
 ┃ ◈ \`.kick\`       ⌁ _<remove user>_
@@ -140,7 +118,7 @@ module.exports = {
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
-        "4": `┏━━━❮ ⚡ *SYSTEM & OWNER* ❯━━━┓
+      "4": `┏━━━❮ ⚡ *SYSTEM & OWNER* ❯━━━┓
 ┃
 ┃ ◈ \`.ping\`       ⌁ _<response speed>_
 ┃ ◈ \`.alive\`      ⌁ _<bot online status>_
@@ -149,7 +127,35 @@ module.exports = {
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
-      };
+    };
+
+    // Instant Reaction
+    sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
+
+    try {
+      let sentMenu = null;
+      const logo = getBotLogo();
+
+      // 1. Try sending with Logo Image
+      try {
+        sentMenu = await sock.sendMessage(targetChat, {
+            image: logo,
+            caption: mainText,
+            mimetype: 'image/jpeg'
+        }, { quoted: msg });
+      } catch (imgErr) {
+        // Fallback: Image send fail වුවහොත් ක්ෂණිකව text message එක යවයි
+        sentMenu = await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg });
+      }
+
+      const menuMessageId = sentMenu?.key?.id;
+      if (!menuMessageId) return;
+
+      if (activeMenuSessions.has(targetChat)) {
+        const prev = activeMenuSessions.get(targetChat);
+        clearTimeout(prev.timeout);
+        sock.ev.off('messages.upsert', prev.listener);
+      }
 
       const replyListener = async (m) => {
         try {
@@ -183,13 +189,15 @@ module.exports = {
             const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
             sock.sendMessage(targetChat, { react: { text: emojis[replyText], key: replyMsg.key } }).catch(() => {});
 
-            await sock.sendMessage(targetChat, { 
-              image: getBotLogo(),
-              caption: subMenus[replyText],
-              mimetype: 'image/jpeg'
-            }, { quoted: replyMsg }).catch(async () => {
+            try {
+              await sock.sendMessage(targetChat, { 
+                image: getBotLogo(),
+                caption: subMenus[replyText],
+                mimetype: 'image/jpeg'
+              }, { quoted: replyMsg });
+            } catch (e) {
               await sock.sendMessage(targetChat, { text: subMenus[replyText] }, { quoted: replyMsg });
-            });
+            }
           }
         } catch (e) {
           console.error("Menu Reply Error:", e.message);
@@ -199,7 +207,7 @@ module.exports = {
       const timeout = setTimeout(() => {
         sock.ev.off('messages.upsert', replyListener);
         activeMenuSessions.delete(targetChat);
-      }, 45000);
+      }, 60000);
 
       activeMenuSessions.set(targetChat, { listener: replyListener, timeout });
       sock.ev.on('messages.upsert', replyListener);
