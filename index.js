@@ -80,6 +80,7 @@ const DEFAULT_SETTINGS = {
 // ⚡ High-Speed In-Memory Caching Layer
 const settingsCache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
 const lidCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
+const msgDedupeCache = new NodeCache({ stdTTL: 20, checkperiod: 10 }); // Duplicate command execution වැළැක්වීමට
 const activeSessions = {};
 global.activeSessions = activeSessions;
 const isStarting = {};
@@ -686,10 +687,10 @@ function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
 
 function unwrapMessageContent(message) {
   return (
-    message.ephemeralMessage?.message ||
-    message.viewOnceMessage?.message ||
-    message.viewOnceMessageV2?.message ||
-    message.documentWithCaptionMessage?.message ||
+    message?.ephemeralMessage?.message ||
+    message?.viewOnceMessage?.message ||
+    message?.viewOnceMessageV2?.message ||
+    message?.documentWithCaptionMessage?.message ||
     message
   );
 }
@@ -818,6 +819,13 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
+  // 🛡️ Message Deduplication: එකම message එක දෙවතාවක් trigger වීම වැළැක්වීම
+  const msgId = msg.key?.id;
+  if (msgId) {
+    if (msgDedupeCache.has(msgId)) return;
+    msgDedupeCache.set(msgId, true);
+  }
+
   if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
     if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
     return;
@@ -890,19 +898,20 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   }
 }
 
-// ⚡ Parallel processing with Promise.allSettled
+// ⚡ 100% Reliable Zero-Drop Upsert Handler (එක පාරින් command එක trigger වේ)
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (!messages || !messages.length) return;
-    
-    const validMessages = messages.filter(msg => {
-      const jid = msg.key?.remoteJid || '';
-      return (type === 'notify' || jid.endsWith('@newsletter') || jid === UPDATE_CHANNEL_JID || msg.key?.fromMe);
-    });
 
-    await Promise.allSettled(
-      validMessages.map(msg => processSingleMessage(sock, msg, phoneNumber).catch(() => {}))
-    );
+    for (const msg of messages) {
+      if (!msg?.message) continue;
+      if (msg.messageStubType) continue; // WhatsApp system messages drop කරයි
+
+      // Message එක background unblocked execution එකකට යවයි
+      processSingleMessage(sock, msg, phoneNumber).catch((err) => {
+        console.error('Process message error:', err?.message || err);
+      });
+    }
   });
 }
 
@@ -1074,7 +1083,7 @@ async function reconnectAllSavedSessions() {
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(2000); // Optimized safe reconnect interval
+      await delay(2000);
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
