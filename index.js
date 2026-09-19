@@ -18,12 +18,8 @@ const {
 } = require('@whiskeysockets/baileys');
 
 // 🛡️ Global Crash Protection
-process.on('unhandledRejection', (err) => {
-  console.error('Unhandled Rejection:', err?.message || err);
-});
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err?.message || err);
-});
+process.on('unhandledRejection', (err) => console.error('Unhandled Rejection:', err?.message || err));
+process.on('uncaughtException', (err) => console.error('Uncaught Exception:', err?.message || err));
 
 // 🟢 Config & DB Models
 const { MONGODB_URI, BOT_NAME } = require('./config');
@@ -33,35 +29,10 @@ const { askAI } = require('./ai');
 // ============================================================================
 // 🌍 GLOBAL CONSTANTS & CACHES
 // ============================================================================
-
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
-const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
-
-let cachedLogoBuffer = null;
-function getLocalLogoBuffer() {
-  if (cachedLogoBuffer) return cachedLogoBuffer;
-  const localLogoPath = path.join(process.cwd(), 'logo.jpg');
-  if (fs.existsSync(localLogoPath)) {
-    cachedLogoBuffer = fs.readFileSync(localLogoPath);
-    return cachedLogoBuffer;
-  }
-  const assetsLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
-  if (fs.existsSync(assetsLogoPath)) {
-    cachedLogoBuffer = fs.readFileSync(assetsLogoPath);
-    return cachedLogoBuffer;
-  }
-  return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
-}
-
+const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '🪄', '✨'];
 const REAL_OWNER_NUMBER = '94719845166';
-const OWNER_NUMBERS = [
-  '94719845166',
-  '94720882316',
-  '15947733680169',
-  '15947733680169@lid',
-  '72787431583987',
-  '72787431583987@lid'
-];
+const OWNER_NUMBERS = ['94719845166', '94720882316'];
 
 const DEFAULT_SETTINGS = {
   workMode: 'public',
@@ -77,42 +48,44 @@ const DEFAULT_SETTINGS = {
   isFirstConnectDone: false
 };
 
-// ⚡ High-Speed In-Memory Caching Layer
+// ⚡ Fast In-Memory Cache
 const settingsCache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
 const lidCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
-const msgDedupeCache = new NodeCache({ stdTTL: 20, checkperiod: 10 }); // Duplicate command execution වැළැක්වීමට
+const msgDedupeCache = new NodeCache({ stdTTL: 20, checkperiod: 10 });
 const activeSessions = {};
 global.activeSessions = activeSessions;
 const isStarting = {};
 const commands = new Map();
 
-// ============================================================================
-// 🗄️ DATABASE SCHEMA & HELPERS
-// ============================================================================
-
-function createSettingsModel() {
-  const SettingsSchema = new mongoose.Schema({
-    _id: { type: String, required: true },
-    workMode: { type: String, default: DEFAULT_SETTINGS.workMode },
-    autoAiInbox: { type: Boolean, default: DEFAULT_SETTINGS.autoAiInbox },
-    autoStatusSeen: { type: Boolean, default: DEFAULT_SETTINGS.autoStatusSeen },
-    statusReact: { type: Boolean, default: DEFAULT_SETTINGS.statusReact },
-    statusReactEmoji: { type: String, default: DEFAULT_SETTINGS.statusReactEmoji },
-    ownerReact: { type: Boolean, default: DEFAULT_SETTINGS.ownerReact },
-    ownerReactEmoji: { type: String, default: DEFAULT_SETTINGS.ownerReactEmoji },
-    botLogo: { type: String, default: DEFAULT_SETTINGS.botLogo },
-    autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
-    securityPin: { type: String, default: DEFAULT_SETTINGS.securityPin },
-    isFirstConnectDone: { type: Boolean, default: DEFAULT_SETTINGS.isFirstConnectDone }
-  });
-
-  return mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
+let cachedLogoBuffer = null;
+function getLocalLogoBuffer() {
+  if (cachedLogoBuffer) return cachedLogoBuffer;
+  for (const p of [path.join(process.cwd(), 'logo.jpg'), path.join(process.cwd(), 'assets', 'logo.jpg')]) {
+    if (fs.existsSync(p)) return (cachedLogoBuffer = fs.readFileSync(p));
+  }
+  return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
 
-const SettingsModel = createSettingsModel();
+// ============================================================================
+// 🗄️ DATABASE MODEL & HELPERS
+// ============================================================================
+const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', new mongoose.Schema({
+  _id: { type: String, required: true },
+  workMode: { type: String, default: DEFAULT_SETTINGS.workMode },
+  autoAiInbox: { type: Boolean, default: DEFAULT_SETTINGS.autoAiInbox },
+  autoStatusSeen: { type: Boolean, default: DEFAULT_SETTINGS.autoStatusSeen },
+  statusReact: { type: Boolean, default: DEFAULT_SETTINGS.statusReact },
+  statusReactEmoji: { type: String, default: DEFAULT_SETTINGS.statusReactEmoji },
+  ownerReact: { type: Boolean, default: DEFAULT_SETTINGS.ownerReact },
+  ownerReactEmoji: { type: String, default: DEFAULT_SETTINGS.ownerReactEmoji },
+  botLogo: { type: String, default: DEFAULT_SETTINGS.botLogo },
+  autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
+  securityPin: { type: String, default: DEFAULT_SETTINGS.securityPin },
+  isFirstConnectDone: { type: Boolean, default: DEFAULT_SETTINGS.isFirstConnectDone }
+}, { strict: false }));
 
 function clearSettingsCache(num) {
-  settingsCache.del(num);
+  if (num) settingsCache.del(num);
 }
 global.clearSettingsCache = clearSettingsCache;
 
@@ -124,7 +97,7 @@ async function getBotSettings(botNum) {
   try {
     let settings = await SettingsModel.findById(botNum).lean();
     if (!settings) {
-      settings = await SettingsModel.create({ _id: botNum, ...DEFAULT_SETTINGS }).then(doc => doc.toObject());
+      settings = await SettingsModel.create({ _id: botNum, ...DEFAULT_SETTINGS }).then(d => d.toObject());
     }
     settingsCache.set(botNum, settings);
     return settings;
@@ -136,341 +109,78 @@ async function getBotSettings(botNum) {
 // ============================================================================
 // 📂 COMMAND LOADER
 // ============================================================================
-
-function registerCommandAliases(cmd, cmdName) {
-  if (cmd && cmd.name) commands.set(cmd.name.toLowerCase(), cmd);
-  commands.set(cmdName, cmd);
-
-  if (cmd && cmd.alias) {
-    if (Array.isArray(cmd.alias)) {
-      for (const al of cmd.alias) commands.set(al.toLowerCase(), cmd);
-    } else if (typeof cmd.alias === 'string') {
-      commands.set(cmd.alias.toLowerCase(), cmd);
-    }
-  }
-}
-
-function loadCommandFile(cmdDir, file) {
-  try {
-    let cmd = require(path.join(cmdDir, file));
-    if (cmd.default) cmd = cmd.default;
-    const cmdName = file.replace('.js', '').toLowerCase();
-    registerCommandAliases(cmd, cmdName);
-  } catch (e) {
-    console.error(`❌ Error loading ${file}:`, e.message);
-  }
-}
-
 function loadAllCommands() {
   const cmdDir = path.join(__dirname, 'commands');
   if (!fs.existsSync(cmdDir)) return;
   const cmdFiles = fs.readdirSync(cmdDir).filter(f => f.endsWith('.js'));
   for (const file of cmdFiles) {
-    loadCommandFile(cmdDir, file);
+    try {
+      let cmd = require(path.join(cmdDir, file));
+      if (cmd.default) cmd = cmd.default;
+      const cmdName = file.replace('.js', '').toLowerCase();
+      if (cmd?.name) commands.set(cmd.name.toLowerCase(), cmd);
+      commands.set(cmdName, cmd);
+      if (cmd?.alias) {
+        const aliases = Array.isArray(cmd.alias) ? cmd.alias : [cmd.alias];
+        for (const al of aliases) commands.set(al.toLowerCase(), cmd);
+      }
+    } catch (e) {
+      console.error(`❌ Error loading ${file}:`, e.message);
+    }
   }
-}
-
-function findCommand(...names) {
-  for (const name of names) {
-    const cmd = commands.get(name);
-    if (cmd) return cmd;
-  }
-  return null;
 }
 
 function getCommandExecutor(cmd) {
-  if (typeof cmd === 'function') return cmd;
-  if (cmd && typeof cmd.execute === 'function') return cmd.execute;
-  if (cmd && typeof cmd.run === 'function') return cmd.run;
-  if (cmd && typeof cmd.downloadAndSendStatus === 'function') return cmd.downloadAndSendStatus;
-  return null;
+  return typeof cmd === 'function' ? cmd : (cmd?.execute || cmd?.run || null);
 }
 
 // ============================================================================
 // 🌐 UI PORTAL
 // ============================================================================
-
 function renderPortalHtml(botName) {
-  return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>${botName} • PAIRING STATION</title>
-      <link rel="preconnect" href="https://fonts.googleapis.com">
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
-      <style>
-        :root {
-          --bg-core: #090305;
-          --panel-bg: rgba(20, 6, 10, 0.72);
-          --accent-red: #e11d48;
-          --accent-glow: rgba(225, 29, 72, 0.35);
-          --crimson-soft: #fb7185;
-          --border-glass: rgba(244, 63, 94, 0.22);
-          --border-focus: rgba(244, 63, 94, 0.65);
-          --text-main: #fcfcfd;
-          --text-muted: #9f8e93;
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-          background-color: var(--bg-core);
-          background-image: 
-            radial-gradient(circle at 50% 0%, rgba(225, 29, 72, 0.18) 0%, transparent 60%),
-            radial-gradient(circle at 10% 90%, rgba(159, 18, 57, 0.12) 0%, transparent 45%);
-          color: var(--text-main);
-          font-family: 'Outfit', sans-serif;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 100vh;
-          padding: 24px;
-        }
-        .portal-card {
-          background: var(--panel-bg);
-          backdrop-filter: blur(28px) saturate(160%);
-          -webkit-backdrop-filter: blur(28px) saturate(160%);
-          border: 1px solid var(--border-glass);
-          border-radius: 28px;
-          padding: 44px 34px;
-          width: 100%;
-          max-width: 440px;
-          text-align: center;
-          box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 45px var(--accent-glow);
-          position: relative;
-          overflow: hidden;
-        }
-        .portal-card::before {
-          content: '';
-          position: absolute;
-          top: 0; left: 0; right: 0; height: 3px;
-          background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
-        }
-        .badge-status {
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          color: var(--crimson-soft);
-          background: rgba(225, 29, 72, 0.12);
-          border: 1px solid rgba(225, 29, 72, 0.28);
-          padding: 5px 14px;
-          border-radius: 30px;
-          margin-bottom: 20px;
-        }
-        .badge-dot {
-          width: 6px; height: 6px;
-          background: var(--accent-red);
-          border-radius: 50%;
-          box-shadow: 0 0 8px var(--accent-red);
-        }
-        .app-title {
-          font-size: 30px;
-          font-weight: 800;
-          letter-spacing: -0.5px;
-          background: linear-gradient(135deg, #ffffff 40%, var(--crimson-soft) 80%, var(--accent-red) 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          margin-bottom: 6px;
-        }
-        .app-desc {
-          font-size: 13.5px;
-          color: var(--text-muted);
-          margin-bottom: 30px;
-          font-weight: 400;
-        }
-        .input-wrap { position: relative; margin-bottom: 16px; }
-        .phone-input {
-          width: 100%;
-          padding: 16px 20px;
-          border-radius: 16px;
-          border: 1px solid var(--border-glass);
-          background: rgba(12, 3, 6, 0.7);
-          color: var(--text-main);
-          font-size: 17px;
-          font-weight: 600;
-          letter-spacing: 0.8px;
-          text-align: center;
-          outline: none;
-          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        .phone-input:focus {
-          border-color: var(--border-focus);
-          box-shadow: 0 0 24px rgba(225, 29, 72, 0.35);
-          background: rgba(18, 4, 9, 0.9);
-        }
-        .btn-action {
-          width: 100%;
-          padding: 16px;
-          border-radius: 16px;
-          border: none;
-          background: linear-gradient(135deg, #be123c 0%, var(--accent-red) 100%);
-          color: #ffffff;
-          font-size: 14.5px;
-          font-weight: 700;
-          letter-spacing: 0.5px;
-          cursor: pointer;
-          transition: all 0.25s ease;
-          box-shadow: 0 8px 24px rgba(225, 29, 72, 0.3);
-          margin-bottom: 12px;
-        }
-        .btn-action:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 12px 30px rgba(225, 29, 72, 0.45);
-        }
-        .btn-reset {
-          width: 100%;
-          padding: 13px;
-          border-radius: 14px;
-          border: 1px solid rgba(225, 29, 72, 0.25);
-          background: rgba(225, 29, 72, 0.08);
-          color: var(--crimson-soft);
-          font-size: 12.5px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.25s ease;
-        }
-        .btn-reset:hover {
-          background: rgba(225, 29, 72, 0.18);
-          border-color: rgba(225, 29, 72, 0.45);
-        }
-        .code-container {
-          display: none;
-          margin-top: 24px;
-          animation: fadeIn 0.4s ease;
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .code-box {
-          font-family: 'JetBrains Mono', monospace;
-          font-size: 32px;
-          font-weight: 800;
-          letter-spacing: 5px;
-          color: #ffe4e6;
-          background: rgba(225, 29, 72, 0.14);
-          border: 1.5px dashed rgba(251, 113, 133, 0.45);
-          padding: 18px;
-          border-radius: 16px;
-          cursor: pointer;
-          transition: all 0.25s ease;
-        }
-        .copy-tag {
-          font-size: 11.5px;
-          color: var(--text-muted);
-          margin-top: 8px;
-        }
-        .footer-note {
-          margin-top: 28px;
-          font-size: 11px;
-          letter-spacing: 1px;
-          color: rgba(255, 255, 255, 0.25);
-          text-transform: uppercase;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="portal-card">
-        <div class="badge-status">
-          <span class="badge-dot"></span> Online System
-        </div>
-        <h1 class="app-title">${botName}</h1>
-        <p class="app-desc">Enter phone number with country code</p>
-
-        <div class="input-wrap">
-          <input type="text" id="phone" class="phone-input" placeholder="e.g. 9470xxxxxxx" />
-        </div>
-
-        <button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button>
-        <button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button>
-
-        <div class="code-container" id="codeWrapper">
-          <div class="code-box" id="codeDisplay" onclick="copyCode()"></div>
-          <div class="copy-tag">Click code to copy to clipboard</div>
-        </div>
-
-        <p class="footer-note">Powered by Heshan MD</p>
-      </div>
-
-      <script>
-        async function fetchPairCode() {
-          const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
-          if (!phone || phone.length < 10) return alert('කරුණාකර නිවැරදි Country Code සහිත අංකය ඇතුළත් කරන්න!');
-
-          const btn = document.getElementById('btn');
-          const wrapper = document.getElementById('codeWrapper');
-          const display = document.getElementById('codeDisplay');
-
-          btn.innerText = 'GENERATING CODE...';
-          btn.disabled = true;
-          wrapper.style.display = 'none';
-
-          try {
-            const res = await fetch('/pair?num=' + phone);
-            const data = await res.json();
-            if (data.code) {
-              display.innerText = data.code;
-              wrapper.style.display = 'block';
-              navigator.clipboard.writeText(data.code).catch(()=>{});
-              alert('✅ Pairing Code: ' + data.code);
-            } else {
-              alert(data.error || 'Connection rate-limited. Please wait 15 seconds.');
-            }
-          } catch(e) {
-            alert('Server connection error. Refresh page and retry!');
-          }
-          btn.innerText = 'GET PAIRING CODE';
-          btn.disabled = false;
-        }
-
-        async function cleanSessionSlot() {
-          const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
-          if (!phone) return alert('Clean කිරීමට Phone Number එක ඇතුළත් කරන්න!');
-          if (confirm('+' + phone + ' සඳහා session එක clean කරන්නද?')) {
-            try {
-              const res = await fetch('/reset-num?num=' + phone);
-              const data = await res.json();
-              if (data.success) {
-                alert('✅ Session Cleared! දැන් Pair Code එක Generate කරන්න.');
-              }
-            } catch(e) {
-              alert('Clean request failed!');
-            }
-          }
-        }
-
-        function copyCode() {
-          const code = document.getElementById('codeDisplay').innerText;
-          if (code) {
-            navigator.clipboard.writeText(code);
-            alert('✅ Copied to clipboard: ' + code);
-          }
-        }
-      </script>
-    </body>
-    </html>
-  `;
-}
-
-function registerPortalRoute(app) {
-  app.get('/', (req, res) => {
-    res.send(renderPortalHtml(BOT_NAME));
-  });
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${botName} • STATION</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet"><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#090305;background-image:radial-gradient(circle at 50% 0%,rgba(225,29,72,.18) 0%,transparent 60%);color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}.portal-card{background:rgba(20,6,10,.75);backdrop-filter:blur(24px);border:1px solid rgba(244,63,94,.22);border-radius:28px;padding:40px 30px;width:100%;max-width:420px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.65)}.app-title{font-size:28px;font-weight:800;background:linear-gradient(135deg,#fff 40%,#fb7185 80%,#e11d48 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}.app-desc{font-size:13px;color:#9f8e93;margin-bottom:26px}.phone-input{width:100%;padding:15px;border-radius:14px;border:1px solid rgba(244,63,94,.22);background:rgba(12,3,6,.7);color:#fff;font-size:16px;font-weight:600;text-align:center;outline:none;margin-bottom:14px}.btn-action{width:100%;padding:15px;border-radius:14px;border:none;background:linear-gradient(135deg,#be123c 0%,#e11d48 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:10px}.btn-reset{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(225,29,72,.25);background:rgba(225,29,72,.08);color:#fb7185;font-size:12px;cursor:pointer}.code-box{font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:800;color:#ffe4e6;background:rgba(225,29,72,.14);border:1.5px dashed rgba(251,113,133,.45);padding:16px;border-radius:14px;margin-top:20px;display:none;cursor:pointer}</style></head><body><div class="portal-card"><h1 class="app-title">${botName}</h1><p class="app-desc">Enter phone number with country code</p><input type="text" id="phone" class="phone-input" placeholder="e.g. 9470xxxxxxx" /><button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button><button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button><div class="code-box" id="codeDisplay" onclick="copyCode()"></div></div><script>async function fetchPairCode(){const p=document.getElementById('phone').value.replace(/[^0-9]/g,'');if(!p||p.length<10)return alert('Valid Phone Number Required!');const b=document.getElementById('btn');const d=document.getElementById('codeDisplay');b.innerText='GENERATING...';b.disabled=true;try{const res=await fetch('/pair?num='+p);const data=await res.json();if(data.code){d.innerText=data.code;d.style.display='block';navigator.clipboard.writeText(data.code).catch(()=>{});}else alert(data.error||'Rate-limited. Wait 15s.');}catch(e){alert('Server error!');}b.innerText='GET PAIRING CODE';b.disabled=false;}async function cleanSessionSlot(){const p=document.getElementById('phone').value.replace(/[^0-9]/g,'');if(!p)return alert('Phone number required!');if(confirm('Clean session for +'+p+'?')){await fetch('/reset-num?num='+p);alert('Session cleaned!');}}function copyCode(){const c=document.getElementById('codeDisplay').innerText;navigator.clipboard.writeText(c);alert('Copied: '+c);}</script></body></html>`;
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION (HIGH THROUGHPUT OPTIMIZED)
+// 🗑️ CASCADE PURGE ENGINE (බොට් අයින් කළ විට මුළු Base එකෙන්ම Wipe වීම)
 // ============================================================================
+async function purgeSessionEntirely(phoneNumber) {
+  const cleanNum = phoneNumber.replace(/[^0-9]/g, '');
+  console.log(`🧹 Cascading Purge for session: +${cleanNum}`);
 
+  try {
+    if (activeSessions[cleanNum]) {
+      try {
+        activeSessions[cleanNum].ev.removeAllListeners();
+        activeSessions[cleanNum].ws?.close();
+      } catch (e) {}
+      delete activeSessions[cleanNum];
+    }
+    delete isStarting[cleanNum];
+    clearSettingsCache(cleanNum);
+
+    const sessionLogo = path.join(process.cwd(), `logo_${cleanNum}.jpg`);
+    if (fs.existsSync(sessionLogo)) fs.promises.unlink(sessionLogo).catch(() => {});
+
+    // MongoDB Data Purge (Auth Credentials + Settings)
+    await Promise.allSettled([
+      Auth.deleteMany({ _id: new RegExp('^' + cleanNum, 'i') }),
+      mongoose.connection.db ? mongoose.connection.db.collection('auths').deleteMany({ _id: new RegExp('^' + cleanNum, 'i') }) : Promise.resolve(),
+      mongoose.connection.db ? mongoose.connection.db.collection('botsettings').deleteOne({ _id: cleanNum }) : Promise.resolve()
+    ]);
+
+    console.log(`✅ Session +${cleanNum} permanently purged from DB & Memory!`);
+  } catch (err) {
+    console.error(`❌ Purge error (+${cleanNum}):`, err.message);
+  }
+}
+
+// ============================================================================
+// 🔌 SOCKET & LIFECYCLE
+// ============================================================================
 async function createBaileysSocket(phoneNumber) {
   const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(phoneNumber);
   const logger = pino({ level: 'silent' });
-  const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60 });
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
   const sock = makeWASocket({
@@ -479,11 +189,10 @@ async function createBaileysSocket(phoneNumber) {
     logger,
     printQRInTerminal: false,
     browser: Browsers.macOS('Safari'),
-    msgRetryCounterCache,
+    msgRetryCounterCache: new NodeCache({ stdTTL: 180, checkperiod: 60 }),
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
-    connectTimeoutMs: 45000,
-    defaultQueryTimeoutMs: 20000,
+    connectTimeoutMs: 30000,
     keepAliveIntervalMs: 30000,
     markOnlineOnConnect: false,
     emitOwnEvents: false,
@@ -494,340 +203,77 @@ async function createBaileysSocket(phoneNumber) {
   return { sock, clearSessionData };
 }
 
-// ============================================================================
-// 🔄 CONNECTION LIFECYCLE
-// ============================================================================
-
 async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData) {
   const statusCode = lastDisconnect?.error?.output?.statusCode;
-  console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
+  const cleanNum = phoneNumber.replace(/[^0-9]/g, '');
+  console.log(`⚠️ Connection closed (+${cleanNum}), Code: ${statusCode}`);
 
-  try {
-    sock.ev.removeAllListeners();
-    sock.ws?.close();
-  } catch (e) {}
+  const isPermanentLogout = statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403 || statusCode === 405;
 
-  delete activeSessions[phoneNumber];
-  isStarting[phoneNumber] = false;
-
-  const isPermanentLogout = statusCode === DisconnectReason.loggedOut || statusCode === 401;
-
-  if (!isPermanentLogout) {
-    setTimeout(() => initWhatsApp(phoneNumber), 8000);
+  if (isPermanentLogout) {
+    console.log(`🚫 Device unlinked / logged out: +${cleanNum}`);
+    if (typeof clearSessionData === 'function') await clearSessionData().catch(() => {});
+    await purgeSessionEntirely(cleanNum);
   } else {
-    console.log(`❌ Permanent session logout: ${phoneNumber}`);
-    if (typeof clearSessionData === 'function') await clearSessionData();
+    try {
+      sock.ev.removeAllListeners();
+      sock.ws?.close();
+    } catch (e) {}
+    delete activeSessions[cleanNum];
+    isStarting[cleanNum] = false;
+    setTimeout(() => initWhatsApp(cleanNum), 8000);
   }
-}
-
-async function autoFollowChannelAndJoinGroup(sock) {
-  try {
-    const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
-    if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
-      const channelMeta = await sock.newsletterMetadata('invite', inviteCode).catch(() => null);
-      if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id).catch(() => {});
-    }
-    const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X';
-    if (typeof sock.groupAcceptInvite === 'function') {
-      await sock.groupAcceptInvite(groupInviteCode).catch(() => {});
-    }
-  } catch (e) {}
-}
-
-function buildConnectedMessage(botNum) {
-  return `*✦ ${BOT_NAME} CONNECTED ✦*
-━━━━━━━━━━━━━━━━━━━━━
-• *Number*    : +${botNum}
-• *Engine*    : HESHAN-MD V2
-• *Features*  : AI Inbox | Auto Status | Anti-Delete
-• *State*     : Online (24/7 Cloud)
-━━━━━━━━━━━━━━━━━━━━━
-> Type *.menu* to explore all commands.`.trim();
-}
-
-async function sendFirstConnectAlerts(sock, phoneNumber) {
-  try {
-    const botNum = sock.user?.id
-      ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '')
-      : phoneNumber.replace(/[^0-9]/g, '');
-
-    const currentSettings = await getBotSettings(botNum);
-    if (currentSettings.isFirstConnectDone) return;
-
-    const botJid = `${botNum}@s.whatsapp.net`;
-    const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
-    const logoBuffer = getLocalLogoBuffer();
-    const connectedMsg = buildConnectedMessage(botNum);
-
-    await sock.sendMessage(botJid, { image: logoBuffer, caption: connectedMsg, mimetype: 'image/jpeg' }).catch(() => {
-      sock.sendMessage(botJid, { text: connectedMsg }).catch(() => {});
-    });
-
-    if (!botNum.includes(REAL_OWNER_NUMBER)) {
-      const alertMsg = `*🔔 ALERT : NEW SESSION CONNECTED*\n━━━━━━━━━━━━━━━━━━━━━\n• *Number* : +${botNum}\n• *System* : Initialized successfully\n━━━━━━━━━━━━━━━━━━━━━`;
-      await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
-    }
-
-    await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
-    clearSettingsCache(botNum);
-  } catch (e) {}
 }
 
 function handleConnectionOpen(sock, phoneNumber) {
-  console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
-  setTimeout(() => autoFollowChannelAndJoinGroup(sock), 3000);
-  setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 4000);
-}
+  const cleanNum = phoneNumber.replace(/[^0-9]/g, '');
+  console.log(`✅ BOT CONNECTED: +${cleanNum}`);
 
-function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
-    if (connection === 'close') {
-      await handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData);
-    } else if (connection === 'open') {
-      handleConnectionOpen(sock, phoneNumber);
-    }
-  });
-}
-
-// ============================================================================
-// 💬 MESSAGE HANDLING HELPERS
-// ============================================================================
-
-function reactToChannelPost(sock, msg, chatJid) {
-  setImmediate(async () => {
+  // Channel follow
+  setTimeout(async () => {
     try {
-      const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-      const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
-      if (typeof sock.newsletterReactMessage === 'function' && serverId) {
-        await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
-      } else {
-        await sock.sendMessage(chatJid, { react: { text: randomEmoji, key: msg.key } });
+      if (typeof sock.newsletterFollow === 'function') {
+        const meta = await sock.newsletterMetadata('invite', '0029VbAQYhXDZ4Lfo9K5gh1V').catch(() => null);
+        if (meta?.id) await sock.newsletterFollow(meta.id).catch(() => {});
       }
-    } catch (err) {}
-  });
-}
-
-function simulateAutoPresence(sock, chatJid, settings) {
-  if (!settings.autoPresence || settings.autoPresence === 'off') return;
-  const type = settings.autoPresence === 'recording' ? 'recording' : 'composing';
-  sock.sendPresenceUpdate(type, chatJid).catch(() => {});
-}
-
-async function handleStatusBroadcast(sock, msg, settings) {
-  if (!settings.autoStatusSeen) return;
-  try {
-    await sock.readMessages([msg.key]);
-    if (settings.statusReact && msg.key.participant) {
-      await sock.sendMessage(
-        'status@broadcast',
-        { react: { text: settings.statusReactEmoji || '💐', key: msg.key } },
-        { statusJidList: [msg.key.participant] }
-      );
-    }
-  } catch (e) {}
-}
-
-function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
-  if (msg.key.fromMe) return myBotJid;
-  if (isGroup) return msg.key.participant || msg.participant || chatJid;
-  return chatJid;
-}
-
-// ⚡ Fast LID resolution with memory cache
-async function resolveLidToRealJid(sock, originalSender) {
-  if (!originalSender || !originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
-    return originalSender;
-  }
-  const cached = lidCache.get(originalSender);
-  if (cached) return cached;
-
-  try {
-    const resolved = await sock.signalRepository.lidToJid(originalSender);
-    const target = resolved || originalSender;
-    lidCache.set(originalSender, target);
-    return target;
-  } catch (e) {
-    return originalSender;
-  }
-}
-
-function isOwnerJid(jid) {
-  if (!jid) return false;
-  const str = String(jid);
-  return OWNER_NUMBERS.some(owner => str.includes(owner));
-}
-
-function checkIsOwner(originalSender, resolvedSender) {
-  return isOwnerJid(originalSender) || isOwnerJid(resolvedSender);
-}
-
-function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
-  if (!settings.ownerReact) return;
-  setImmediate(async () => {
-    try {
-      await sock.sendMessage(chatJid, { react: { text: settings.ownerReactEmoji || '👑', key: msgKey } }).catch(() => {});
-    } catch (err) {}
-  });
-}
-
-function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
-  return isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
-}
-
-function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
-  if (isAuthorized) return false;
-  const mode = String(workMode || 'public').toLowerCase().trim();
-  if (mode === 'public') return false;
-  if (mode === 'private' || mode === 'self') return true;
-  if ((mode === 'groups' || mode === 'group') && !isGroup) return true;
-  if (mode === 'inbox' && isGroup) return true;
-  return false;
-}
-
-function unwrapMessageContent(message) {
-  return (
-    message?.ephemeralMessage?.message ||
-    message?.viewOnceMessage?.message ||
-    message?.viewOnceMessageV2?.message ||
-    message?.documentWithCaptionMessage?.message ||
-    message
-  );
-}
-
-function extractMessageText(rawMsg) {
-  return (
-    rawMsg?.conversation ||
-    rawMsg?.extendedTextMessage?.text ||
-    rawMsg?.imageMessage?.caption ||
-    rawMsg?.videoMessage?.caption ||
-    rawMsg?.buttonsResponseMessage?.selectedButtonId ||
-    rawMsg?.templateButtonReplyMessage?.selectedId ||
-    ''
-  ).trim();
-}
-
-function buildSafeReply(sock, chatJid, msg) {
-  return async (content) => {
-    const replyPayload = typeof content === 'string' ? { text: content } : content;
-    try {
-      return await sock.sendMessage(chatJid, replyPayload, { quoted: msg });
-    } catch (e) {
-      return await sock.sendMessage(chatJid, replyPayload);
-    }
-  };
-}
-
-function isSettingsMenuOption(cleanInput) {
-  return (
-    /^([1-7](\.[1-4])?)$/.test(cleanInput) ||
-    cleanInput.startsWith('6 ') ||
-    cleanInput.startsWith('pin ') ||
-    cleanInput.startsWith('set ')
-  );
-}
-
-function extractQuotedCaption(quotedMsgObj) {
-  return (
-    quotedMsgObj?.imageMessage?.caption ||
-    quotedMsgObj?.videoMessage?.caption ||
-    quotedMsgObj?.conversation ||
-    quotedMsgObj?.extendedTextMessage?.text ||
-    ''
-  );
-}
-
-function isQuotedFromSettingsMenu(quotedCaption) {
-  return (
-    quotedCaption.includes('SYSTEM SETTINGS') ||
-    quotedCaption.includes('WORK MODE') ||
-    quotedCaption.includes('FAKE ACTION')
-  );
-}
-
-async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum) {
-  const settingsCmd = findCommand('settings', 'setting', 'set');
-  if (!settingsCmd) return false;
-  const cmdFunc = getCommandExecutor(settingsCmd);
-  if (!cmdFunc) return false;
-
-  clearSettingsCache(myBotNum);
-  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-  return true;
-}
-
-async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized) {
-  const statusCmd = findCommand('save', 'status');
-  if (!statusCmd) return false;
-  const cmdFunc = getCommandExecutor(statusCmd);
-  if (!cmdFunc) return false;
-
-  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-  return true;
-}
-
-async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode) {
-  const prefixMatch = text.match(/^[./!#]/);
-  if (!prefixMatch) return false;
-
-  const prefix = prefixMatch[0];
-  const args = text.slice(prefix.length).trim().split(/ +/);
-  const commandName = args.shift().toLowerCase();
-
-  const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
-  if (isSettingsCmd && isGroup) return true;
-  if (isSettingsCmd && !isAuthorized) return true;
-
-  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
-    return true;
-  }
-
-  let targetCmd = commands.get(commandName);
-  if (!targetCmd && isSettingsCmd) targetCmd = findCommand('settings', 'setting', 'set');
-  if (!targetCmd) return false;
-
-  try {
-    const cmdFunc = getCommandExecutor(targetCmd);
-    if (cmdFunc) {
-      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized });
-    }
-  } catch (err) {
-    console.error(`Command execution error (${commandName}):`, err.message);
-  }
-  return true;
-}
-
-async function handleAutoAiReply(sock, chatJid, text, safeReply) {
-  try {
-    sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
-    const aiPromise = askAI(text);
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('AI_Timeout')), 8000));
-    const aiReply = await Promise.race([aiPromise, timeoutPromise]);
-    if (aiReply) await safeReply(aiReply);
-  } catch (aiErr) {
-  } finally {
-    sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
-  }
+    } catch (e) {}
+  }, 3000);
 }
 
 // ============================================================================
 // 💬 FAST MESSAGE PROCESSOR
 // ============================================================================
+async function resolveLidToRealJid(sock, sender) {
+  if (!sender || !sender.endsWith('@lid') || !sock.signalRepository?.lidToJid) return sender;
+  const cached = lidCache.get(sender);
+  if (cached) return cached;
+  try {
+    const resolved = await sock.signalRepository.lidToJid(sender);
+    const target = resolved || sender;
+    lidCache.set(sender, target);
+    return target;
+  } catch (e) {
+    return sender;
+  }
+}
 
 async function processSingleMessage(sock, msg, phoneNumber) {
-  if (!msg || !msg.message) return;
+  if (!msg?.message || msg.messageStubType) return;
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
-  // 🛡️ Message Deduplication: එකම message එක දෙවතාවක් trigger වීම වැළැක්වීම
   const msgId = msg.key?.id;
   if (msgId) {
     if (msgDedupeCache.has(msgId)) return;
     msgDedupeCache.set(msgId, true);
   }
 
-  if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
-    if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
+  // Newsletter Reactions
+  if (chatJid.endsWith('@newsletter')) {
+    if (!msg.message.reactionMessage) {
+      const emoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
+      sock.sendMessage(chatJid, { react: { text: emoji, key: msg.key } }).catch(() => {});
+    }
     return;
   }
 
@@ -838,168 +284,153 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
-  if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
-
+  // Auto Status View
   if (chatJid === 'status@broadcast') {
-    await handleStatusBroadcast(sock, msg, settings);
+    if (settings.autoStatusSeen) {
+      await sock.readMessages([msg.key]).catch(() => {});
+      if (settings.statusReact && msg.key.participant) {
+        sock.sendMessage('status@broadcast', {
+          react: { text: settings.statusReactEmoji || '💐', key: msg.key }
+        }, { statusJidList: [msg.key.participant] }).catch(() => {});
+      }
+    }
     return;
   }
 
-  const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
-  const resolvedSender = await resolveLidToRealJid(sock, originalSender);
-  const isOwner = checkIsOwner(originalSender, resolvedSender);
+  const rawSender = msg.key.fromMe ? myBotJid : (isGroup ? (msg.key.participant || chatJid) : chatJid);
+  const resolvedSender = await resolveLidToRealJid(sock, rawSender);
+  const cleanSenderNum = resolvedSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-  if (isOwner && !msg.key.fromMe) {
-    reactToOwnerMessage(sock, chatJid, msg.key, settings);
+  const isOwner = msg.key.fromMe || OWNER_NUMBERS.includes(cleanSenderNum) || cleanSenderNum === REAL_OWNER_NUMBER;
+  const isAuthorized = isOwner || (myBotNum && cleanSenderNum === myBotNum);
+
+  // Presence simulation
+  if (!msg.key.fromMe && settings.autoPresence !== 'off') {
+    sock.sendPresenceUpdate(settings.autoPresence === 'recording' ? 'recording' : 'composing', chatJid).catch(() => {});
   }
 
-  const cleanSenderNum = resolvedSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
+  // WorkMode Filter
   const currentMode = settings.workMode || 'public';
+  if (!isAuthorized) {
+    if (currentMode === 'private') return;
+    if (currentMode === 'groups' && !isGroup) return;
+    if (currentMode === 'inbox' && isGroup) return;
+  }
 
-  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) return;
+  const rawContent = msg.message.ephemeralMessage?.message || msg.message.viewOnceMessage?.message || msg.message;
+  const text = (
+    rawContent?.conversation ||
+    rawContent?.extendedTextMessage?.text ||
+    rawContent?.imageMessage?.caption ||
+    rawContent?.videoMessage?.caption || ''
+  ).trim();
 
-  const rawMsg = unwrapMessageContent(msg.message);
-  const text = extractMessageText(rawMsg);
   if (!text) return;
 
-  const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
-  const quotedMsgObj = quotedContext?.quotedMessage;
-  const safeReply = buildSafeReply(sock, chatJid, msg);
-  const cleanInput = text.toLowerCase().trim();
+  const cleanInput = text.toLowerCase();
+  const safeReply = async (content) => {
+    const payload = typeof content === 'string' ? { text: content } : content;
+    return await sock.sendMessage(chatJid, payload, { quoted: msg }).catch(() => sock.sendMessage(chatJid, payload));
+  };
 
-  // Settings Menu Navigation
-  const quotedCaption = extractQuotedCaption(quotedMsgObj);
-  const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
-  const settingsOption = isSettingsMenuOption(cleanInput);
+  // Prefix Command Handling
+  const prefixMatch = text.match(/^[./!#]/);
+  if (prefixMatch) {
+    const prefix = prefixMatch[0];
+    const args = text.slice(prefix.length).trim().split(/ +/);
+    const commandName = args.shift().toLowerCase();
 
-  if (settingsOption && !isGroup && isAuthorized && fromSettingsMenu) {
-    const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
-    if (handled) return;
+    const targetCmd = commands.get(commandName);
+    if (targetCmd) {
+      const exec = getCommandExecutor(targetCmd);
+      if (exec) {
+        try {
+          await exec(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized });
+        } catch (err) {
+          console.error(`Error in command ${commandName}:`, err.message);
+        }
+      }
+      return;
+    }
   }
 
-  // Status Saver Keyword trigger
-  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
-  const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
-
-  if (quotedMsgObj && isQuotedFromStatus && statusKeywords.includes(cleanInput)) {
-    const handled = await handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized);
-    if (handled) return;
-  }
-
-  const commandHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode);
-  if (commandHandled) return;
-
-  const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
-  const isNumericOnly = /^[0-9.]+$/.test(cleanInput);
-
-  if (!isSelfBotMsg && !isGroup && settings.autoAiInbox && !isNumericOnly) {
-    await handleAutoAiReply(sock, chatJid, text, safeReply);
+  // Auto AI Inbox
+  if (!msg.key.fromMe && !isGroup && settings.autoAiInbox && !/^[0-9.]+$/.test(cleanInput)) {
+    try {
+      sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
+      const aiReply = await Promise.race([askAI(text), new Promise((_, r) => setTimeout(() => r('timeout'), 8000))]);
+      if (aiReply && aiReply !== 'timeout') await safeReply(aiReply);
+    } catch (e) {
+    } finally {
+      sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
+    }
   }
 }
 
-// ⚡ 100% Reliable Zero-Drop Upsert Handler (එක පාරින් command එක trigger වේ)
+// ⚡ 100% Reliable Zero-Drop Upsert Handler
 function registerMessageUpsertHandler(sock, phoneNumber) {
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (!messages || !messages.length) return;
-
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    if (!messages?.length) return;
     for (const msg of messages) {
-      if (!msg?.message) continue;
-      if (msg.messageStubType) continue; // WhatsApp system messages drop කරයි
-
-      // Message එක background unblocked execution එකකට යවයි
-      processSingleMessage(sock, msg, phoneNumber).catch((err) => {
-        console.error('Process message error:', err?.message || err);
-      });
+      processSingleMessage(sock, msg, phoneNumber).catch(() => {});
     }
   });
 }
 
 // ============================================================================
-// 🚀 MAIN WHATSAPP INITIALIZER
+// 🚀 BOT INITIALIZER
 // ============================================================================
-
 async function initWhatsApp(phoneNumber) {
-  if (activeSessions[phoneNumber]) return activeSessions[phoneNumber];
-  if (isStarting[phoneNumber]) return;
-  isStarting[phoneNumber] = true;
+  const cleanNum = phoneNumber.replace(/[^0-9]/g, '');
+  if (activeSessions[cleanNum]) return activeSessions[cleanNum];
+  if (isStarting[cleanNum]) return;
+  isStarting[cleanNum] = true;
 
   try {
-    const { sock, clearSessionData } = await createBaileysSocket(phoneNumber);
-    activeSessions[phoneNumber] = sock;
-    delete isStarting[phoneNumber];
+    const { sock, clearSessionData } = await createBaileysSocket(cleanNum);
+    activeSessions[cleanNum] = sock;
+    delete isStarting[cleanNum];
 
-    registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData);
-    registerMessageUpsertHandler(sock, phoneNumber);
+    sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+      if (connection === 'close') {
+        await handleConnectionClose(sock, cleanNum, lastDisconnect, clearSessionData);
+      } else if (connection === 'open') {
+        handleConnectionOpen(sock, cleanNum);
+      }
+    });
 
+    registerMessageUpsertHandler(sock, cleanNum);
     return sock;
   } catch (err) {
-    delete isStarting[phoneNumber];
-    console.error('initWhatsApp Error:', err);
+    delete isStarting[cleanNum];
+    console.error('initWhatsApp Error:', err.message);
   }
 }
 
 // ============================================================================
-// 🌐 HTTP ROUTES
+// 🌐 HTTP SERVER & CLEANUP ROUTES
 // ============================================================================
+function registerRoutes(app) {
+  app.get('/', (req, res) => res.send(renderPortalHtml(BOT_NAME)));
 
-function stopAndRemoveSession(num) {
-  if (!activeSessions[num]) return;
-  try {
-    activeSessions[num].ev.removeAllListeners();
-    activeSessions[num].ws?.close();
-  } catch (e) {}
-  delete activeSessions[num];
-}
-
-function registerResetAllRoute(app) {
-  app.get('/reset', async (req, res) => {
-    try {
-      await Auth.deleteMany({});
-      if (mongoose.connection.db) {
-        await mongoose.connection.db.collection('auths').deleteMany({});
-      }
-      Object.keys(activeSessions).forEach(num => stopAndRemoveSession(num));
-      settingsCache.flushAll();
-      lidCache.flushAll();
-      res.json({ success: true });
-    } catch (err) {
-      res.status(500).json({ success: false });
-    }
-  });
-}
-
-function registerResetSingleNumberRoute(app) {
   app.get('/reset-num', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Number required' });
-    num = num.replace(/[^0-9]/g, '');
-
-    try {
-      stopAndRemoveSession(num);
-      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-      return res.json({ success: true, message: `Session cleared for ${num}` });
-    } catch (err) {
-      return res.status(500).json({ error: err.message });
-    }
+    const cleanNum = num.replace(/[^0-9]/g, '');
+    await purgeSessionEntirely(cleanNum);
+    res.json({ success: true, message: `Purged ${cleanNum}` });
   });
-}
 
-function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Number required' });
-    num = num.replace(/[^0-9]/g, '');
+    const cleanNum = num.replace(/[^0-9]/g, '');
 
-    stopAndRemoveSession(num);
-    await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-    await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
-    clearSettingsCache(num);
+    await purgeSessionEntirely(cleanNum);
 
     let pairSock = null;
-
     try {
-      const { state, saveCreds } = await useMongoDBAuthState(num);
+      const { state, saveCreds } = await useMongoDBAuthState(cleanNum);
       const logger = pino({ level: 'silent' });
       const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
@@ -1008,86 +439,33 @@ function registerPairRoute(app) {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: Browsers.macOS('Safari'),
-        connectTimeoutMs: 30000,
-        defaultQueryTimeoutMs: 20000,
-        keepAliveIntervalMs: 25000,
-        emitOwnEvents: false
+        browser: Browsers.macOS('Safari')
       });
 
       pairSock.ev.on('creds.update', saveCreds);
 
-      pairSock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
+      pairSock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
         if (connection === 'open') {
-          activeSessions[num] = pairSock;
-          registerConnectionUpdateHandler(pairSock, num);
-          registerMessageUpsertHandler(pairSock, num);
-          handleConnectionOpen(pairSock, num);
+          activeSessions[cleanNum] = pairSock;
+          registerMessageUpsertHandler(pairSock, cleanNum);
+          handleConnectionOpen(pairSock, cleanNum);
         } else if (connection === 'close') {
           const code = lastDisconnect?.error?.output?.statusCode;
-          if (code !== DisconnectReason.loggedOut && code !== 401) {
-            setTimeout(() => initWhatsApp(num), 5000);
+          if (code === DisconnectReason.loggedOut || code === 401) {
+            await purgeSessionEntirely(cleanNum);
           }
         }
       });
 
       await delay(1500);
-
-      if (!pairSock.authState.creds.registered) {
-        let code = await pairSock.requestPairingCode(num);
-        code = code?.match(/.{1,4}/g)?.join('-') || code;
-        return res.json({ code });
-      } else {
-        await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-        return res.status(400).json({ error: 'Session cleared! Please click again.' });
-      }
+      let code = await pairSock.requestPairingCode(cleanNum);
+      code = code?.match(/.{1,4}/g)?.join('-') || code;
+      return res.json({ code });
     } catch (err) {
-      if (pairSock) {
-        try { pairSock.ws?.close(); } catch(e){}
-      }
-      return res.status(500).json({ error: 'Rate-limited. Wait 15 seconds and retry.' });
+      if (pairSock) try { pairSock.ws?.close(); } catch(e){}
+      return res.status(500).json({ error: 'Pairing error. Retry after 15s.' });
     }
   });
-}
-
-function registerAllHttpRoutes(app) {
-  registerPortalRoute(app);
-  registerResetAllRoute(app);
-  registerResetSingleNumberRoute(app);
-  registerPairRoute(app);
-}
-
-// ============================================================================
-// 🔁 KEEP-ALIVE
-// ============================================================================
-
-function startKeepAlivePing() {
-  const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
-  if (!keepAliveUrl) return;
-
-  setInterval(async () => {
-    try {
-      await fetch(keepAliveUrl);
-    } catch (e) {}
-  }, 4 * 60 * 1000);
-}
-
-// ============================================================================
-// 🍃 STARTUP
-// ============================================================================
-
-async function reconnectAllSavedSessions() {
-  try {
-    const sessions = await Auth.find({ _id: /-creds$/ }).lean();
-    for (const session of sessions) {
-      const pNumber = session._id.split('-creds')[0];
-      await initWhatsApp(pNumber);
-      await delay(2000);
-    }
-  } catch (e) {
-    console.error('Error reconnecting sessions:', e.message);
-  }
 }
 
 async function startServer() {
@@ -1096,28 +474,31 @@ async function startServer() {
   app.use(express.json());
 
   loadAllCommands();
-  registerAllHttpRoutes(app);
+  registerRoutes(app);
 
-  app.listen(port, () => {
-    console.log(`🚀 Server running on port ${port}`);
-    startKeepAlivePing();
-  });
+  app.listen(port, () => console.log(`🚀 Server active on port ${port}`));
 
-  await reconnectAllSavedSessions();
+  // Saved Session Reconnect
+  try {
+    const sessions = await Auth.find({ _id: /-creds$/ }).lean();
+    for (const s of sessions) {
+      const num = s._id.split('-creds')[0];
+      await initWhatsApp(num);
+      await delay(2000);
+    }
+  } catch (e) {
+    console.error('Session reconnect error:', e.message);
+  }
 }
 
 async function main() {
   try {
-    await mongoose.connect(MONGODB_URI, {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000
-    });
-    console.log('🍃 MongoDB Connected with Pool!');
+    await mongoose.connect(MONGODB_URI, { maxPoolSize: 10, serverSelectionTimeoutMS: 5000 });
+    console.log('🍃 MongoDB Connected!');
     await startServer();
   } catch (err) {
-    console.error('MongoDB Connection Error:', err);
+    console.error('MongoDB Error:', err);
   }
 }
 
 main();
-
