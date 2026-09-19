@@ -1,9 +1,5 @@
 // commands/song.js
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const { pipeline } = require('stream/promises');
-
 let yts;
 try {
   yts = require('yt-search');
@@ -27,17 +23,14 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    let statusMsg = null;
-    let tempFilePath = null;
-
-    // Fast Non-blocking Reaction
+    // Non-blocking reaction
     sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
 
-    try {
-      statusMsg = await sock.sendMessage(targetChat, {
-        text: "⚡ *Downloading your song, please wait...*"
-      }, { quoted: msg });
+    let statusMsg = await sock.sendMessage(targetChat, {
+      text: "⚡ *Downloading your song, please wait...*"
+    }, { quoted: msg }).catch(() => null);
 
+    try {
       let videoUrl = query;
       let videoTitle = query;
       let duration = 'N/A';
@@ -48,11 +41,11 @@ module.exports = {
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
       if (!isYtUrl) {
-        if (!yts) throw new Error('yt-search module not installed');
+        if (!yts) throw new Error('yt-search package is missing');
         
         const searchResults = await yts(query);
         if (!searchResults?.videos?.length) {
-          throw new Error('Song not found! Please check the title.');
+          throw new Error('සින්දුව හමු නොවීය. කරුණාකර නිවැරදි නම ඇතුළත් කරන්න.');
         }
 
         const video = searchResults.videos[0];
@@ -64,76 +57,53 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : 'N/A';
       }
 
-      let downloadUrl = null;
+      let audioBuffer = null;
       let finalTitle = videoTitle;
 
-      // ⚡ Robust Multi-Engine MP3 Extractor Pool
-      const extractors = [
-        // Source 1: Gifted / NexOracle API
+      // ⚡ Fast Working Audio API Pipeline (Buffer directly in memory)
+      const downloadSources = [
+        // Source 1: Dark-Yasiya Audio API
         async () => {
-          const res = await axios.get(`https://api.nexoracle.com/downloader/yt-audio?apikey=free_key@maher_apis&url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
-          if (res.data?.result?.url) return res.data.result.url;
-          throw new Error('NexOracle failed');
+          const res = await axios.get(`https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 12000 });
+          const dlUrl = res.data?.result?.dl_link || res.data?.result?.download;
+          if (!dlUrl) throw new Error('Yasiya link missing');
+          const audioStream = await axios.get(dlUrl, { responseType: 'arraybuffer', timeout: 25000 });
+          return Buffer.from(audioStream.data);
         },
-        // Source 2: Chamindu API
+        // Source 2: NexOracle Engine
         async () => {
-          const res = await axios.get(`https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=128kbps&api_key=chama_api_b764539713b0514de0dbb60f401cd69e`, { timeout: 8000 });
-          const url = res.data?.data?.download_url || res.data?.data?.direct_url;
-          if (url) return url;
-          throw new Error('Chamindu failed');
+          const res = await axios.get(`https://api.nexoracle.com/downloader/yt-audio?apikey=free_key@maher_apis&url=${encodeURIComponent(videoUrl)}`, { timeout: 12000 });
+          const dlUrl = res.data?.result?.url;
+          if (!dlUrl) throw new Error('NexOracle link missing');
+          const audioStream = await axios.get(dlUrl, { responseType: 'arraybuffer', timeout: 25000 });
+          return Buffer.from(audioStream.data);
         },
         // Source 3: David Cyril Engine
         async () => {
-          const res = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
-          if (res.data?.result?.download_url) return res.data.result.download_url;
-          throw new Error('David Cyril failed');
-        },
-        // Source 4: Widipe Audio Engine
-        async () => {
-          const res = await axios.get(`https://widipe.com/download/ytdl?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
-          if (res.data?.result?.mp3) return res.data.result.mp3;
-          throw new Error('Widipe failed');
+          const res = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 12000 });
+          const dlUrl = res.data?.result?.download_url;
+          if (!dlUrl) throw new Error('David Cyril link missing');
+          const audioStream = await axios.get(dlUrl, { responseType: 'arraybuffer', timeout: 25000 });
+          return Buffer.from(audioStream.data);
         }
       ];
 
-      for (const extractor of extractors) {
+      for (const getAudio of downloadSources) {
         try {
-          const result = await extractor();
-          if (result && typeof result === 'string' && result.startsWith('http')) {
-            downloadUrl = result;
-            break;
-          }
-        } catch (e) {}
+          audioBuffer = await getAudio();
+          if (audioBuffer && audioBuffer.length > 10000) break;
+        } catch (err) {
+          // Fallback to next engine
+        }
       }
 
-      if (!downloadUrl) {
-        throw new Error('All audio download servers are busy. Please try again in a moment.');
-      }
-
-      // Safe Non-Blocking File Pipeline (WhatsApp download hang වීම වළක්වයි)
-      const tempDir = path.join(process.cwd(), 'temp');
-      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-
-      tempFilePath = path.join(tempDir, `song_${Date.now()}.mp3`);
-
-      const audioStream = await axios({
-        method: 'GET',
-        url: downloadUrl,
-        responseType: 'stream',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
-        timeout: 45000
-      });
-
-      await pipeline(audioStream.data, fs.createWriteStream(tempFilePath));
-
-      // Alert Message delete කිරීම
-      if (statusMsg) {
-        sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+      if (!audioBuffer) {
+        throw new Error('Audio download server busy! කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.');
       }
 
       const cleanTitle = finalTitle.replace(/[\\/:"*?<>|]/g, '').trim();
+
+      // Thumbnail Image Card
       const songCard = `╭───❮ 🎵 *H E S H A N - M D* ❯───╮
 │
 │ 📌 *Title:* ${cleanTitle.slice(0, 38)}
@@ -145,38 +115,35 @@ module.exports = {
 ╰───────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-      // Thumbnail Image Card එක යැවීම
-      try {
-        await sock.sendMessage(targetChat, {
-          image: { url: thumbnail },
-          caption: songCard
-        }, { quoted: msg });
-      } catch (e) {
-        await sock.sendMessage(targetChat, { text: songCard }, { quoted: msg }).catch(() => {});
-      }
-
-      // ⚡ Direct File Audio Upload (100% Reliable & Fast)
+      // Card එක යැවීම
       await sock.sendMessage(targetChat, {
-        audio: { url: tempFilePath },
+        image: { url: thumbnail },
+        caption: songCard
+      }, { quoted: msg }).catch(() => {});
+
+      // ⚡ Direct In-Memory Audio Upload (කවදාවත් හිරවෙන්නේ නැත)
+      await sock.sendMessage(targetChat, {
+        audio: audioBuffer,
         mimetype: 'audio/mpeg',
         fileName: `${cleanTitle}.mp3`
-      });
+      }, { quoted: msg });
+
+      // Clean Alert Message
+      if (statusMsg?.key) {
+        sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+      }
 
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error('Song Error:', err?.message || err);
-      if (statusMsg) {
+      console.error('Song Download Error:', err?.message || err);
+      if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       await sock.sendMessage(targetChat, { 
-        text: `❌ *Song Error:* ${err?.message || 'Download failed'}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` 
+        text: `❌ *Song Error:* ${err?.message || 'Download error'}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` 
       }, { quoted: msg });
-    } finally {
-      if (tempFilePath && fs.existsSync(tempFilePath)) {
-        fs.promises.unlink(tempFilePath).catch(() => {});
-      }
     }
   }
 };
