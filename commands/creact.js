@@ -1,3 +1,6 @@
+// commands/creact.js
+const NodeCache = require('node-cache');
+
 // Default Random Emojis Pool
 const DEFAULT_REACTIONS = ['💗', '❤️', '🥰', '😯', '🔥', '✨', '👍', '🪄'];
 
@@ -8,6 +11,9 @@ const OWNER_NUMBERS = [
   '15947733680169',
   '72787431583987'
 ];
+
+// ⚡ Fast Newsletter JID Resolution Cache (24 hours TTL)
+const channelCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 
 module.exports = {
   name: "creact",
@@ -20,7 +26,7 @@ module.exports = {
     const isGroup = targetChat.endsWith('@g.us');
     const sender = isGroup ? (msg.key.participant || '') : targetChat;
     
-    // Owner Verification
+    // Fast Owner Verification
     const isOwner = options.isOwner || 
                     msg.key.fromMe || 
                     OWNER_NUMBERS.some(num => String(sender).includes(num));
@@ -44,63 +50,55 @@ module.exports = {
                       args.join(' ');
 
       const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-
-      // 1. Link එක සහ Message ID එක හරියටම Regex එකෙන් extract කරගැනීම (digits පමණක් වෙන් කරගනී)
       const linkMatch = rawText.match(/whatsapp\.com\/channel\/([a-zA-Z0-9]+)\/(\d+)/);
 
       if (linkMatch) {
         const inviteCode = linkMatch[1];
-        messageId = linkMatch[2]; // පිරිසිදු post number එක (උදා: 890, 415)
+        messageId = linkMatch[2];
 
-        // Link එකෙන් පසු ඇති සියල්ල Emojis ලෙස ගැනීම
         const afterLink = rawText.substring(rawText.indexOf(linkMatch[0]) + linkMatch[0].length);
         emojisString = afterLink.replace(/^[,\s|]+/, '').trim();
 
-        // Newsletter JID එක ලබාගැනීම
-        let metadata = null;
-        try {
-          if (typeof sock.newsletterMetadata === 'function') {
-            metadata = await sock.newsletterMetadata("invite", inviteCode);
-          }
-        } catch (e) {}
+        // ⚡ Cache එකෙන් JID එක ලබාගැනීම
+        channelJid = channelCache.get(inviteCode);
 
-        channelJid = metadata?.id;
-
-        // Fallback MEX Query එක
         if (!channelJid) {
           try {
-            const result = await sock.query({
-              tag: 'iq',
-              attrs: { to: 's.whatsapp.net', xmlns: 'w:mex', type: 'get' },
-              content: [{
-                tag: 'query',
-                attrs: { query_id: '6620195908089573' },
-                content: Buffer.from(JSON.stringify({
-                  variables: { input: { key: inviteCode, type: 'INVITE' } }
-                }))
-              }]
-            });
-            const rawData = result?.content?.[0]?.content?.toString();
-            if (rawData) {
-              const parsed = JSON.parse(rawData);
-              channelJid = parsed?.data?.xwa2_newsletter?.id;
+            if (typeof sock.newsletterMetadata === 'function') {
+              const metadata = await sock.newsletterMetadata("invite", inviteCode);
+              channelJid = metadata?.id;
             }
           } catch (e) {}
-        }
 
-        // තවමත් JID එක නොලැබුණහොත් Invite Code එකෙන් Direct Metadata JID එක සෙවීම
-        if (!channelJid) {
-          try {
-            const res = await sock.newsletterMetadata('invite', inviteCode);
-            channelJid = res?.id;
-          } catch (err) {}
+          // Fallback MEX Query එක
+          if (!channelJid) {
+            try {
+              const result = await sock.query({
+                tag: 'iq',
+                attrs: { to: 's.whatsapp.net', xmlns: 'w:mex', type: 'get' },
+                content: [{
+                  tag: 'query',
+                  attrs: { query_id: '6620195908089573' },
+                  content: Buffer.from(JSON.stringify({
+                    variables: { input: { key: inviteCode, type: 'INVITE' } }
+                  }))
+                }]
+              });
+              const rawData = result?.content?.[0]?.content?.toString();
+              if (rawData) {
+                const parsed = JSON.parse(rawData);
+                channelJid = parsed?.data?.xwa2_newsletter?.id;
+              }
+            } catch (e) {}
+          }
+
+          if (channelJid) channelCache.set(inviteCode, channelJid);
         }
 
         if (!channelJid) {
           return await reply("❌ චැනල් ලින්ක් එක වැරදියි හෝ විස්තර ලබාගත නොහැක!");
         }
       } 
-      // 2. Quoted Channel Post එකක් හරහා
       else if (quotedMsg) {
         const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
         channelJid = contextInfo?.remoteJid;
@@ -114,7 +112,7 @@ module.exports = {
         const usageMsg = 
           "📌 *භාවිතය:*\n" +
           "• `.creact <channel_post_link>` (Random Emojis auto වැටේ)\n" +
-          "• `.creact <channel_post_link> , 💗,❤️,🥰`\n" +
+          "• `.creact <channel_post_link> 💗,❤️,🥰`\n" +
           "• හෝ චැනල් පෝස්ට් එකකට reply කර: `.creact 🩷💜❤️`";
         return await reply(usageMsg);
       }
@@ -133,18 +131,11 @@ module.exports = {
         emojiArray = DEFAULT_REACTIONS;
       }
 
-      let successCount = 0;
       const appliedReactions = [];
 
-      // Reaction යැවීමේ Function එක
+      // ⚡ Direct Fast Reaction Execution
       const sendReact = async (botInstance) => {
         const pickedEmoji = emojiArray[Math.floor(Math.random() * emojiArray.length)];
-
-        try {
-          if (typeof botInstance.newsletterFollow === 'function') {
-            await botInstance.newsletterFollow(channelJid);
-          }
-        } catch (e) {}
 
         if (typeof botInstance.newsletterReactMessage === 'function') {
           await botInstance.newsletterReactMessage(channelJid, messageId, pickedEmoji);
@@ -161,11 +152,12 @@ module.exports = {
             }
           });
         }
-
         appliedReactions.push(pickedEmoji);
+        return true;
       };
 
-      // Main Bot Reaction
+      // 1. Main Bot React
+      let successCount = 0;
       try {
         await sendReact(sock);
         successCount++;
@@ -173,28 +165,28 @@ module.exports = {
         console.error("Main bot react failed:", mainErr.message);
       }
 
-      // Active Sub-bots Reaction
+      // 2. Active Sub-bots React (Batched Concurrent Execution)
       const sessionsSource = (typeof global.activeSessions === 'object' && global.activeSessions !== null) 
         ? global.activeSessions 
         : (typeof activeSessions === 'object' && activeSessions !== null ? activeSessions : {});
 
-      const subBotKeys = Object.keys(sessionsSource);
-      for (const botNum of subBotKeys) {
-        const subBot = sessionsSource[botNum];
-        if (subBot && subBot !== sock && subBot.user) {
-          try {
-            await new Promise(res => setTimeout(res, 1200));
-            await sendReact(subBot);
-            successCount++;
-          } catch (subErr) {
-            console.log(`Sub-bot (+${botNum}) react failed:`, subErr.message);
-          }
+      const subBots = Object.values(sessionsSource).filter(bot => bot && bot !== sock && bot.user);
+
+      // Sub-bots batches of 4 to prevent socket bottleneck
+      const BATCH_SIZE = 4;
+      for (let i = 0; i < subBots.length; i += BATCH_SIZE) {
+        const batch = subBots.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(batch.map(b => sendReact(b)));
+        successCount += results.filter(r => r.status === 'fulfilled').length;
+        if (i + BATCH_SIZE < subBots.length) {
+          await new Promise(r => setTimeout(r, 400));
         }
       }
 
+      const uniqueReactions = [...new Set(appliedReactions)];
       const successMsg = 
         `*✦ REACTION SUCCESSFUL ✦*\n━━━━━━━━━━━━━━━━━━━━━\n` +
-        `• *Reactions*   : ${appliedReactions.join(' ')}\n` +
+        `• *Reactions*   : ${uniqueReactions.join(' ')}\n` +
         `• *සාර්ථකයි*    : ${successCount} Bots\n` +
         `━━━━━━━━━━━━━━━━━━━━━`;
 
