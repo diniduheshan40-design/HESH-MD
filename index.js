@@ -135,10 +135,54 @@ function getCommandExecutor(cmd) {
 }
 
 // ============================================================================
-// 🌐 UI PORTAL
+// 🌐 UI PORTAL (Auto Clear + Better Error Handling)
 // ============================================================================
 function renderPortalHtml(botName) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${botName} • STATION</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet"><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#090305;background-image:radial-gradient(circle at 50% 0%,rgba(225,29,72,.18) 0%,transparent 60%);color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}.portal-card{background:rgba(20,6,10,.75);backdrop-filter:blur(24px);border:1px solid rgba(244,63,94,.22);border-radius:28px;padding:40px 30px;width:100%;max-width:420px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.65)}.app-title{font-size:28px;font-weight:800;background:linear-gradient(135deg,#fff 40%,#fb7185 80%,#e11d48 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}.app-desc{font-size:13px;color:#9f8e93;margin-bottom:26px}.phone-input{width:100%;padding:15px;border-radius:14px;border:1px solid rgba(244,63,94,.22);background:rgba(12,3,6,.7);color:#fff;font-size:16px;font-weight:600;text-align:center;outline:none;margin-bottom:14px}.btn-action{width:100%;padding:15px;border-radius:14px;border:none;background:linear-gradient(135deg,#be123c 0%,#e11d48 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:10px}.btn-reset{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(225,29,72,.25);background:rgba(225,29,72,.08);color:#fb7185;font-size:12px;cursor:pointer}.code-box{font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:800;color:#ffe4e6;background:rgba(225,29,72,.14);border:1.5px dashed rgba(251,113,133,.45);padding:16px;border-radius:14px;margin-top:20px;display:none;cursor:pointer}</style></head><body><div class="portal-card"><h1 class="app-title">${botName}</h1><p class="app-desc">Enter phone number with country code</p><input type="text" id="phone" class="phone-input" placeholder="e.g. 9470xxxxxxx" /><button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button><button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button><div class="code-box" id="codeDisplay" onclick="copyCode()"></div></div><script>async function fetchPairCode(){const p=document.getElementById('phone').value.replace(/[^0-9]/g,'');if(!p||p.length<10)return alert('Valid Phone Number Required!');const b=document.getElementById('btn');const d=document.getElementById('codeDisplay');b.innerText='GENERATING...';b.disabled=true;try{const res=await fetch('/pair?num='+p);const data=await res.json();if(data.code){d.innerText=data.code;d.style.display='block';navigator.clipboard.writeText(data.code).catch(()=>{});}else alert(data.error||'Rate-limited. Wait 15s.');}catch(e){alert('Server error!');}b.innerText='GET PAIRING CODE';b.disabled=false;}async function cleanSessionSlot(){const p=document.getElementById('phone').value.replace(/[^0-9]/g,'');if(!p)return alert('Phone number required!');if(confirm('Clean session for +'+p+'?')){await fetch('/reset-num?num='+p);alert('Session cleaned!');}}function copyCode(){const c=document.getElementById('codeDisplay').innerText;navigator.clipboard.writeText(c);alert('Copied: '+c);}</script></body></html>`;
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${botName} • STATION</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet"><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#090305;background-image:radial-gradient(circle at 50% 0%,rgba(225,29,72,.18) 0%,transparent 60%);color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}.portal-card{background:rgba(20,6,10,.75);backdrop-filter:blur(24px);border:1px solid rgba(244,63,94,.22);border-radius:28px;padding:40px 30px;width:100%;max-width:420px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.65)}.app-title{font-size:28px;font-weight:800;background:linear-gradient(135deg,#fff 40%,#fb7185 80%,#e11d48 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}.app-desc{font-size:13px;color:#9f8e93;margin-bottom:26px}.phone-input{width:100%;padding:15px;border-radius:14px;border:1px solid rgba(244,63,94,.22);background:rgba(12,3,6,.7);color:#fff;font-size:16px;font-weight:600;text-align:center;outline:none;margin-bottom:14px}.btn-action{width:100%;padding:15px;border-radius:14px;border:none;background:linear-gradient(135deg,#be123c 0%,#e11d48 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:10px;transition:opacity 0.2s}.btn-action:disabled{opacity:0.6;cursor:not-allowed}.btn-reset{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(225,29,72,.25);background:rgba(225,29,72,.08);color:#fb7185;font-size:12px;cursor:pointer}.code-box{font-family:'JetBrains Mono',monospace;font-size:26px;letter-spacing:2px;font-weight:800;color:#ffe4e6;background:rgba(225,29,72,.14);border:1.5px dashed rgba(251,113,133,.45);padding:16px;border-radius:14px;margin-top:20px;display:none;cursor:pointer}</style></head><body><div class="portal-card"><h1 class="app-title">${botName}</h1><p class="app-desc">Enter phone number with country code (e.g. 9471...)</p><input type="text" id="phone" class="phone-input" placeholder="e.g. 9471xxxxxxx" /><button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button><button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button><div class="code-box" id="codeDisplay" onclick="copyCode()"></div></div><script>
+async function fetchPairCode(){
+  const p = document.getElementById('phone').value.replace(/[^0-9]/g,'');
+  if(!p || p.length < 10) return alert('කරුණාකර රටේ කේතය (Country Code) සහිතව නිවැරදි දුරකථන අංකය ඇතුළත් කරන්න!');
+  const b = document.getElementById('btn');
+  const d = document.getElementById('codeDisplay');
+  b.innerText = 'GENERATING CODE...';
+  b.disabled = true;
+  d.style.display = 'none';
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 35000);
+    const res = await fetch('/pair?num=' + p, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    const data = await res.json();
+    if(data.code){
+      d.innerText = data.code;
+      d.style.display = 'block';
+      navigator.clipboard.writeText(data.code).catch(()=>{});
+    } else {
+      alert(data.error || 'Pairing error. Clean session කර තත්පර 10කින් නැවත උත්සාහ කරන්න.');
+    }
+  } catch(e) {
+    alert('Server Timeout or Connection Issue! නැවත Pair Code එක ලබාගන්න.');
+  } finally {
+    b.innerText = 'GET PAIRING CODE';
+    b.disabled = false;
+  }
+}
+async function cleanSessionSlot(){
+  const p = document.getElementById('phone').value.replace(/[^0-9]/g,'');
+  if(!p) return alert('Phone number required!');
+  if(confirm('Session data clean කරන්නද? +'+p)){
+    await fetch('/reset-num?num='+p);
+    alert('Session cleaned! දැන් අලුතින් Pair Code එකක් ලබාගන්න.');
+    document.getElementById('codeDisplay').style.display = 'none';
+  }
+}
+function copyCode(){
+  const c = document.getElementById('codeDisplay').innerText;
+  navigator.clipboard.writeText(c);
+  alert('Copied: ' + c);
+}
+</script></body></html>`;
 }
 
 // ============================================================================
@@ -162,13 +206,14 @@ async function purgeSessionEntirely(phoneNumber) {
     const sessionLogo = path.join(process.cwd(), `logo_${cleanNum}.jpg`);
     if (fs.existsSync(sessionLogo)) fs.promises.unlink(sessionLogo).catch(() => {});
 
+    // MongoDB Data Purge
     await Promise.allSettled([
       Auth.deleteMany({ _id: new RegExp('^' + cleanNum, 'i') }),
       mongoose.connection.db ? mongoose.connection.db.collection('auths').deleteMany({ _id: new RegExp('^' + cleanNum, 'i') }) : Promise.resolve(),
       mongoose.connection.db ? mongoose.connection.db.collection('botsettings').deleteOne({ _id: cleanNum }) : Promise.resolve()
     ]);
 
-    console.log(`✅ Session +${cleanNum} permanently purged from DB & Memory!`);
+    console.log(`✅ Session +${cleanNum} cleared completely!`);
   } catch (err) {
     console.error(`❌ Purge error (+${cleanNum}):`, err.message);
   }
@@ -187,7 +232,7 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.macOS('Safari'),
+    browser: Browsers.ubuntu('Chrome'), // Ubuntu Chrome pairing සඳහා වඩාත් විශ්වාසදායකයි
     msgRetryCounterCache: new NodeCache({ stdTTL: 180, checkperiod: 60 }),
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
@@ -240,7 +285,7 @@ function handleConnectionOpen(sock, phoneNumber) {
 }
 
 // ============================================================================
-// 💬 FAST MESSAGE PROCESSOR
+// 💬 MESSAGE PROCESSOR
 // ============================================================================
 async function resolveLidToRealJid(sock, sender) {
   if (!sender || !sender.endsWith('@lid') || !sock.signalRepository?.lidToJid) return sender;
@@ -303,12 +348,10 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const isOwner = msg.key.fromMe || OWNER_NUMBERS.includes(cleanSenderNum) || cleanSenderNum === REAL_OWNER_NUMBER;
   const isAuthorized = isOwner || (myBotNum && cleanSenderNum === myBotNum);
 
-  // Presence simulation
   if (!msg.key.fromMe && settings.autoPresence !== 'off') {
     sock.sendPresenceUpdate(settings.autoPresence === 'recording' ? 'recording' : 'composing', chatJid).catch(() => {});
   }
 
-  // WorkMode Filter
   const currentMode = settings.workMode || 'public';
   if (!isAuthorized) {
     if (currentMode === 'private') return;
@@ -332,7 +375,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return await sock.sendMessage(chatJid, payload, { quoted: msg }).catch(() => sock.sendMessage(chatJid, payload));
   };
 
-  // Prefix Command Handling
   const prefixMatch = text.match(/^[./!#]/);
   if (prefixMatch) {
     const prefix = prefixMatch[0];
@@ -353,7 +395,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // Auto AI Inbox
   if (!msg.key.fromMe && !isGroup && settings.autoAiInbox && !/^[0-9.]+$/.test(cleanInput)) {
     try {
       sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
@@ -366,7 +407,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   }
 }
 
-// ⚡ Message Upsert Handler
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', async ({ messages }) => {
     if (!messages?.length) return;
@@ -407,7 +447,7 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP SERVER & CLEANUP ROUTES
+// 🌐 HTTP SERVER & HIGH-PERFORMANCE PAIR ROUTE
 // ============================================================================
 function registerRoutes(app) {
   app.get('/', (req, res) => res.send(renderPortalHtml(BOT_NAME)));
@@ -420,13 +460,13 @@ function registerRoutes(app) {
     res.json({ success: true, message: `Purged ${cleanNum}` });
   });
 
-  // 🛠️ FIX APPLIED: Robust Pair Route
+  // 🚀 සුපිරියට ක්‍රියා කරන PAIR ROUTE එක
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Number required' });
     const cleanNum = num.replace(/[^0-9]/g, '');
 
-    // පවතින active session එකක් වේ නම් memory එකෙන් පමණක් close කිරීම (DB එකෙන් delete නොකර)
+    // 1. පරණ active socket එකක් ඇත්නම් clean up කිරීම
     if (activeSessions[cleanNum]) {
       try {
         activeSessions[cleanNum].ev.removeAllListeners();
@@ -436,7 +476,18 @@ function registerRoutes(app) {
     }
     delete isStarting[cleanNum];
 
+    // 2. අලුතින් Code එකක් ඉල්ලන විට අර්ධ වශයෙන් ලියවුණු auth keys purge කර නැවුම් state එකක් සකස් කිරීම
+    // (මේ නිසා කලින් fail වුණත් නැවත code එක ක්ෂණිකව ලබා ගත හැක)
+    try {
+      await Auth.deleteMany({ _id: new RegExp('^' + cleanNum, 'i') });
+      if (mongoose.connection.db) {
+        await mongoose.connection.db.collection('auths').deleteMany({ _id: new RegExp('^' + cleanNum, 'i') });
+      }
+    } catch (e) {}
+
     let pairSock = null;
+    let isResponseSent = false;
+
     try {
       const { state, saveCreds } = await useMongoDBAuthState(cleanNum);
       const logger = pino({ level: 'silent' });
@@ -447,7 +498,7 @@ function registerRoutes(app) {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: Browsers.macOS('Safari'),
+        browser: Browsers.ubuntu('Chrome'), // Ubuntu Chrome භාවිතා කිරීම නිසා pairing code එක ක්ෂණිකව ලැබේ
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 0,
         keepAliveIntervalMs: 25000
@@ -457,6 +508,7 @@ function registerRoutes(app) {
 
       pairSock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
         if (connection === 'open') {
+          console.log(`🎉 Pairing Successful for +${cleanNum}`);
           activeSessions[cleanNum] = pairSock;
           registerMessageUpsertHandler(pairSock, cleanNum);
           handleConnectionOpen(pairSock, cleanNum);
@@ -468,22 +520,27 @@ function registerRoutes(app) {
         }
       });
 
-      // Socket handshake එක WhatsApp server එක සමඟ ස්ථාපිත වීමට සුළු delay එකක්
+      // WhatsApp WebSocket Handshake එක සඳහා සුළු delay එකක් (තත්පර 3)
       await delay(3000);
 
-      if (!pairSock.authState.creds.registered) {
-        let code = await pairSock.requestPairingCode(cleanNum);
-        code = code?.match(/.{1,4}/g)?.join('-') || code;
-        return res.json({ code });
-      } else {
-        return res.status(400).json({ error: 'Number is already registered/linked. Click "CLEAN THIS SESSION" first.' });
-      }
+      // Pairing Code එක ඉල්ලීම
+      let code = await pairSock.requestPairingCode(cleanNum);
+      code = code?.match(/.{1,4}/g)?.join('-') || code;
+
+      isResponseSent = true;
+      return res.json({ code });
+
     } catch (err) {
-      console.error('Pairing Error:', err);
+      console.error(`❌ Pairing request failed for +${cleanNum}:`, err.message);
       if (pairSock) {
-        try { pairSock.ws?.close(); } catch(e){}
+        try { 
+          pairSock.ev.removeAllListeners();
+          pairSock.ws?.close(); 
+        } catch(e){}
       }
-      return res.status(500).json({ error: err?.message || 'Pairing error. Wait 15s and retry.' });
+      if (!isResponseSent) {
+        return res.status(500).json({ error: 'WhatsApp rate-limit හෝ network දෝෂයකි. තත්පර 15කින් නැවත උත්සාහ කරන්න.' });
+      }
     }
   });
 }
