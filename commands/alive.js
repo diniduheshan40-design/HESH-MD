@@ -2,23 +2,68 @@
 const fs = require('fs');
 const path = require('path');
 
+// ⚡ 100% Solid & Cached Logo Finder (menu.js එකේ ක්‍රමයටම buffer cache සහිතව)
+let cachedLogo = null;
+function getBotLogo() {
+    if (cachedLogo) return cachedLogo;
+
+    try {
+        // 1. commands folder එකෙන් එළියේ තියෙන logo.jpg කියවීම
+        const localLogoPath = path.join(__dirname, '../logo.jpg');
+        if (fs.existsSync(localLogoPath)) {
+            cachedLogo = fs.readFileSync(localLogoPath);
+            return cachedLogo;
+        }
+
+        // 2. Root එකේ බැලීම
+        const rootPath = path.join(process.cwd(), 'logo.jpg');
+        if (fs.existsSync(rootPath)) {
+            cachedLogo = fs.readFileSync(rootPath);
+            return cachedLogo;
+        }
+
+        // 3. Assets folder එකේ බැලීම
+        const assetsLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
+        if (fs.existsSync(assetsLogoPath)) {
+            cachedLogo = fs.readFileSync(assetsLogoPath);
+            return cachedLogo;
+        }
+    } catch (e) {}
+
+    // 4. GitHub එකේ තියෙන Direct Raw Image Link එක (කවදාවත් fail නොවේ)
+    return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
+}
+
+const TIMEZONE_MAP = {
+    '91': 'Asia/Kolkata',
+    '92': 'Asia/Karachi',
+    '971': 'Asia/Dubai',
+    '966': 'Asia/Riyadh',
+    '974': 'Asia/Qatar',
+    '60': 'Asia/Kuala_Lumpur',
+    '65': 'Asia/Singapore',
+    '44': 'Europe/London',
+    '61': 'Australia/Sydney',
+    '880': 'Asia/Dhaka',
+    '39': 'Europe/Berlin',
+    '49': 'Europe/Berlin',
+    '33': 'Europe/Berlin'
+};
+
+const NUMBER_MAP = { '0': '0️⃣', '1': '1️⃣', '2': '2️⃣', '3': '3️⃣', '4': '4️⃣', '5': '5️⃣', '6': '6️⃣', '7': '7️⃣', '8': '8️⃣', '9': '9️⃣' };
+
 function getEmojiTime(jid) {
-    let tz = 'Asia/Colombo'; 
+    let tz = 'Asia/Colombo';
     try {
         if (jid && jid.includes('@s.whatsapp.net')) {
-            const num = jid.split('@')[0].split(':')[0]; 
-            if (num.startsWith('91')) tz = 'Asia/Kolkata'; 
-            else if (num.startsWith('92')) tz = 'Asia/Karachi'; 
-            else if (num.startsWith('971')) tz = 'Asia/Dubai'; 
-            else if (num.startsWith('966')) tz = 'Asia/Riyadh'; 
-            else if (num.startsWith('974')) tz = 'Asia/Qatar'; 
-            else if (num.startsWith('60')) tz = 'Asia/Kuala_Lumpur'; 
-            else if (num.startsWith('65')) tz = 'Asia/Singapore'; 
-            else if (num.startsWith('44')) tz = 'Europe/London'; 
-            else if (num.startsWith('1') && num.length <= 12) tz = 'America/New_York'; 
-            else if (num.startsWith('61')) tz = 'Australia/Sydney'; 
-            else if (num.startsWith('880')) tz = 'Asia/Dhaka'; 
-            else if (num.startsWith('39') || num.startsWith('49') || num.startsWith('33')) tz = 'Europe/Berlin'; 
+            const num = jid.split('@')[0].split(':')[0];
+            for (const prefix in TIMEZONE_MAP) {
+                if (num.startsWith(prefix)) {
+                    tz = TIMEZONE_MAP[prefix];
+                    break;
+                }
+            }
+            if (num.startsWith('1') && num.length <= 12) tz = 'America/New_York';
         }
 
         const formatter = new Intl.DateTimeFormat('en-US', {
@@ -26,16 +71,14 @@ function getEmojiTime(jid) {
         });
 
         const parts = formatter.formatToParts(new Date());
-        let hours = parts.find(p => p.type === 'hour')?.value || '00';
-        let minutes = parts.find(p => p.type === 'minute')?.value || '00';
-        let ampm = parts.find(p => p.type === 'dayPeriod')?.value.toUpperCase() || 'AM';
+        const hours = parts.find(p => p.type === 'hour')?.value || '00';
+        const minutes = parts.find(p => p.type === 'minute')?.value || '00';
+        const ampm = parts.find(p => p.type === 'dayPeriod')?.value.toUpperCase() || 'AM';
 
-        const numberMap = { '0': '0️⃣', '1': '1️⃣', '2': '2️⃣', '3': '3️⃣', '4': '4️⃣', '5': '5️⃣', '6': '6️⃣', '7': '7️⃣', '8': '8️⃣', '9': '9️⃣' };
-        
-        let emojiHours = hours.split('').map(d => numberMap[d] || d).join('');
-        let emojiMinutes = minutes.split('').map(d => numberMap[d] || d).join('');
-        let emojiAmPm = ampm === 'PM' ? '🇵‌🇲‌' : '🇦‌🇲‌';
-        
+        const emojiHours = hours.split('').map(d => NUMBER_MAP[d] || d).join('');
+        const emojiMinutes = minutes.split('').map(d => NUMBER_MAP[d] || d).join('');
+        const emojiAmPm = ampm === 'PM' ? '🇵‌🇲‌' : '🇦‌🇲‌';
+
         return `${emojiHours} : ${emojiMinutes} ${emojiAmPm}`;
     } catch (e) {
         return "12:00 🇵‌🇲‌";
@@ -44,20 +87,15 @@ function getEmojiTime(jid) {
 
 function formatUptime(seconds) {
     seconds = Math.floor(Number(seconds) || 0);
-    const d = Math.floor(seconds / (3600 * 24));
-    const h = Math.floor((seconds % (3600 * 24)) / 3600);
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-function getBotLogo() {
-    const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
-    if (fs.existsSync(localLogoPath)) {
-        return fs.readFileSync(localLogoPath);
-    }
-    return { url: 'https://files.catbox.moe/a58add.jpeg' };
-}
+// Memory leaks වළක්වා ගැනීමට active sessions map එකක්
+const activeAlivePrompts = new Map();
 
 const triggerCommand = async (cmdName, sock, replyMsg) => {
     try {
@@ -93,9 +131,10 @@ module.exports = {
 
         const senderJid = msg.key.participant || targetChat;
 
+        // Instant reaction
         sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
-        let pushName = msg.pushName || "User";  
+        const pushName = msg.pushName || "User";  
         let firstName = pushName.split(/[\s_+-]+/)[0] || "User"; 
         if (firstName.length > 15) firstName = firstName.substring(0, 15);  
 
@@ -123,16 +162,23 @@ module.exports = {
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            const logoPayload = getBotLogo();
+            const logo = getBotLogo();
 
             const sentMsg = await sock.sendMessage(targetChat, {
-                image: logoPayload,
+                image: logo,
                 caption: aliveMsg,
                 mimetype: 'image/jpeg'
             }, { quoted: msg });
 
             const stanzaId = sentMsg?.key?.id;
-            let cleanupTimer;
+            if (!stanzaId) return;
+
+            // පරණ duplicate listeners ඉවත් කිරීම
+            if (activeAlivePrompts.has(targetChat)) {
+                const prev = activeAlivePrompts.get(targetChat);
+                clearTimeout(prev.timeout);
+                sock.ev.off('messages.upsert', prev.listener);
+            }
 
             const replyListener = async (m) => {  
                 try {  
@@ -157,25 +203,32 @@ module.exports = {
 
                     if (["1", "2", "3"].includes(replyText)) {
                         sock.ev.off('messages.upsert', replyListener);
-                        if (cleanupTimer) clearTimeout(cleanupTimer);
+                        if (activeAlivePrompts.has(targetChat)) {
+                            clearTimeout(activeAlivePrompts.get(targetChat).timeout);
+                            activeAlivePrompts.delete(targetChat);
+                        }
 
                         if (replyText === "1") {  
-                            await sock.sendMessage(replyChat, { react: { text: '📜', key: replyMsg.key } }).catch(() => {});  
+                            sock.sendMessage(replyChat, { react: { text: '📜', key: replyMsg.key } }).catch(() => {});  
                             await triggerCommand('menu', sock, replyMsg);
-
                         } else if (replyText === "2") {  
-                            await sock.sendMessage(replyChat, { react: { text: '⚡', key: replyMsg.key } }).catch(() => {});
+                            sock.sendMessage(replyChat, { react: { text: '⚡', key: replyMsg.key } }).catch(() => {});
                             await triggerCommand('ping', sock, replyMsg);
-
                         } else if (replyText === "3") {  
-                            await sock.sendMessage(replyChat, { react: { text: '👑', key: replyMsg.key } }).catch(() => {});
+                            sock.sendMessage(replyChat, { react: { text: '👑', key: replyMsg.key } }).catch(() => {});
                             const ownerDetails = `*👑 HESHAN-MD OWNER INFO*\n\n` +
                                                  `*• Name:* Dinidu Heshan\n` +
                                                  `*• Status:* Active\n` +
                                                  `*• Contact:* wa.me/94719845166\n\n` +
                                                  `> 🔐 *heshan ofc • all rights reserved*`;
                             
-                            await sock.sendMessage(replyChat, { text: ownerDetails }, { quoted: replyMsg });
+                            await sock.sendMessage(replyChat, { 
+                                image: getBotLogo(), 
+                                caption: ownerDetails, 
+                                mimetype: 'image/jpeg' 
+                            }, { quoted: replyMsg }).catch(async () => {
+                                await sock.sendMessage(replyChat, { text: ownerDetails }, { quoted: replyMsg });
+                            });
                         }  
                     }
                 } catch (error) {  
@@ -183,11 +236,13 @@ module.exports = {
                 }  
             };  
 
-            sock.ev.on('messages.upsert', replyListener);  
-
-            cleanupTimer = setTimeout(() => {  
+            const timeout = setTimeout(() => {  
                 sock.ev.off('messages.upsert', replyListener);  
-            }, 60000);  
+                activeAlivePrompts.delete(targetChat);
+            }, 60000);
+
+            activeAlivePrompts.set(targetChat, { listener: replyListener, timeout });
+            sock.ev.on('messages.upsert', replyListener);
 
         } catch (err) {
             console.error("Alive Execution Error:", err.message);
