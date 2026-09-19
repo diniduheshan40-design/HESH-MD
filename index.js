@@ -142,7 +142,7 @@ function renderPortalHtml(botName) {
 }
 
 // ============================================================================
-// 🗑️ CASCADE PURGE ENGINE (බොට් අයින් කළ විට මුළු Base එකෙන්ම Wipe වීම)
+// 🗑️ CASCADE PURGE ENGINE
 // ============================================================================
 async function purgeSessionEntirely(phoneNumber) {
   const cleanNum = phoneNumber.replace(/[^0-9]/g, '');
@@ -162,7 +162,6 @@ async function purgeSessionEntirely(phoneNumber) {
     const sessionLogo = path.join(process.cwd(), `logo_${cleanNum}.jpg`);
     if (fs.existsSync(sessionLogo)) fs.promises.unlink(sessionLogo).catch(() => {});
 
-    // MongoDB Data Purge (Auth Credentials + Settings)
     await Promise.allSettled([
       Auth.deleteMany({ _id: new RegExp('^' + cleanNum, 'i') }),
       mongoose.connection.db ? mongoose.connection.db.collection('auths').deleteMany({ _id: new RegExp('^' + cleanNum, 'i') }) : Promise.resolve(),
@@ -192,8 +191,9 @@ async function createBaileysSocket(phoneNumber) {
     msgRetryCounterCache: new NodeCache({ stdTTL: 180, checkperiod: 60 }),
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
-    connectTimeoutMs: 30000,
-    keepAliveIntervalMs: 30000,
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 0,
+    keepAliveIntervalMs: 25000,
     markOnlineOnConnect: false,
     emitOwnEvents: false,
     shouldIgnoreJid: (jid) => jid?.endsWith('@broadcast') && jid !== 'status@broadcast'
@@ -229,7 +229,6 @@ function handleConnectionOpen(sock, phoneNumber) {
   const cleanNum = phoneNumber.replace(/[^0-9]/g, '');
   console.log(`✅ BOT CONNECTED: +${cleanNum}`);
 
-  // Channel follow
   setTimeout(async () => {
     try {
       if (typeof sock.newsletterFollow === 'function') {
@@ -367,7 +366,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   }
 }
 
-// ⚡ 100% Reliable Zero-Drop Upsert Handler
+// ⚡ Message Upsert Handler
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', async ({ messages }) => {
     if (!messages?.length) return;
@@ -421,12 +420,21 @@ function registerRoutes(app) {
     res.json({ success: true, message: `Purged ${cleanNum}` });
   });
 
+  // 🛠️ FIX APPLIED: Robust Pair Route
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Number required' });
     const cleanNum = num.replace(/[^0-9]/g, '');
 
-    await purgeSessionEntirely(cleanNum);
+    // පවතින active session එකක් වේ නම් memory එකෙන් පමණක් close කිරීම (DB එකෙන් delete නොකර)
+    if (activeSessions[cleanNum]) {
+      try {
+        activeSessions[cleanNum].ev.removeAllListeners();
+        activeSessions[cleanNum].ws?.close();
+      } catch (e) {}
+      delete activeSessions[cleanNum];
+    }
+    delete isStarting[cleanNum];
 
     let pairSock = null;
     try {
@@ -439,7 +447,10 @@ function registerRoutes(app) {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: Browsers.macOS('Safari')
+        browser: Browsers.macOS('Safari'),
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0,
+        keepAliveIntervalMs: 25000
       });
 
       pairSock.ev.on('creds.update', saveCreds);
@@ -457,13 +468,22 @@ function registerRoutes(app) {
         }
       });
 
-      await delay(1500);
-      let code = await pairSock.requestPairingCode(cleanNum);
-      code = code?.match(/.{1,4}/g)?.join('-') || code;
-      return res.json({ code });
+      // Socket handshake එක WhatsApp server එක සමඟ ස්ථාපිත වීමට සුළු delay එකක්
+      await delay(3000);
+
+      if (!pairSock.authState.creds.registered) {
+        let code = await pairSock.requestPairingCode(cleanNum);
+        code = code?.match(/.{1,4}/g)?.join('-') || code;
+        return res.json({ code });
+      } else {
+        return res.status(400).json({ error: 'Number is already registered/linked. Click "CLEAN THIS SESSION" first.' });
+      }
     } catch (err) {
-      if (pairSock) try { pairSock.ws?.close(); } catch(e){}
-      return res.status(500).json({ error: 'Pairing error. Retry after 15s.' });
+      console.error('Pairing Error:', err);
+      if (pairSock) {
+        try { pairSock.ws?.close(); } catch(e){}
+      }
+      return res.status(500).json({ error: err?.message || 'Pairing error. Wait 15s and retry.' });
     }
   });
 }
@@ -478,7 +498,7 @@ async function startServer() {
 
   app.listen(port, () => console.log(`🚀 Server active on port ${port}`));
 
-  // Saved Session Reconnect
+  // Saved Session Auto Reconnect
   try {
     const sessions = await Auth.find({ _id: /-creds$/ }).lean();
     for (const s of sessions) {
@@ -502,3 +522,4 @@ async function main() {
 }
 
 main();
+
