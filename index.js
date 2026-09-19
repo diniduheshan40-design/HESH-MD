@@ -17,6 +17,14 @@ const {
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
+// 🟢 Global Process Crash Guards (බොට් On/Off නොවී ස්ථාවරව තැබීමට)
+process.on('uncaughtException', (err) => {
+  console.error('🛡️ Uncaught Exception Guard:', err?.message || err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('🛡️ Unhandled Rejection Guard:', err?.message || err);
+});
+
 // 🟢 Config & DB Models
 const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
@@ -58,9 +66,9 @@ const DEFAULT_SETTINGS = {
 // 🧠 RUNTIME STATE
 // ============================================================================
 
-const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 200 });
 const activeSessions = {};
-global.activeSessions = activeSessions; // 🟢 Commands වලට Active bots access කිරීමට එක් කළා
+global.activeSessions = activeSessions; // 🟢 Commands වලට Active bots access කිරීමට
 const isStarting = {};
 const commands = new Map();
 
@@ -495,7 +503,7 @@ function registerPortalRoute(app) {
 async function createBaileysSocket(phoneNumber) {
   const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(phoneNumber);
   const logger = pino({ level: 'silent' });
-  const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60 });
+  const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60, maxKeys: 300 });
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
   const sock = makeWASocket({
@@ -510,7 +518,7 @@ async function createBaileysSocket(phoneNumber) {
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 30000,
     keepAliveIntervalMs: 25000,
-    markOnlineOnConnect: true,
+    markOnlineOnConnect: false, // RAM & Network Overhead අඩු කිරීමට
     emitOwnEvents: false,
     shouldIgnoreJid: () => false
   });
@@ -537,7 +545,7 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   const isPermanentLogout = statusCode === DisconnectReason.loggedOut;
 
   if (!isPermanentLogout) {
-    setTimeout(() => initWhatsApp(phoneNumber), 4000);
+    setTimeout(() => initWhatsApp(phoneNumber), 5000);
   } else {
     console.log(`❌ Permanent session logout: ${phoneNumber}`);
     if (typeof clearSessionData === 'function') await clearSessionData();
@@ -1098,7 +1106,8 @@ async function reconnectAllSavedSessions() {
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(3500);
+      // Multi-Sessions නිසා CPU/RAM Spike වීම වැළැක්වීමට Delay එක තත්පර 6ක් කර ඇත
+      await delay(6000);
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
