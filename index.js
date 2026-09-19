@@ -135,13 +135,13 @@ function getCommandExecutor(cmd) {
 }
 
 // ============================================================================
-// 🌐 UI PORTAL (All Reset Support Added)
+// 🌐 UI PORTAL (Fast Response + Direct AJAX)
 // ============================================================================
 function renderPortalHtml(botName) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${botName} • STATION</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet"><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#090305;background-image:radial-gradient(circle at 50% 0%,rgba(225,29,72,.18) 0%,transparent 60%);color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}.portal-card{background:rgba(20,6,10,.75);backdrop-filter:blur(24px);border:1px solid rgba(244,63,94,.22);border-radius:28px;padding:40px 30px;width:100%;max-width:420px;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.65)}.app-title{font-size:28px;font-weight:800;background:linear-gradient(135deg,#fff 40%,#fb7185 80%,#e11d48 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}.app-desc{font-size:13px;color:#9f8e93;margin-bottom:26px}.phone-input{width:100%;padding:15px;border-radius:14px;border:1px solid rgba(244,63,94,.22);background:rgba(12,3,6,.7);color:#fff;font-size:16px;font-weight:600;text-align:center;outline:none;margin-bottom:14px}.btn-action{width:100%;padding:15px;border-radius:14px;border:none;background:linear-gradient(135deg,#be123c 0%,#e11d48 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:10px;transition:opacity 0.2s}.btn-action:disabled{opacity:0.6;cursor:not-allowed}.btn-reset{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(225,29,72,.25);background:rgba(225,29,72,.08);color:#fb7185;font-size:12px;cursor:pointer;margin-bottom:8px}.btn-reset-all{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(239,68,68,.4);background:rgba(239,68,68,.18);color:#fca5a5;font-size:12px;font-weight:700;cursor:pointer}.code-box{font-family:'JetBrains Mono',monospace;font-size:26px;letter-spacing:2px;font-weight:800;color:#ffe4e6;background:rgba(225,29,72,.14);border:1.5px dashed rgba(251,113,133,.45);padding:16px;border-radius:14px;margin-top:20px;display:none;cursor:pointer}</style></head><body><div class="portal-card"><h1 class="app-title">${botName}</h1><p class="app-desc">Enter phone number with country code (e.g. 9471...)</p><input type="text" id="phone" class="phone-input" placeholder="e.g. 9471xxxxxxx" /><button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button><button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button><button class="btn-reset-all" onclick="resetAllSessions()">LOGOUT ALL SESSIONS</button><div class="code-box" id="codeDisplay" onclick="copyCode()"></div></div><script>
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${botName} • PAIRING</title><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet"><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#090305;background-image:radial-gradient(circle at 50% 0%,rgba(225,29,72,.2) 0%,transparent 60%);color:#fff;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.portal-card{background:rgba(20,6,10,.85);backdrop-filter:blur(25px);border:1px solid rgba(244,63,94,.3);border-radius:24px;padding:35px 25px;width:100%;max-width:400px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.7)}.app-title{font-size:26px;font-weight:800;background:linear-gradient(135deg,#fff 30%,#fb7185 70%,#e11d48 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:6px}.app-desc{font-size:13px;color:#a8999d;margin-bottom:22px}.phone-input{width:100%;padding:14px;border-radius:12px;border:1.5px solid rgba(244,63,94,.25);background:rgba(12,3,6,.8);color:#fff;font-size:16px;font-weight:600;text-align:center;outline:none;margin-bottom:12px;transition:border .2s}.phone-input:focus{border-color:#fb7185}.btn-action{width:100%;padding:14px;border-radius:12px;border:none;background:linear-gradient(135deg,#be123c 0%,#e11d48 100%);color:#fff;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:10px}.btn-action:disabled{opacity:.6;cursor:not-allowed}.btn-reset{width:100%;padding:11px;border-radius:11px;border:1px solid rgba(225,29,72,.3);background:rgba(225,29,72,.08);color:#fb7185;font-size:12px;cursor:pointer;margin-bottom:8px}.btn-reset-all{width:100%;padding:11px;border-radius:11px;border:1px solid rgba(239,68,68,.4);background:rgba(239,68,68,.15);color:#fca5a5;font-size:12px;font-weight:700;cursor:pointer}.code-box{font-family:'JetBrains Mono',monospace;font-size:28px;letter-spacing:3px;font-weight:800;color:#ffe4e6;background:rgba(225,29,72,.18);border:2px dashed #fb7185;padding:15px;border-radius:14px;margin-top:18px;display:none;cursor:pointer;animation:glow 1.5s infinite alternate}@keyframes glow{from{box-shadow:0 0 10px rgba(225,29,72,.2)}to{box-shadow:0 0 20px rgba(225,29,72,.5)}}</style></head><body><div class="portal-card"><h1 class="app-title">${botName}</h1><p class="app-desc">Enter phone number with Country Code (No + or spaces)</p><input type="text" id="phone" class="phone-input" placeholder="e.g. 9471xxxxxxx" /><button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button><button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button><button class="btn-reset-all" onclick="resetAllSessions()">LOGOUT ALL SESSIONS</button><div class="code-box" id="codeDisplay" onclick="copyCode()"></div></div><script>
 async function fetchPairCode(){
   const p = document.getElementById('phone').value.replace(/[^0-9]/g,'');
-  if(!p || p.length < 10) return alert('කරුණාකර රටේ කේතය (Country Code) සහිතව නිවැරදි දුරකථන අංකය ඇතුළත් කරන්න!');
+  if(!p || p.length < 10) return alert('කරුණාකර Country Code එක සහිත අංකය ඇතුළත් කරන්න (උදා: 9471XXXXXXX)!');
   const b = document.getElementById('btn');
   const d = document.getElementById('codeDisplay');
   b.innerText = 'GENERATING CODE...';
@@ -149,20 +149,18 @@ async function fetchPairCode(){
   d.style.display = 'none';
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 35000);
-    const res = await fetch('/pair?num=' + p, { signal: controller.signal });
-    clearTimeout(timeoutId);
+    const res = await fetch('/pair?num=' + p);
     const data = await res.json();
     if(data.code){
       d.innerText = data.code;
       d.style.display = 'block';
       navigator.clipboard.writeText(data.code).catch(()=>{});
+      alert('Code එක ලැබුණා: ' + data.code + '\\nCopy කර WhatsApp එකට දාන්න!');
     } else {
-      alert(data.error || 'Pairing error. Clean session කර තත්පර 10කින් නැවත උත්සාහ කරන්න.');
+      alert(data.error || 'දෝෂයකි. "CLEAN THIS SESSION" ඔබා තත්පර 5කින් නැවත උත්සාහ කරන්න.');
     }
   } catch(e) {
-    alert('Server Timeout or Connection Issue! නැවත Pair Code එක ලබාගන්න.');
+    alert('Server එකෙන් code එකක් ආවේ නෑ. Clean Session කරලා ආයෙ ට්‍රයි කරන්න!');
   } finally {
     b.innerText = 'GET PAIRING CODE';
     b.disabled = false;
@@ -170,18 +168,17 @@ async function fetchPairCode(){
 }
 async function cleanSessionSlot(){
   const p = document.getElementById('phone').value.replace(/[^0-9]/g,'');
-  if(!p) return alert('Phone number required!');
-  if(confirm('Session data clean කරන්නද? +'+p)){
+  if(!p) return alert('Phone number එක ඇතුළත් කරන්න!');
+  if(confirm('+'+p+' Session එක Clear කරන්නද?')){
     await fetch('/reset-num?num='+p);
-    alert('Session cleaned! දැන් අලුතින් Pair Code එකක් ලබාගන්න.');
+    alert('Session Cleaned! දැන් නැවත Get Code ඔබන්න.');
     document.getElementById('codeDisplay').style.display = 'none';
   }
 }
 async function resetAllSessions(){
-  if(confirm('අවවාදයයි: දැනට පවතින සියලුම Bot Sessions Logout කර DB එකෙන් මකා දමන්නද?')){
-    const res = await fetch('/reset-all');
-    const data = await res.json();
-    alert(data.message || 'සියලුම Sessions Logout කර සම්පූර්ණයෙන්ම Clean කරන ලදී!');
+  if(confirm('සියලුම Sessions Logout කර DB එකෙන් මකා දමන්නද?')){
+    await fetch('/reset-all');
+    alert('සියලුම Sessions සාර්ථකව Wiped කරන ලදී!');
     document.getElementById('codeDisplay').style.display = 'none';
   }
 }
@@ -194,11 +191,11 @@ function copyCode(){
 }
 
 // ============================================================================
-// 🗑️ CASCADE PURGE ENGINE (Single & Total Wipe)
+// 🗑️ PURGE ENGINE
 // ============================================================================
 async function purgeSessionEntirely(phoneNumber) {
   const cleanNum = phoneNumber.replace(/[^0-9]/g, '');
-  console.log(`🧹 Cascading Purge for session: +${cleanNum}`);
+  console.log(`🧹 Cascading Purge: +${cleanNum}`);
 
   try {
     if (activeSessions[cleanNum]) {
@@ -219,18 +216,13 @@ async function purgeSessionEntirely(phoneNumber) {
       mongoose.connection.db ? mongoose.connection.db.collection('auths').deleteMany({ _id: new RegExp('^' + cleanNum, 'i') }) : Promise.resolve(),
       mongoose.connection.db ? mongoose.connection.db.collection('botsettings').deleteOne({ _id: cleanNum }) : Promise.resolve()
     ]);
-
-    console.log(`✅ Session +${cleanNum} cleared completely!`);
   } catch (err) {
-    console.error(`❌ Purge error (+${cleanNum}):`, err.message);
+    console.error(`Purge error (+${cleanNum}):`, err.message);
   }
 }
 
-// 💥 සියලුම Sessions Logout කර සම්පූර්ණ Database එකෙන් Wipe කිරීම
 async function purgeAllSessionsEntirely() {
-  console.log('🚨 WIPING ALL SESSIONS FROM MEMORY & DATABASE...');
-
-  // 1. Active sockets සියල්ල close කර memory clear කිරීම
+  console.log('🚨 WIPING ALL SESSIONS...');
   for (const num of Object.keys(activeSessions)) {
     try {
       activeSessions[num]?.ev?.removeAllListeners();
@@ -238,25 +230,20 @@ async function purgeAllSessionsEntirely() {
     } catch (e) {}
     delete activeSessions[num];
   }
-
-  for (const num of Object.keys(isStarting)) {
-    delete isStarting[num];
-  }
+  for (const num of Object.keys(isStarting)) delete isStarting[num];
 
   settingsCache.flushAll();
   lidCache.flushAll();
   msgDedupeCache.flushAll();
 
-  // 2. Database එකේ ඇති සියලුම Auth Keys සහ Bot Settings සම්පූර්ණයෙන්ම Delete කිරීම
   try {
     await Promise.allSettled([
       Auth.deleteMany({}),
       mongoose.connection.db ? mongoose.connection.db.collection('auths').deleteMany({}) : Promise.resolve(),
       mongoose.connection.db ? mongoose.connection.db.collection('botsettings').deleteMany({}) : Promise.resolve()
     ]);
-    console.log('✅ ALL SESSIONS LOGGED OUT & WIPED SUCCESSFULLY!');
   } catch (err) {
-    console.error('❌ Error wiping all sessions:', err.message);
+    console.error('Wipe error:', err.message);
   }
 }
 
@@ -273,7 +260,7 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'),
+    browser: ['Chrome (Linux)', '', ''], // Fast native Baileys pair handshake
     msgRetryCounterCache: new NodeCache({ stdTTL: 180, checkperiod: 60 }),
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
@@ -297,7 +284,7 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   const isPermanentLogout = statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403 || statusCode === 405;
 
   if (isPermanentLogout) {
-    console.log(`🚫 Device unlinked / logged out: +${cleanNum}`);
+    console.log(`🚫 Device unlinked: +${cleanNum}`);
     if (typeof clearSessionData === 'function') await clearSessionData().catch(() => {});
     await purgeSessionEntirely(cleanNum);
   } else {
@@ -486,12 +473,11 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP SERVER & HIGH-PERFORMANCE ROUTES
+// 🌐 HTTP SERVER & BULLET-PROOF PAIR ROUTE
 // ============================================================================
 function registerRoutes(app) {
   app.get('/', (req, res) => res.send(renderPortalHtml(BOT_NAME)));
 
-  // Single number purge
   app.get('/reset-num', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Number required' });
@@ -500,18 +486,18 @@ function registerRoutes(app) {
     res.json({ success: true, message: `Purged ${cleanNum}` });
   });
 
-  // 💥 All sessions purge route
   app.get('/reset-all', async (req, res) => {
     await purgeAllSessionsEntirely();
-    res.json({ success: true, message: 'සියලුම Sessions Logout කර Wipe කරන ලදී!' });
+    res.json({ success: true, message: 'Wiped all sessions!' });
   });
 
-  // Pair Route
+  // 🚀 100% NON-FREEZING FAST PAIR HANDLER
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
-    if (!num) return res.status(400).json({ error: 'Number required' });
+    if (!num) return res.status(400).json({ error: 'Phone number required' });
     const cleanNum = num.replace(/[^0-9]/g, '');
 
+    // Existing active session එකක් තිබේ නම් close කර memory එකෙන් ඉවත් කිරීම
     if (activeSessions[cleanNum]) {
       try {
         activeSessions[cleanNum].ev.removeAllListeners();
@@ -521,6 +507,7 @@ function registerRoutes(app) {
     }
     delete isStarting[cleanNum];
 
+    // Corrupted partial auth records clean කිරීම
     try {
       await Auth.deleteMany({ _id: new RegExp('^' + cleanNum, 'i') });
       if (mongoose.connection.db) {
@@ -529,7 +516,18 @@ function registerRoutes(app) {
     } catch (e) {}
 
     let pairSock = null;
-    let isResponseSent = false;
+    let hasResponded = false;
+
+    // Timeout protector: තත්පර 20කට වඩා hang වෙන්න දෙන්නේ නෑ
+    const timer = setTimeout(() => {
+      if (!hasResponded) {
+        hasResponded = true;
+        if (pairSock) {
+          try { pairSock.ev.removeAllListeners(); pairSock.ws?.close(); } catch(e){}
+        }
+        return res.status(504).json({ error: 'WhatsApp Handshake Timeout. Clean Session ඔබා තත්පර 10කින් නැවත උත්සාහ කරන්න.' });
+      }
+    }, 20000);
 
     try {
       const { state, saveCreds } = await useMongoDBAuthState(cleanNum);
@@ -541,17 +539,17 @@ function registerRoutes(app) {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: Browsers.ubuntu('Chrome'),
-        connectTimeoutMs: 60000,
+        browser: ['Chrome (Linux)', '', ''],
+        connectTimeoutMs: 25000,
         defaultQueryTimeoutMs: 0,
-        keepAliveIntervalMs: 25000
+        keepAliveIntervalMs: 20000
       });
 
       pairSock.ev.on('creds.update', saveCreds);
 
       pairSock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
         if (connection === 'open') {
-          console.log(`🎉 Pairing Successful for +${cleanNum}`);
+          console.log(`🎉 Success Linked: +${cleanNum}`);
           activeSessions[cleanNum] = pairSock;
           registerMessageUpsertHandler(pairSock, cleanNum);
           handleConnectionOpen(pairSock, cleanNum);
@@ -563,24 +561,28 @@ function registerRoutes(app) {
         }
       });
 
+      // Handshake එක establish වෙනකම් තත්පර 3ක steady delay එකක්
       await delay(3000);
 
+      // Pairing code generate කිරීම
       let code = await pairSock.requestPairingCode(cleanNum);
       code = code?.match(/.{1,4}/g)?.join('-') || code;
 
-      isResponseSent = true;
-      return res.json({ code });
+      clearTimeout(timer);
+      if (!hasResponded) {
+        hasResponded = true;
+        return res.json({ code });
+      }
 
     } catch (err) {
-      console.error(`❌ Pairing request failed for +${cleanNum}:`, err.message);
+      clearTimeout(timer);
+      console.error(`Pairing Error (+${cleanNum}):`, err.message);
       if (pairSock) {
-        try { 
-          pairSock.ev.removeAllListeners();
-          pairSock.ws?.close(); 
-        } catch(e){}
+        try { pairSock.ev.removeAllListeners(); pairSock.ws?.close(); } catch(e){}
       }
-      if (!isResponseSent) {
-        return res.status(500).json({ error: 'WhatsApp rate-limit හෝ network දෝෂයකි. තත්පර 15කින් නැවත උත්සාහ කරන්න.' });
+      if (!hasResponded) {
+        hasResponded = true;
+        return res.status(500).json({ error: 'WhatsApp rate-limit හෝ network error. තත්පර 15කින් නැවත බලන්න.' });
       }
     }
   });
@@ -594,9 +596,9 @@ async function startServer() {
   loadAllCommands();
   registerRoutes(app);
 
-  app.listen(port, () => console.log(`🚀 Server active on port ${port}`));
+  app.listen(port, () => console.log(`🚀 Server running on port ${port}`));
 
-  // Saved Session Auto Reconnect
+  // Saved Session Reconnection
   try {
     const sessions = await Auth.find({ _id: /-creds$/ }).lean();
     for (const s of sessions) {
@@ -605,7 +607,7 @@ async function startServer() {
       await delay(2000);
     }
   } catch (e) {
-    console.error('Session reconnect error:', e.message);
+    console.error('Reconnect error:', e.message);
   }
 }
 
