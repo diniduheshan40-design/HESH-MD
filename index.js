@@ -28,7 +28,6 @@ process.on('unhandledRejection', (err) => {
 // 🟢 Config & DB Models
 const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
-const { askAI } = require('./ai');
 
 // ============================================================================
 // 🌍 GLOBAL CONSTANTS
@@ -50,12 +49,9 @@ const OWNER_NUMBERS = [
 
 const DEFAULT_SETTINGS = {
   workMode: 'public',
-  autoAiInbox: true,
   autoStatusSeen: true,
   statusReact: true,
   statusReactEmoji: '💐',
-  ownerReact: true,
-  ownerReactEmoji: '👑',
   botLogo: DEFAULT_BACKUP_LOGO,
   autoPresence: 'off',
   securityPin: '1234',
@@ -81,12 +77,9 @@ function createSettingsModel() {
   const SettingsSchema = new mongoose.Schema({
     _id: { type: String, required: true },
     workMode: { type: String, default: DEFAULT_SETTINGS.workMode },
-    autoAiInbox: { type: Boolean, default: DEFAULT_SETTINGS.autoAiInbox },
     autoStatusSeen: { type: Boolean, default: DEFAULT_SETTINGS.autoStatusSeen },
     statusReact: { type: Boolean, default: DEFAULT_SETTINGS.statusReact },
     statusReactEmoji: { type: String, default: DEFAULT_SETTINGS.statusReactEmoji },
-    ownerReact: { type: Boolean, default: DEFAULT_SETTINGS.ownerReact },
-    ownerReactEmoji: { type: String, default: DEFAULT_SETTINGS.ownerReactEmoji },
     botLogo: { type: String, default: DEFAULT_SETTINGS.botLogo },
     autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
     securityPin: { type: String, default: DEFAULT_SETTINGS.securityPin },
@@ -555,7 +548,6 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   let delayTime = 6000;
 
   if (statusCode === 440) {
-    // 440 Loop එකක් ආවොත් cooldown එක තත්පර 25ක් දක්වා වැඩිකර RAM එක ආරක්ෂා කරයි
     delayTime = Math.min(reconnectAttempts[phoneNumber] * 12000, 45000);
     console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting ${Math.round(delayTime / 1000)}s before retry...`);
   } else if (reconnectAttempts[phoneNumber] > 5) {
@@ -590,7 +582,7 @@ function buildConnectedMessage(botNum) {
 ━━━━━━━━━━━━━━━━━━━━━
 • *Number*    : +${botNum}
 • *Engine*    : HESHAN-MD V2
-• *Features*  : AI Inbox | Auto Status | Anti-Delete
+• *Features*  : Auto Status | Anti-Delete
 • *State*     : Online (24/7 Cloud)
 ━━━━━━━━━━━━━━━━━━━━━
 > Type *.menu* to explore all commands.`.trim();
@@ -631,7 +623,7 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
 
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
-  reconnectAttempts[phoneNumber] = 0; // Reset attempts on successful connection
+  reconnectAttempts[phoneNumber] = 0;
   autoFollowChannelAndJoinGroup(sock, phoneNumber);
   setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
 }
@@ -713,15 +705,6 @@ function isOwnerJid(jid) {
 
 function checkIsOwner(originalSender, resolvedSender) {
   return isOwnerJid(originalSender) || isOwnerJid(resolvedSender);
-}
-
-function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
-  if (!settings.ownerReact) return;
-  setTimeout(async () => {
-    try {
-      await sock.sendMessage(chatJid, { react: { text: settings.ownerReactEmoji || '👑', key: msgKey } });
-    } catch (err) {}
-  }, 600);
 }
 
 function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
@@ -851,18 +834,6 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   return true;
 }
 
-async function handleAutoAiReply(sock, chatJid, text, safeReply) {
-  try {
-    await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
-    const aiPromise = askAI(text);
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('AI_Timeout')), 10000));
-    const aiReply = await Promise.race([aiPromise, timeoutPromise]);
-    if (aiReply) await safeReply(aiReply);
-  } catch (aiErr) {} finally {
-    await sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
-  }
-}
-
 // ============================================================================
 // 💬 SINGLE MESSAGE PROCESSOR
 // ============================================================================
@@ -894,10 +865,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
   const resolvedSender = await resolveLidToRealJid(sock, originalSender);
   const isOwner = checkIsOwner(originalSender, resolvedSender);
-
-  if (isOwner && !msg.key.fromMe) {
-    reactToOwnerMessage(sock, chatJid, msg.key, settings);
-  }
 
   const cleanSenderNum = resolvedSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
@@ -933,15 +900,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  const commandHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode);
-  if (commandHandled) return;
-
-  const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
-  const isNumericOnly = /^[0-9]+$/.test(cleanInput);
-
-  if (!isSelfBotMsg && !isGroup && settings.autoAiInbox && !isNumericOnly) {
-    await handleAutoAiReply(sock, chatJid, text, safeReply);
-  }
+  await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode);
 }
 
 function registerMessageUpsertHandler(sock, phoneNumber) {
@@ -1132,7 +1091,6 @@ async function reconnectAllSavedSessions() {
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      // සර්වර් overload වීම වැළැක්වීමට session එකකින් එකට තත්පර 10ක Delay එකක්
       await delay(10000);
     }
   } catch (e) {
@@ -1167,4 +1125,3 @@ async function main() {
 }
 
 main();
-
