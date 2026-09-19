@@ -31,20 +31,24 @@ const { useMongoDBAuthState, Auth } = require('./auth');
 const { askAI } = require('./ai');
 
 // ============================================================================
-// 🌍 GLOBAL CONSTANTS
+// 🌍 GLOBAL CONSTANTS & CACHES
 // ============================================================================
 
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 
+let cachedLogoBuffer = null;
 function getLocalLogoBuffer() {
+  if (cachedLogoBuffer) return cachedLogoBuffer;
   const localLogoPath = path.join(process.cwd(), 'logo.jpg');
   if (fs.existsSync(localLogoPath)) {
-    return fs.readFileSync(localLogoPath);
+    cachedLogoBuffer = fs.readFileSync(localLogoPath);
+    return cachedLogoBuffer;
   }
   const assetsLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
   if (fs.existsSync(assetsLogoPath)) {
-    return fs.readFileSync(assetsLogoPath);
+    cachedLogoBuffer = fs.readFileSync(assetsLogoPath);
+    return cachedLogoBuffer;
   }
   return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
@@ -73,11 +77,9 @@ const DEFAULT_SETTINGS = {
   isFirstConnectDone: false
 };
 
-// ============================================================================
-// 🧠 RUNTIME STATE
-// ============================================================================
-
-const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+// ⚡ High-Speed In-Memory Caching Layer
+const settingsCache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
+const lidCache = new NodeCache({ stdTTL: 86400, checkperiod: 3600 });
 const activeSessions = {};
 global.activeSessions = activeSessions;
 const isStarting = {};
@@ -121,8 +123,7 @@ async function getBotSettings(botNum) {
   try {
     let settings = await SettingsModel.findById(botNum).lean();
     if (!settings) {
-      const created = await SettingsModel.create({ _id: botNum, ...DEFAULT_SETTINGS });
-      settings = created.toObject();
+      settings = await SettingsModel.create({ _id: botNum, ...DEFAULT_SETTINGS }).then(doc => doc.toObject());
     }
     settingsCache.set(botNum, settings);
     return settings;
@@ -185,7 +186,7 @@ function getCommandExecutor(cmd) {
 }
 
 // ============================================================================
-// 🌐 LUXURY RED-BLACK GLASSMORPHIC PORTAL
+// 🌐 UI PORTAL
 // ============================================================================
 
 function renderPortalHtml(botName) {
@@ -211,9 +212,7 @@ function renderPortalHtml(botName) {
           --text-main: #fcfcfd;
           --text-muted: #9f8e93;
         }
-
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        
         body {
           background-color: var(--bg-core);
           background-image: 
@@ -227,7 +226,6 @@ function renderPortalHtml(botName) {
           min-height: 100vh;
           padding: 24px;
         }
-
         .portal-card {
           background: var(--panel-bg);
           backdrop-filter: blur(28px) saturate(160%);
@@ -238,23 +236,16 @@ function renderPortalHtml(botName) {
           width: 100%;
           max-width: 440px;
           text-align: center;
-          box-shadow: 
-            0 24px 60px rgba(0, 0, 0, 0.65),
-            0 0 45px var(--accent-glow);
+          box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 45px var(--accent-glow);
           position: relative;
           overflow: hidden;
         }
-
         .portal-card::before {
           content: '';
           position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 3px;
+          top: 0; left: 0; right: 0; height: 3px;
           background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
         }
-
         .badge-status {
           display: inline-flex;
           align-items: center;
@@ -270,15 +261,12 @@ function renderPortalHtml(botName) {
           border-radius: 30px;
           margin-bottom: 20px;
         }
-
         .badge-dot {
-          width: 6px;
-          height: 6px;
+          width: 6px; height: 6px;
           background: var(--accent-red);
           border-radius: 50%;
           box-shadow: 0 0 8px var(--accent-red);
         }
-
         .app-title {
           font-size: 30px;
           font-weight: 800;
@@ -288,19 +276,13 @@ function renderPortalHtml(botName) {
           -webkit-text-fill-color: transparent;
           margin-bottom: 6px;
         }
-
         .app-desc {
           font-size: 13.5px;
           color: var(--text-muted);
           margin-bottom: 30px;
           font-weight: 400;
         }
-
-        .input-wrap {
-          position: relative;
-          margin-bottom: 16px;
-        }
-
+        .input-wrap { position: relative; margin-bottom: 16px; }
         .phone-input {
           width: 100%;
           padding: 16px 20px;
@@ -315,19 +297,11 @@ function renderPortalHtml(botName) {
           outline: none;
           transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
-
-        .phone-input::placeholder {
-          color: rgba(255, 255, 255, 0.25);
-          font-weight: 400;
-          letter-spacing: 0;
-        }
-
         .phone-input:focus {
           border-color: var(--border-focus);
           box-shadow: 0 0 24px rgba(225, 29, 72, 0.35);
           background: rgba(18, 4, 9, 0.9);
         }
-
         .btn-action {
           width: 100%;
           padding: 16px;
@@ -343,16 +317,10 @@ function renderPortalHtml(botName) {
           box-shadow: 0 8px 24px rgba(225, 29, 72, 0.3);
           margin-bottom: 12px;
         }
-
         .btn-action:hover {
           transform: translateY(-2px);
           box-shadow: 0 12px 30px rgba(225, 29, 72, 0.45);
         }
-
-        .btn-action:active {
-          transform: translateY(0);
-        }
-
         .btn-reset {
           width: 100%;
           padding: 13px;
@@ -365,23 +333,19 @@ function renderPortalHtml(botName) {
           cursor: pointer;
           transition: all 0.25s ease;
         }
-
         .btn-reset:hover {
           background: rgba(225, 29, 72, 0.18);
           border-color: rgba(225, 29, 72, 0.45);
         }
-
         .code-container {
           display: none;
           margin-top: 24px;
           animation: fadeIn 0.4s ease;
         }
-
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(8px); }
           to { opacity: 1; transform: translateY(0); }
         }
-
         .code-box {
           font-family: 'JetBrains Mono', monospace;
           font-size: 32px;
@@ -395,20 +359,11 @@ function renderPortalHtml(botName) {
           cursor: pointer;
           transition: all 0.25s ease;
         }
-
-        .code-box:hover {
-          background: rgba(225, 29, 72, 0.22);
-          border-color: var(--crimson-soft);
-          transform: scale(1.02);
-        }
-
         .copy-tag {
           font-size: 11.5px;
           color: var(--text-muted);
           margin-top: 8px;
-          font-weight: 500;
         }
-
         .footer-note {
           margin-top: 28px;
           font-size: 11px;
@@ -475,7 +430,7 @@ function renderPortalHtml(botName) {
         async function cleanSessionSlot() {
           const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
           if (!phone) return alert('Clean කිරීමට Phone Number එක ඇතුළත් කරන්න!');
-          if (confirm('+' + phone + ' සඳහා පැරණි session එක සම්පූර්ණයෙන්ම Clean කරන්නද?')) {
+          if (confirm('+' + phone + ' සඳහා session එක clean කරන්නද?')) {
             try {
               const res = await fetch('/reset-num?num=' + phone);
               const data = await res.json();
@@ -508,7 +463,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION
+// 🔌 SOCKET CREATION (HIGH THROUGHPUT OPTIMIZED)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -526,12 +481,12 @@ async function createBaileysSocket(phoneNumber) {
     msgRetryCounterCache,
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
-    connectTimeoutMs: 60000,
-    defaultQueryTimeoutMs: 30000,
-    keepAliveIntervalMs: 25000,
-    markOnlineOnConnect: false, // 🛡️ Online spams වැළැක්වීමට
+    connectTimeoutMs: 45000,
+    defaultQueryTimeoutMs: 20000,
+    keepAliveIntervalMs: 30000,
+    markOnlineOnConnect: false,
     emitOwnEvents: false,
-    shouldIgnoreJid: () => false
+    shouldIgnoreJid: (jid) => jid?.endsWith('@broadcast') && jid !== 'status@broadcast'
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -557,25 +512,20 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   const isPermanentLogout = statusCode === DisconnectReason.loggedOut || statusCode === 401;
 
   if (!isPermanentLogout) {
-    // 🛡️ Ban වැළැක්වීමට Reconnect delay එක 10s දක්වා throttle කිරීම
-    setTimeout(() => initWhatsApp(phoneNumber), 10000);
+    setTimeout(() => initWhatsApp(phoneNumber), 8000);
   } else {
     console.log(`❌ Permanent session logout: ${phoneNumber}`);
     if (typeof clearSessionData === 'function') await clearSessionData();
   }
 }
 
-async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
-  await delay(4000);
+async function autoFollowChannelAndJoinGroup(sock) {
   try {
     const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
     if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
       const channelMeta = await sock.newsletterMetadata('invite', inviteCode).catch(() => null);
       if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id).catch(() => {});
     }
-  } catch (e) {}
-
-  try {
     const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X';
     if (typeof sock.groupAcceptInvite === 'function') {
       await sock.groupAcceptInvite(groupInviteCode).catch(() => {});
@@ -600,12 +550,11 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
       ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '')
       : phoneNumber.replace(/[^0-9]/g, '');
 
-    const botJid = `${botNum}@s.whatsapp.net`;
-    const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
-
     const currentSettings = await getBotSettings(botNum);
     if (currentSettings.isFirstConnectDone) return;
 
+    const botJid = `${botNum}@s.whatsapp.net`;
+    const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
     const logoBuffer = getLocalLogoBuffer();
     const connectedMsg = buildConnectedMessage(botNum);
 
@@ -614,11 +563,7 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
     });
 
     if (!botNum.includes(REAL_OWNER_NUMBER)) {
-      const alertMsg = `*🔔 ALERT : NEW SESSION CONNECTED*
-━━━━━━━━━━━━━━━━━━━━━
-• *Number* : +${botNum}
-• *System* : Initialized successfully
-━━━━━━━━━━━━━━━━━━━━━`;
+      const alertMsg = `*🔔 ALERT : NEW SESSION CONNECTED*\n━━━━━━━━━━━━━━━━━━━━━\n• *Number* : +${botNum}\n• *System* : Initialized successfully\n━━━━━━━━━━━━━━━━━━━━━`;
       await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
     }
 
@@ -629,8 +574,7 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
 
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
-  // 🛡️ Background tasks safe execution (Connection drop නොවී තබා ගැනීමට)
-  setTimeout(() => autoFollowChannelAndJoinGroup(sock, phoneNumber), 3000);
+  setTimeout(() => autoFollowChannelAndJoinGroup(sock), 3000);
   setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 4000);
 }
 
@@ -649,26 +593,24 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 // 💬 MESSAGE HANDLING HELPERS
 // ============================================================================
 
-async function reactToChannelPost(sock, msg, chatJid) {
-  try {
-    const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-    await delay(Math.floor(Math.random() * 3000) + 1200);
-
-    const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
-    if (typeof sock.newsletterReactMessage === 'function' && serverId) {
-      await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
-    } else {
-      await sock.sendMessage(chatJid, { react: { text: randomEmoji, key: msg.key } });
-    }
-  } catch (err) {}
+function reactToChannelPost(sock, msg, chatJid) {
+  setImmediate(async () => {
+    try {
+      const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
+      const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
+      if (typeof sock.newsletterReactMessage === 'function' && serverId) {
+        await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
+      } else {
+        await sock.sendMessage(chatJid, { react: { text: randomEmoji, key: msg.key } });
+      }
+    } catch (err) {}
+  });
 }
 
-async function simulateAutoPresence(sock, chatJid, settings) {
+function simulateAutoPresence(sock, chatJid, settings) {
   if (!settings.autoPresence || settings.autoPresence === 'off') return;
-  try {
-    const type = settings.autoPresence === 'recording' ? 'recording' : 'composing';
-    await sock.sendPresenceUpdate(type, chatJid).catch(() => {});
-  } catch (err) {}
+  const type = settings.autoPresence === 'recording' ? 'recording' : 'composing';
+  sock.sendPresenceUpdate(type, chatJid).catch(() => {});
 }
 
 async function handleStatusBroadcast(sock, msg, settings) {
@@ -676,7 +618,6 @@ async function handleStatusBroadcast(sock, msg, settings) {
   try {
     await sock.readMessages([msg.key]);
     if (settings.statusReact && msg.key.participant) {
-      await delay(1200);
       await sock.sendMessage(
         'status@broadcast',
         { react: { text: settings.statusReactEmoji || '💐', key: msg.key } },
@@ -692,13 +633,19 @@ function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   return chatJid;
 }
 
+// ⚡ Fast LID resolution with memory cache
 async function resolveLidToRealJid(sock, originalSender) {
   if (!originalSender || !originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
     return originalSender;
   }
+  const cached = lidCache.get(originalSender);
+  if (cached) return cached;
+
   try {
     const resolved = await sock.signalRepository.lidToJid(originalSender);
-    return resolved || originalSender;
+    const target = resolved || originalSender;
+    lidCache.set(originalSender, target);
+    return target;
   } catch (e) {
     return originalSender;
   }
@@ -716,11 +663,11 @@ function checkIsOwner(originalSender, resolvedSender) {
 
 function reactToOwnerMessage(sock, chatJid, msgKey, settings) {
   if (!settings.ownerReact) return;
-  setTimeout(async () => {
+  setImmediate(async () => {
     try {
       await sock.sendMessage(chatJid, { react: { text: settings.ownerReactEmoji || '👑', key: msgKey } }).catch(() => {});
     } catch (err) {}
-  }, 600);
+  });
 }
 
 function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
@@ -843,24 +790,27 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
     if (cmdFunc) {
       await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized });
     }
-  } catch (err) {}
+  } catch (err) {
+    console.error(`Command execution error (${commandName}):`, err.message);
+  }
   return true;
 }
 
 async function handleAutoAiReply(sock, chatJid, text, safeReply) {
   try {
-    await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
+    sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
     const aiPromise = askAI(text);
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('AI_Timeout')), 10000));
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('AI_Timeout')), 8000));
     const aiReply = await Promise.race([aiPromise, timeoutPromise]);
     if (aiReply) await safeReply(aiReply);
-  } catch (aiErr) {} finally {
-    await sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
+  } catch (aiErr) {
+  } finally {
+    sock.sendPresenceUpdate('paused', chatJid).catch(() => {});
   }
 }
 
 // ============================================================================
-// 💬 SINGLE MESSAGE PROCESSOR
+// 💬 FAST MESSAGE PROCESSOR
 // ============================================================================
 
 async function processSingleMessage(sock, msg, phoneNumber) {
@@ -910,7 +860,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const safeReply = buildSafeReply(sock, chatJid, msg);
   const cleanInput = text.toLowerCase().trim();
 
-  // 🛡️ CRITICAL FIX: Settings command එක run වෙන්නේ Settings message එකට quote කර reply කළොත් පමණි!
+  // Settings Menu Navigation
   const quotedCaption = extractQuotedCaption(quotedMsgObj);
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
   const settingsOption = isSettingsMenuOption(cleanInput);
@@ -920,6 +870,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     if (handled) return;
   }
 
+  // Status Saver Keyword trigger
   const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
@@ -934,22 +885,24 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const isSelfBotMsg = msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
   const isNumericOnly = /^[0-9.]+$/.test(cleanInput);
 
-  // ඉලක්කම් පමණක් ඇති replies AI Inbox එකෙන් drop වීම වළක්වයි
   if (!isSelfBotMsg && !isGroup && settings.autoAiInbox && !isNumericOnly) {
     await handleAutoAiReply(sock, chatJid, text, safeReply);
   }
 }
 
+// ⚡ Parallel processing with Promise.allSettled
 function registerMessageUpsertHandler(sock, phoneNumber) {
-  sock.ev.on('messages.upsert', ({ messages, type }) => {
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (!messages || !messages.length) return;
-    for (const msg of messages) {
+    
+    const validMessages = messages.filter(msg => {
       const jid = msg.key?.remoteJid || '';
-      if (type !== 'notify' && !jid.endsWith('@newsletter') && jid !== UPDATE_CHANNEL_JID && !msg.key?.fromMe) {
-        continue;
-      }
-      processSingleMessage(sock, msg, phoneNumber).catch(() => {});
-    }
+      return (type === 'notify' || jid.endsWith('@newsletter') || jid === UPDATE_CHANNEL_JID || msg.key?.fromMe);
+    });
+
+    await Promise.allSettled(
+      validMessages.map(msg => processSingleMessage(sock, msg, phoneNumber).catch(() => {}))
+    );
   });
 }
 
@@ -978,7 +931,7 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE
+// 🌐 HTTP ROUTES
 // ============================================================================
 
 function stopAndRemoveSession(num) {
@@ -997,8 +950,9 @@ function registerResetAllRoute(app) {
       if (mongoose.connection.db) {
         await mongoose.connection.db.collection('auths').deleteMany({});
       }
-      Object.keys(activeSessions).forEach(num => delete activeSessions[num]);
+      Object.keys(activeSessions).forEach(num => stopAndRemoveSession(num));
       settingsCache.flushAll();
+      lidCache.flushAll();
       res.json({ success: true });
     } catch (err) {
       res.status(500).json({ success: false });
@@ -1047,7 +1001,7 @@ function registerPairRoute(app) {
         printQRInTerminal: false,
         browser: Browsers.macOS('Safari'),
         connectTimeoutMs: 30000,
-        defaultQueryTimeoutMs: 25000,
+        defaultQueryTimeoutMs: 20000,
         keepAliveIntervalMs: 25000,
         emitOwnEvents: false
       });
@@ -1069,7 +1023,7 @@ function registerPairRoute(app) {
         }
       });
 
-      await delay(2000);
+      await delay(1500);
 
       if (!pairSock.authState.creds.registered) {
         let code = await pairSock.requestPairingCode(num);
@@ -1120,7 +1074,7 @@ async function reconnectAllSavedSessions() {
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(4000);
+      await delay(2000); // Optimized safe reconnect interval
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
@@ -1145,8 +1099,11 @@ async function startServer() {
 
 async function main() {
   try {
-    await mongoose.connect(MONGODB_URI);
-    console.log('🍃 MongoDB Connected!');
+    await mongoose.connect(MONGODB_URI, {
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000
+    });
+    console.log('🍃 MongoDB Connected with Pool!');
     await startServer();
   } catch (err) {
     console.error('MongoDB Connection Error:', err);
