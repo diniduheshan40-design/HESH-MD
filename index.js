@@ -17,7 +17,7 @@ const {
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
-// 🟢 Global Process Crash Guards (බොට් On/Off නොවී ස්ථාවරව තැබීමට)
+// 🟢 Global Process Crash Guards
 process.on('uncaughtException', (err) => {
   console.error('🛡️ Uncaught Exception Guard:', err?.message || err);
 });
@@ -68,8 +68,9 @@ const DEFAULT_SETTINGS = {
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 200 });
 const activeSessions = {};
-global.activeSessions = activeSessions; // 🟢 Commands වලට Active bots access කිරීමට
+global.activeSessions = activeSessions;
 const isStarting = {};
+const reconnectAttempts = {};
 const commands = new Map();
 
 // ============================================================================
@@ -518,7 +519,7 @@ async function createBaileysSocket(phoneNumber) {
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 30000,
     keepAliveIntervalMs: 25000,
-    markOnlineOnConnect: false, // RAM & Network Overhead අඩු කිරීමට
+    markOnlineOnConnect: false,
     emitOwnEvents: false,
     shouldIgnoreJid: () => false
   });
@@ -528,7 +529,7 @@ async function createBaileysSocket(phoneNumber) {
 }
 
 // ============================================================================
-// 🔄 CONNECTION LIFECYCLE
+// 🔄 CONNECTION LIFECYCLE (OPTIMIZED 440 & CRASH PROTECTED)
 // ============================================================================
 
 async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData) {
@@ -542,14 +543,28 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
 
   delete activeSessions[phoneNumber];
 
-  const isPermanentLogout = statusCode === DisconnectReason.loggedOut;
-
-  if (!isPermanentLogout) {
-    setTimeout(() => initWhatsApp(phoneNumber), 5000);
-  } else {
+  if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
     console.log(`❌ Permanent session logout: ${phoneNumber}`);
+    delete reconnectAttempts[phoneNumber];
     if (typeof clearSessionData === 'function') await clearSessionData();
+    return;
   }
+
+  // 🛡️ Code 440 (Conflict / Replaced Session) & Exponential Cooldown
+  reconnectAttempts[phoneNumber] = (reconnectAttempts[phoneNumber] || 0) + 1;
+  let delayTime = 6000;
+
+  if (statusCode === 440) {
+    // 440 Loop එකක් ආවොත් cooldown එක තත්පර 25ක් දක්වා වැඩිකර RAM එක ආරක්ෂා කරයි
+    delayTime = Math.min(reconnectAttempts[phoneNumber] * 12000, 45000);
+    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting ${Math.round(delayTime / 1000)}s before retry...`);
+  } else if (reconnectAttempts[phoneNumber] > 5) {
+    delayTime = 25000;
+  }
+
+  setTimeout(() => {
+    initWhatsApp(phoneNumber);
+  }, delayTime);
 }
 
 async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
@@ -616,6 +631,7 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
 
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
+  reconnectAttempts[phoneNumber] = 0; // Reset attempts on successful connection
   autoFollowChannelAndJoinGroup(sock, phoneNumber);
   setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
 }
@@ -724,10 +740,10 @@ function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
 
 function unwrapMessageContent(message) {
   return (
-    message.ephemeralMessage?.message ||
-    message.viewOnceMessage?.message ||
-    message.viewOnceMessageV2?.message ||
-    message.documentWithCaptionMessage?.message ||
+    message?.ephemeralMessage?.message ||
+    message?.viewOnceMessage?.message ||
+    message?.viewOnceMessageV2?.message ||
+    message?.documentWithCaptionMessage?.message ||
     message
   );
 }
@@ -829,7 +845,9 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
     if (cmdFunc) {
       await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized });
     }
-  } catch (err) {}
+  } catch (err) {
+    console.error(`Command [${commandName}] execution error:`, err?.message);
+  }
   return true;
 }
 
@@ -959,7 +977,7 @@ async function initWhatsApp(phoneNumber) {
     return sock;
   } catch (err) {
     delete isStarting[phoneNumber];
-    console.error('initWhatsApp Error:', err);
+    console.error(`initWhatsApp Error (${phoneNumber}):`, err.message);
   }
 }
 
@@ -983,11 +1001,17 @@ function registerResetAllRoute(app) {
       if (mongoose.connection.db) {
         await mongoose.connection.db.collection('auths').deleteMany({});
       }
-      Object.keys(activeSessions).forEach(num => delete activeSessions[num]);
+      Object.keys(activeSessions).forEach(num => {
+        try {
+          activeSessions[num].ev.removeAllListeners();
+          activeSessions[num].ws?.close();
+        } catch (e) {}
+        delete activeSessions[num];
+      });
       settingsCache.flushAll();
-      res.json({ success: true });
+      res.json({ success: true, message: 'All sessions successfully wiped!' });
     } catch (err) {
-      res.status(500).json({ success: false });
+      res.status(500).json({ success: false, error: err.message });
     }
   });
 }
@@ -1050,7 +1074,7 @@ function registerPairRoute(app) {
         } else if (connection === 'close') {
           const code = lastDisconnect?.error?.output?.statusCode;
           if (code !== DisconnectReason.loggedOut && code !== 401) {
-            setTimeout(() => initWhatsApp(num), 3000);
+            setTimeout(() => initWhatsApp(num), 5000);
           }
         }
       });
@@ -1103,11 +1127,13 @@ function startKeepAlivePing() {
 async function reconnectAllSavedSessions() {
   try {
     const sessions = await Auth.find({ _id: /-creds$/ }).lean();
+    console.log(`🔍 Found ${sessions.length} saved sessions in Database.`);
+
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      // Multi-Sessions නිසා CPU/RAM Spike වීම වැළැක්වීමට Delay එක තත්පර 6ක් කර ඇත
-      await delay(6000);
+      // සර්වර් overload වීම වැළැක්වීමට session එකකින් එකට තත්පර 10ක Delay එකක්
+      await delay(10000);
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
