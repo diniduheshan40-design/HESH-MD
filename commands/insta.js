@@ -21,7 +21,6 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        // Fast Non-blocking Reaction
         sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
 
         const cleanUrl = url.trim();
@@ -29,18 +28,22 @@ module.exports = {
         let title = "Instagram Reel";
 
         const headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
         };
 
-        // ⚡ High-Speed Fallback Array (Timeouts reduced for instantaneous switching)
         const fetchMethods = [
-            // Method 1: Chamindu Media API
+            // 1. Chamindu API (Quota එක තිබුණොත් මෙතනින් මුලින්ම ගනී)
             async () => {
                 const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
                 const apiUrl = `https://api.chamindu.site/api/v1/media/instagram?url=${encodeURIComponent(cleanUrl)}&api_key=${API_KEY}`;
-                const res = await axios.get(apiUrl, { timeout: 8000, headers });
-                const resData = res.data?.data || res.data;
+                const res = await axios.get(apiUrl, { timeout: 6000, headers });
+                
+                // Quota exhausted හෝ status false නම් ඊළඟ API එකට මාරු වීම
+                if (res.data?.status === false || res.data?.detail?.includes('quota exhausted')) {
+                    return null;
+                }
 
+                const resData = res.data?.data || res.data;
                 if (Array.isArray(resData) && resData.length > 0) {
                     return resData[0]?.url || resData[0]?.download_url || (typeof resData[0] === 'string' ? resData[0] : null);
                 } else if (resData) {
@@ -49,18 +52,34 @@ module.exports = {
                 }
                 return null;
             },
-            // Method 2: David Cyril API
+
+            // 2. Fallback 1: BK9 Instagram Engine (No Quota Limit)
             async () => {
-                const res = await axios.get(`https://api.davidcyriltech.my.id/instagram?url=${encodeURIComponent(cleanUrl)}`, { timeout: 7000, headers });
-                const data = res.data?.result;
-                if (Array.isArray(data) && data.length > 0) return data[0]?.url || data[0];
-                return data?.url || null;
+                const res = await axios.get(`https://bk9.fun/download/instagram?url=${encodeURIComponent(cleanUrl)}`, { timeout: 7000, headers });
+                const result = res.data?.BK9;
+                if (Array.isArray(result) && result.length > 0) {
+                    return result[0]?.url || result[0]?.downloadUrl;
+                }
+                return null;
             },
-            // Method 3: Agatz API
+
+            // 3. Fallback 2: Guru API (High Reliability)
             async () => {
-                const res = await axios.get(`https://api.agatz.xyz/api/instagram?url=${encodeURIComponent(cleanUrl)}`, { timeout: 7000, headers });
+                const res = await axios.get(`https://api.guruapi.tech/insta/v1/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 7000, headers });
+                const media = res.data?.media;
+                if (Array.isArray(media) && media.length > 0) {
+                    return media[0]?.url_download || media[0]?.url;
+                }
+                return null;
+            },
+
+            // 4. Fallback 3: Siputzx Downloader
+            async () => {
+                const res = await axios.get(`https://api.siputzx.my.id/api/d/igdl?url=${encodeURIComponent(cleanUrl)}`, { timeout: 7000, headers });
                 const data = res.data?.data;
-                if (Array.isArray(data) && data.length > 0) return data[0]?.url;
+                if (Array.isArray(data) && data.length > 0) {
+                    return data[0]?.url;
+                }
                 return null;
             }
         ];
@@ -85,9 +104,17 @@ module.exports = {
 
             const caption = `*📸 𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 📸*\n\n📌 *Title:* ${title}${DEFAULT_FOOTER}`;
 
-            // ⚡ Zero-Copy Stream Dispatch
+            // Video එක Buffer එකක් ලෙස download කර යැවීම (Direct link timeout හෝ WhatsApp 403 block වීම වැළැක්වීමට)
+            const videoRes = await axios.get(videoUrl, {
+                responseType: 'arraybuffer',
+                timeout: 25000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            });
+
             await sock.sendMessage(targetChat, {
-                video: { url: videoUrl },
+                video: Buffer.from(videoRes.data),
                 caption: caption,
                 mimetype: 'video/mp4'
             }, { quoted: msg });
