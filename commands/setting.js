@@ -3,32 +3,15 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 
-// Safe Model Extraction (Prevents OverwriteModelError)
-const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', new mongoose.Schema({
-  _id: { type: String, required: true },
-  workMode: { type: String, default: 'public' },
-  autoAiInbox: { type: Boolean, default: true },
-  autoStatusSeen: { type: Boolean, default: true },
-  statusReact: { type: Boolean, default: true },
-  statusReactEmoji: { type: String, default: '💐' },
-  ownerReact: { type: Boolean, default: true },
-  ownerReactEmoji: { type: String, default: '👑' },
-  botLogo: { type: String, default: './assets/logo.jpg' },
-  autoPresence: { type: String, default: 'off' },
-  securityPin: { type: String, default: '1234' },
-  isFirstConnectDone: { type: Boolean, default: false }
-}, { strict: false }));
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
+// Cache logo memory level
 let cachedLogo = null;
 function getBotLogo() {
   if (cachedLogo) return cachedLogo;
   try {
-    const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
-    if (fs.existsSync(localLogoPath)) return (cachedLogo = fs.readFileSync(localLogoPath));
-    const rootPath = path.join(process.cwd(), 'logo.jpg');
-    if (fs.existsSync(rootPath)) return (cachedLogo = fs.readFileSync(rootPath));
+    const p1 = path.join(process.cwd(), 'logo.jpg');
+    if (fs.existsSync(p1)) return (cachedLogo = fs.readFileSync(p1));
+    const p2 = path.join(process.cwd(), 'assets', 'logo.jpg');
+    if (fs.existsSync(p2)) return (cachedLogo = fs.readFileSync(p2));
   } catch (e) {}
   return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
@@ -37,7 +20,7 @@ module.exports = {
   name: 'settings',
   alias: ['setting', 'set', 'config'],
   category: 'owner',
-  description: 'Manage individual bot settings',
+  desc: 'Manage individual bot settings',
 
   async execute(sock, msg, args, chatJid, safeReply, options = {}) {
     const targetChat = chatJid || msg.key.remoteJid;
@@ -45,29 +28,47 @@ module.exports = {
 
     const reply = async (content) => {
       if (typeof safeReply === 'function') return await safeReply(content);
-      const payload = typeof content === 'string' ? { text: content } : content;
-      return await sock.sendMessage(targetChat, payload, { quoted: msg });
+      return await sock.sendMessage(targetChat, typeof content === 'string' ? { text: content } : content, { quoted: msg });
     };
 
     if (!isOwner) {
       return await reply('⛔ *Access Denied!* Only Bot Controller can modify settings.');
     }
 
-    // Dynamic Bot Number Fetch
-    const rawBotId = sock.user?.id || '';
-    const botNumber = rawBotId.split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+    // Reaction instant
+    sock.sendMessage(targetChat, { react: { text: "⚙️", key: msg.key } }).catch(() => {});
+
+    // Target bot number identification
+    const botNumber = (sock.user?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
     if (!botNumber) return await reply('⚠️ Bot Number හඳුනාගත නොහැකි විය.');
 
-    let settings = await SettingsModel.findById(botNumber);
-    if (!settings) {
-      settings = await SettingsModel.create({ _id: botNumber });
+    // ⚡ Direct Native Mongo Collection access (Deadlock & Schema Recompilation 100% bypass කරයි)
+    const db = mongoose.connection.db;
+    const settingsCollection = db ? db.collection('botsettings') : null;
+
+    let settings = {
+      workMode: 'public',
+      autoAiInbox: true,
+      autoStatusSeen: true,
+      statusReact: true,
+      autoPresence: 'off',
+      securityPin: '1234',
+      ownerReactEmoji: '👑'
+    };
+
+    if (settingsCollection) {
+      try {
+        const found = await Promise.race([
+          settingsCollection.findOne({ _id: botNumber }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2500))
+        ]);
+        if (found) settings = Object.assign(settings, found);
+      } catch (e) {}
     }
 
-    // Extract Clean Input String
-    let input = "";
-    if (args && args.length > 0) {
-      input = args.join(' ').trim().toLowerCase();
-    } else {
+    // Input cleaning
+    let input = (args && args.length > 0) ? args.join(' ').trim().toLowerCase() : "";
+    if (!input) {
       const rawText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
       input = rawText.trim().toLowerCase().replace(/^[./!#]?(settings|setting|set|config)\s*/i, '').trim();
     }
@@ -100,23 +101,34 @@ module.exports = {
     // 6. OWNER EMOJI
     else if (input.startsWith('6')) {
       const parts = input.split(/\s+/);
-      const emoji = parts[1];
-      if (!emoji) return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 6 🔥`)');
-      settings.ownerReactEmoji = emoji;
-      isUpdated = true;
+      if (parts[1]) {
+        settings.ownerReactEmoji = parts[1];
+        isUpdated = true;
+      } else {
+        return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 6 🔥`)');
+      }
     }
 
     // 7. CHANGE PIN
     else if (input.startsWith('pin')) {
       const parts = input.split(/\s+/);
-      const newPin = parts[1];
-      if (!newPin || newPin.length < 4) return await reply('⚠️ අවම අංක 4ක PIN එකක් දෙන්න! (උදා: `pin 7788`)');
-      settings.securityPin = newPin;
-      isUpdated = true;
+      if (parts[1] && parts[1].length >= 4) {
+        settings.securityPin = parts[1];
+        isUpdated = true;
+      } else {
+        return await reply('⚠️ අවම අංක 4ක PIN එකක් ලබාදෙන්න! (උදා: `.set pin 7788`)');
+      }
     }
 
+    // UPDATE EXECUTOR
     if (isUpdated) {
-      await SettingsModel.findByIdAndUpdate(botNumber, { $set: settings.toObject() }, { upsert: true });
+      if (settingsCollection) {
+        await settingsCollection.updateOne(
+          { _id: botNumber },
+          { $set: settings },
+          { upsert: true }
+        ).catch(() => {});
+      }
 
       if (typeof global.clearSettingsCache === 'function') {
         global.clearSettingsCache(botNumber);
@@ -127,43 +139,37 @@ module.exports = {
         private: 'PRIVATE 🔒',
         inbox: 'INBOX 📥',
         groups: 'GROUPS 👥'
-      }[settings.workMode || 'public'] || 'PUBLIC 🌐';
+      }[settings.workMode] || 'PUBLIC 🌐';
 
       const presenceBadge = {
         composing: 'TYPING ✍️',
         recording: 'RECORDING 🎙️',
         off: 'OFF 🔴'
-      }[settings.autoPresence || 'off'] || 'OFF 🔴';
+      }[settings.autoPresence] || 'OFF 🔴';
 
-      const statusText = `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n\n` +
-                         `• Work Mode: *${modeBadge}*\n` +
-                         `• Fake Action: *${presenceBadge}*\n` +
-                         `• AI Inbox: *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-                         `• Status Seen: *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*`;
-
-      try {
-        const initialMsg = await sock.sendMessage(targetChat, { text: "🔄 *Updating Bot Settings...*" }, { quoted: msg });
-        await sleep(350);
-        return await sock.sendMessage(targetChat, { text: statusText, edit: initialMsg.key });
-      } catch (e) {
-        return await reply(statusText);
-      }
+      return await reply(
+        `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n\n` +
+        `• Work Mode   : *${modeBadge}*\n` +
+        `• Fake Action : *${presenceBadge}*\n` +
+        `• AI Inbox    : *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        `• Status Seen : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*`
+      );
     }
 
-    // RENDER MENU
+    // DISPLAY MENU
     const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
       private: 'PRIVATE 🔒',
       inbox: 'INBOX 📥',
       groups: 'GROUPS 👥'
-    }[settings.workMode || 'public'] || 'PUBLIC 🌐';
+    }[settings.workMode] || 'PUBLIC 🌐';
 
     const presenceBadge = {
       composing: 'TYPING ✍️',
       recording: 'RECORDING 🎙️',
       off: 'OFF 🔴'
-    }[settings.autoPresence || 'off'] || 'OFF 🔴';
+    }[settings.autoPresence] || 'OFF 🔴';
 
     const menu = `╭─── ⚡ *HESHAN-MD SYSTEM SETTINGS* ⚡ ───╮
 │
@@ -207,13 +213,13 @@ module.exports = {
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
     try {
-      return await sock.sendMessage(targetChat, {
+      await sock.sendMessage(targetChat, {
         image: getBotLogo(),
         caption: menu,
         mimetype: 'image/jpeg'
       }, { quoted: msg });
     } catch (err) {
-      return await reply(menu);
+      await reply(menu);
     }
   }
 };
