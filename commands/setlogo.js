@@ -2,12 +2,11 @@
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
-// Database Model
 const SettingsSchema = new mongoose.Schema({
   _id: { type: String, required: true },
-  botLogo: { type: String, default: 'https://files.catbox.moe/a58add.jpeg' }
+  botLogo: { type: String, default: './logo.jpg' }
 }, { strict: false });
 
 const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
@@ -18,12 +17,13 @@ module.exports = {
   category: 'owner',
   desc: 'Set custom bot logo image permanently',
 
-  async execute(sock, msg, args, chatJid, safeReply, { isOwner }) {
+  async execute(sock, msg, args, chatJid, safeReply, options = {}) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
       ? chatJid 
       : msg.key.remoteJid;
 
-    if (isOwner !== undefined && !isOwner) {
+    const isOwner = options.isOwner || msg.key.fromMe;
+    if (!isOwner) {
       return sock.sendMessage(targetChat, { text: '⛔ *Access Denied!* Only Owner can modify the system logo.' }, { quoted: msg });
     }
 
@@ -33,25 +33,11 @@ module.exports = {
         return sock.sendMessage(targetChat, { text: '⚠️ Bot Number හඳුනාගත නොහැකි විය.' }, { quoted: msg });
       }
 
-      // Photo එක direct එවපු එකක්ද නැත්නම් Quoted (Reply) කරපු එකක්ද කියා හඳුනාගැනීම
       const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
       const quotedMsg = quotedContext?.quotedMessage;
-      let targetMsg = null;
+      const targetImage = msg.message?.imageMessage || quotedMsg?.imageMessage;
 
-      if (msg.message?.imageMessage) {
-        targetMsg = msg;
-      } else if (quotedMsg?.imageMessage) {
-        targetMsg = {
-          key: {
-            remoteJid: targetChat,
-            id: quotedContext?.stanzaId,
-            participant: quotedContext?.participant
-          },
-          message: quotedMsg
-        };
-      }
-
-      if (!targetMsg) {
+      if (!targetImage) {
         const helpText = `*⚡ SYSTEM LOGO MANAGER ⚡*
 ────────────────────────────
 ⚠️ *Photo එකක් හමුවුනේ නැත!*
@@ -65,41 +51,42 @@ module.exports = {
         return sock.sendMessage(targetChat, { text: helpText }, { quoted: msg });
       }
 
-      // Process වෙන බව පෙන්වීමට reaction එකක් දමයි
-      await sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
+      // Fast Non-blocking reaction
+      sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
-      // Image එක download කිරීම
-      const buffer = await downloadMediaMessage(
-        targetMsg,
-        'buffer',
-        {},
-        { 
-          logger: console,
-          reuploadRequest: sock.updateMediaMessage
-        }
-      );
+      // ⚡ Low-Memory Stream Extraction
+      const stream = await downloadContentFromMessage(targetImage, 'image');
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      const buffer = Buffer.concat(chunks);
 
       if (!buffer || buffer.length === 0) {
-        await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+        sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
         return sock.sendMessage(targetChat, { text: '❌ Image එක download කරගැනීමට නොහැකි විය. නැවත උත්සාහ කරන්න.' }, { quoted: msg });
       }
 
-      // 1. Local copy එකක් Save කිරීම
-      const botLogoPath = path.join(process.cwd(), `logo_${myBotNum}.jpg`);
-      fs.writeFileSync(botLogoPath, buffer);
+      // Root logo and session-specific logo write (Non-blocking)
+      const primaryLogoPath = path.join(process.cwd(), 'logo.jpg');
+      const sessionLogoPath = path.join(process.cwd(), `logo_${myBotNum}.jpg`);
 
-      // 2. Database එකට local file path එක save කිරීම
+      await Promise.allSettled([
+        fs.promises.writeFile(primaryLogoPath, buffer),
+        fs.promises.writeFile(sessionLogoPath, buffer)
+      ]);
+
+      // Database Update
       await SettingsModel.findByIdAndUpdate(
         myBotNum,
-        { $set: { botLogo: botLogoPath } },
-        { upsert: true, new: true }
+        { $set: { botLogo: primaryLogoPath } },
+        { upsert: true }
       );
 
-      // Cache flush කිරීම
-      if (global.clearSettingsCache) global.clearSettingsCache(myBotNum);
+      // Invalidate all runtime memory caches
+      if (typeof global.clearSettingsCache === 'function') {
+        global.clearSettingsCache(myBotNum);
+      }
 
-      // සාර්ථක වූ බව දැක්වීමට reaction මාරු කිරීම
-      await sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
+      sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
 
       const successCaption = `*⚡ HESHAN-MD LOGO DEPLOYED ⚡*
 ────────────────────────────
@@ -109,7 +96,7 @@ module.exports = {
 ────────────────────────────
 *📢 SYSTEM NOTICE:*
 • Logo එක සාර්ථකව update විය.
-• \`.settings\` ගසා පරීක්ෂා කර බලන්න.
+• \`.menu\` හෝ \`.settings\` ගසා පරීක්ෂා කර බලන්න.
 ────────────────────────────
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
 
@@ -119,8 +106,8 @@ module.exports = {
       }, { quoted: msg });
 
     } catch (err) {
-      console.error("Setlogo Error:", err);
-      await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+      console.error("Setlogo Error:", err?.message || err);
+      sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       return sock.sendMessage(targetChat, { text: `❌ *Error:* ${err.message}` }, { quoted: msg });
     }
   }
