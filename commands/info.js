@@ -4,8 +4,8 @@ const process = require('process');
 
 function formatUptime(seconds) {
     seconds = Math.floor(Number(seconds) || 0);
-    const d = Math.floor(seconds / (3600 * 24));
-    const h = Math.floor((seconds % (3600 * 24)) / 3600);
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
@@ -13,40 +13,41 @@ function formatUptime(seconds) {
 
 module.exports = {
     name: 'info',
+    alias: ['system', 'botinfo'],
     category: 'general',
     desc: 'Display system specs, uptime and bot status',
 
     async execute(sock, msg, args, chatJid) {
+        const start = Date.now();
         const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
             ? chatJid 
             : msg.key.remoteJid;
 
-        // Loading reaction
-        await sock.sendMessage(targetChat, { react: { text: "📊", key: msg.key } }).catch(() => {});
+        // Non-blocking instant reaction
+        sock.sendMessage(targetChat, { react: { text: "📊", key: msg.key } }).catch(() => {});
 
-        // Speed / Latency calculation
-        const start = Date.now();
-
-        // System details
+        // ⚡ Accurate Process RAM usage (Safe on Render / Docker VPS)
+        const memoryUsage = process.memoryUsage();
+        const processUsedMem = (memoryUsage.rss / (1024 * 1024)).toFixed(1);
         const totalMem = (os.totalmem() / (1024 * 1024)).toFixed(0);
-        const freeMem = (os.freemem() / (1024 * 1024)).toFixed(0);
-        const usedMem = (totalMem - freeMem).toFixed(0);
-        const platform = os.platform() === 'linux' ? 'Linux (Ubuntu)' : os.platform();
+        
+        const platform = os.platform() === 'linux' ? 'Linux (Cloud VPS)' : os.platform();
         const uptime = formatUptime(process.uptime());
 
-        // User info
-        let pushName = msg.pushName || "Heshan";
-        let firstName = pushName.split(/[\s_+-]+/)[0] || "Heshan";
+        // User profile name
+        const pushName = msg.pushName || "User";
+        let firstName = pushName.split(/[\s_+-]+/)[0] || "User";
         if (firstName.length > 15) firstName = firstName.substring(0, 15);
 
         const rawText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || "";
         const currentPrefix = (rawText && /^[.#/!]/.test(rawText.charAt(0))) ? rawText.charAt(0) : '.';
 
-        // Active bots count
-        // Multi-session හෝ nested instances නැතිනම් default 1 ලෙස පෙන්වයි
-        const activeBotsCount = global.activeBots ? global.activeBots.length : 1;
+        // ⚡ Dynamic Sub-Bots Count from global.activeSessions
+        const sessions = global.activeSessions || {};
+        const activeBotsCount = Math.max(Object.keys(sessions).length, 1);
 
-        const latency = (Date.now() - start) / 1000;
+        // Real Execution Latency (ms)
+        const latency = Date.now() - start;
 
         const infoCard = `╭━━〔 ⚡ 𝐇𝐄𝐒𝐇𝐀𝐍-𝐌𝐃 ⚡ 〕━━╮
 ┃ 
@@ -59,7 +60,7 @@ module.exports = {
 ┃
 ┣━━〔 📊 𝐒𝐘𝐒𝐓𝐄𝐌 𝐈𝐍𝐅𝐎 〕━━┫
 ┃
-┃ ✦ ʀᴀᴍ     : ${usedMem}MB / ${totalMem}MB
+┃ ✦ ʀᴀᴍ     : ${processUsedMem}MB / ${totalMem}MB
 ┃ ✦ sᴘᴇᴇᴅ   : ${latency} ms
 ┃ ✦ ᴘʟᴀᴛғᴏʀᴍ: ${platform}
 ┃
@@ -68,10 +69,9 @@ module.exports = {
 
         try {
             await sock.sendMessage(targetChat, { text: infoCard }, { quoted: msg });
-            await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
+            sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
         } catch (err) {
-            console.error("Info Command Error:", err);
-            await sock.sendMessage(targetChat, { text: infoCard }, { quoted: msg }).catch(() => {});
+            console.error("Info Command Error:", err?.message || err);
         }
     }
 };
