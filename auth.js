@@ -12,11 +12,10 @@ const AuthSchema = new mongoose.Schema(
 
 const Auth = mongoose.models.Auth || mongoose.model('Auth', AuthSchema);
 
-// 🟢 Key cache to eliminate 95% of MongoDB queries & speed up handshake
-const keyCache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
+// ⚡ High-Performance In-Memory Cache (Handshake & Keys zero-latency access)
+const keyCache = new NodeCache({ stdTTL: 1800, checkperiod: 300 });
 
 async function useMongoDBAuthState(sessionId) {
-  // Session ID එක clean කරගැනීම (ඉලක්කම් පමණි)
   const cleanSessionId = String(sessionId).replace(/[^0-9]/g, '');
 
   const writeData = async (data, id) => {
@@ -24,13 +23,15 @@ async function useMongoDBAuthState(sessionId) {
       const serialized = JSON.stringify(data, BufferJSON.replacer);
       const cacheKey = `${cleanSessionId}-${id}`;
       keyCache.set(cacheKey, serialized);
-      await Auth.updateOne(
+      
+      // Async non-blocking database sync
+      Auth.updateOne(
         { _id: cacheKey },
         { $set: { data: serialized } },
         { upsert: true }
-      );
+      ).catch(err => console.error(`❌ DB Write Error (${id}):`, err.message));
     } catch (err) {
-      console.error(`❌ DB Write Error (${id}):`, err.message);
+      console.error(`❌ Serialization Error (${id}):`, err.message);
     }
   };
 
@@ -63,7 +64,7 @@ async function useMongoDBAuthState(sessionId) {
           const data = {};
           const missingIds = [];
 
-          // 1. RAM Cache එකෙන් මුලින්ම කියවීම
+          // 1. Instant RAM Cache fetch
           for (const id of ids) {
             const cacheKey = `${cleanSessionId}-${type}-${id}`;
             const cachedVal = keyCache.get(cacheKey);
@@ -84,7 +85,7 @@ async function useMongoDBAuthState(sessionId) {
 
           if (missingIds.length === 0) return data;
 
-          // 2. Cache එකේ නැති keys MongoDB එකෙන් ගැනීම
+          // 2. Batch fetch missing keys from MongoDB
           try {
             const queryIds = missingIds.map(id => `${cleanSessionId}-${type}-${id}`);
             const records = await Auth.find({ _id: { $in: queryIds } }).lean();
@@ -143,11 +144,9 @@ async function useMongoDBAuthState(sessionId) {
           }
 
           if (bulkOps.length > 0) {
-            try {
-              await Auth.bulkWrite(bulkOps, { ordered: false });
-            } catch (err) {
+            Auth.bulkWrite(bulkOps, { ordered: false }).catch(err => {
               console.error('❌ BulkWrite DB Error:', err.message);
-            }
+            });
           }
         }
       }
@@ -155,15 +154,16 @@ async function useMongoDBAuthState(sessionId) {
     saveCreds: () => writeData(creds, 'creds'),
     clearSessionData: async () => {
       try {
-        // අදාළ Session එකේ keys පමණක් RAM Cache එකෙන් delete කිරීම (flushAll නොවේ!)
-        const keysInCache = keyCache.keys();
         const prefix = `${cleanSessionId}-`;
+        const keysInCache = keyCache.keys();
         for (const k of keysInCache) {
           if (k.startsWith(prefix)) {
             keyCache.del(k);
           }
         }
-        await Auth.deleteMany({ _id: new RegExp('^' + cleanSessionId + '-') });
+        await Auth.deleteMany({
+          _id: { $gte: prefix,$lt: `${cleanSessionId}/\uffff` }
+        });
       } catch (e) {
         console.error('❌ Session delete error:', e.message);
       }
