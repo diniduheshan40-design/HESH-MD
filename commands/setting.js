@@ -1,3 +1,4 @@
+// commands/settings.js
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
@@ -21,24 +22,18 @@ const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ⚡ Safe Non-Throttled Loader
 async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
   try {
-    const loadingFrames = [
-      "🔄 *Updating Bot Settings...*\n[■□□□□□□□□□] 10%",
-      "🔄 *Saving into Cloud Database...*\n[■■■■□□□□□□] 40%",
-      "🔄 *Applying to this Session...*\n[■■■■■■■□□□] 75%",
-      "🔄 *Finalizing Setup...*\n[■■■■■■■■■■] 100%"
-    ];
+    let initialMsg = await sock.sendMessage(chatJid, { 
+      text: "🔄 *Updating Bot Settings...*\n[■■■■■□□□□□] 50%" 
+    }, { quoted: quotedMsg });
 
-    let initialMsg = await sock.sendMessage(chatJid, { text: loadingFrames[0] }, { quoted: quotedMsg });
-
-    for (let i = 1; i < loadingFrames.length; i++) {
-      await sleep(100);
-      await sock.sendMessage(chatJid, { text: loadingFrames[i], edit: initialMsg.key }).catch(() => {});
-    }
-
-    await sleep(100);
-    await sock.sendMessage(chatJid, { text: finalContent, edit: initialMsg.key }).catch(async () => {
+    await sleep(400);
+    await sock.sendMessage(chatJid, { 
+      text: finalContent, 
+      edit: initialMsg.key 
+    }).catch(async () => {
       await sock.sendMessage(chatJid, { text: finalContent }, { quoted: quotedMsg });
     });
   } catch (err) {
@@ -46,25 +41,47 @@ async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
   }
 }
 
+// ⚡ In-Memory Buffer Cache
+let cachedLogo = null;
 function getBotLogo() {
-  const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
-  if (fs.existsSync(localLogoPath)) {
-    return fs.readFileSync(localLogoPath);
-  }
-  return { url: 'https://files.catbox.moe/a58add.jpeg' };
+  if (cachedLogo) return cachedLogo;
+  try {
+    const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
+    if (fs.existsSync(localLogoPath)) {
+      cachedLogo = fs.readFileSync(localLogoPath);
+      return cachedLogo;
+    }
+    const rootPath = path.join(process.cwd(), 'logo.jpg');
+    if (fs.existsSync(rootPath)) {
+      cachedLogo = fs.readFileSync(rootPath);
+      return cachedLogo;
+    }
+  } catch (e) {}
+  return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
 
 module.exports = {
   name: 'settings',
   alias: ['setting', 'set', 'config'],
+  category: 'owner',
   description: 'Manage individual bot settings',
-  async execute(sock, msg, args, chatJid, safeReply, { isOwner }) {
+
+  async execute(sock, msg, args, chatJid, safeReply, options = {}) {
+    const isOwner = options.isOwner || msg.key.fromMe;
+    const targetChat = chatJid || msg.key.remoteJid;
+
+    const reply = async (content) => {
+      if (safeReply) return await safeReply(content);
+      const payload = typeof content === 'string' ? { text: content } : content;
+      return await sock.sendMessage(targetChat, payload, { quoted: msg });
+    };
+
     if (!isOwner) {
-      return await safeReply('⛔ *Access Denied!* Only Bot Controller can modify settings.');
+      return await reply('⛔ *Access Denied!* Only Bot Controller can modify settings.');
     }
 
     const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-    if (!botNumber) return await safeReply('⚠️ Bot Number හඳුනාගත නොහැකි විය.');
+    if (!botNumber) return await reply('⚠️ Bot Number හඳුනාගත නොහැකි විය.');
 
     let settings = await SettingsModel.findById(botNumber);
     if (!settings) {
@@ -110,7 +127,7 @@ module.exports = {
     else if (input.startsWith('6')) {
       const parts = input.split(/ +/);
       const emoji = parts[1];
-      if (!emoji) return await safeReply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `6 🔥` හෝ `.set 6 🔥`)');
+      if (!emoji) return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `6 🔥` හෝ `.set 6 🔥`)');
       settings.ownerReactEmoji = emoji;
       isUpdated = true;
     }
@@ -119,7 +136,7 @@ module.exports = {
     else if (input.startsWith('pin')) {
       const parts = input.split(/ +/);
       const newPin = parts[1];
-      if (!newPin || newPin.length < 4) return await safeReply('⚠️ අවම අංක 4ක PIN එකක් දෙන්න! (උදා: `pin 7788`)');
+      if (!newPin || newPin.length < 4) return await reply('⚠️ අවම අංක 4ක PIN එකක් දෙන්න! (උදා: `pin 7788`)');
       settings.securityPin = newPin;
       isUpdated = true;
     }
@@ -145,7 +162,7 @@ module.exports = {
 
       return await applyWithLoader(
         sock, 
-        chatJid, 
+        targetChat, 
         msg, 
         `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n• Work Mode: *${modeBadge}*\n• Fake Action: *${presenceBadge}*\n• AI Inbox: *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*`
       );
@@ -208,13 +225,13 @@ module.exports = {
 
     try {
       const bannerPayload = getBotLogo();
-      return await sock.sendMessage(chatJid, {
+      return await sock.sendMessage(targetChat, {
         image: bannerPayload,
         caption: menu,
         mimetype: 'image/jpeg'
       }, { quoted: msg });
     } catch (err) {
-      return await safeReply(menu);
+      return await reply(menu);
     }
   }
 };
