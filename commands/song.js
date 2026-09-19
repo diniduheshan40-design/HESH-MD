@@ -7,6 +7,35 @@ try {
   yts = null;
 }
 
+// ⚡ Multi-API Downloader Engine (No Expired Keys)
+async function getAudioDownloadUrl(videoUrl) {
+  // Option 1: Gifted Tech / NexOracle API
+  try {
+    const res = await axios.get(`https://api.giftedtech.my.id/api/download/ytmp3?url=${encodeURIComponent(videoUrl)}&apikey=gifted`, { timeout: 12000 });
+    if (res.data?.success && res.data?.result?.download_url) {
+      return res.data.result.download_url;
+    }
+  } catch (e) {}
+
+  // Option 2: BK9 API
+  try {
+    const res = await axios.get(`https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 12000 });
+    if (res.data?.status && res.data?.BK9?.downloadUrl) {
+      return res.data.BK9.downloadUrl;
+    }
+  } catch (e) {}
+
+  // Option 3: David Cyril API
+  try {
+    const res = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 12000 });
+    if (res.data?.success && res.data?.result?.download_url) {
+      return res.data.result.download_url;
+    }
+  } catch (e) {}
+
+  throw new Error('All download servers are busy. Please try again in a few seconds!');
+}
+
 module.exports = {
   name: 'song',
   alias: ['play', 'sing', 'mp3'],
@@ -23,7 +52,7 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Fast Non-blocking Reaction
+    // Reaction
     sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
 
     let statusMsg = await sock.sendMessage(targetChat, {
@@ -40,7 +69,7 @@ module.exports = {
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
-      // Search if not a direct URL
+      // Search via yt-search
       if (!isYtUrl) {
         if (!yts) throw new Error('yt-search module not installed');
 
@@ -58,32 +87,9 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : 'N/A';
       }
 
-      // ⚡ Chamindu Official MP3 API Call
-      const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
-      const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=${API_KEY}`;
-
-      const res = await axios.get(apiUrl, { 
-        timeout: 20000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-        }
-      });
-
-      const resData = res.data;
-      const apiData = resData?.data;
-
-      if (!resData?.status || !apiData) {
-        throw new Error('API එකෙන් audio link එක ලබාගැනීමට නොහැකි විය.');
-      }
-
-      const downloadUrl = apiData.download_url || apiData.direct_url;
-      if (!downloadUrl) {
-        throw new Error('Valid MP3 download link not found.');
-      }
-
-      const finalTitle = apiData.title || videoTitle;
-      const cleanTitle = finalTitle.replace(/[\\/:"*?<>|]/g, '').trim();
-      const finalThumb = apiData.thumbnail || thumbnail;
+      // Fetch Direct MP3 URL
+      const downloadUrl = await getAudioDownloadUrl(videoUrl);
+      const cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
 
       const songCard = `╭───❮ 🎵 *H E S H A N - M D* ❯───╮
 │
@@ -91,27 +97,27 @@ module.exports = {
 │ 👤 *Artist:* ${author}
 │ ⏱️ *Duration:* ${duration}
 │ 👁️ *Views:* ${views}
-│ 🚀 *Engine:* SaveTube 10Gbps CDN
+│ 🚀 *Status:* Ready
 │
 ╰───────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-      // 1. Send Thumbnail Card
+      // 1. Send Card with Thumbnail
       try {
         await sock.sendMessage(targetChat, {
-          image: { url: finalThumb },
+          image: { url: thumbnail },
           caption: songCard
         }, { quoted: msg });
       } catch (e) {
         await sock.sendMessage(targetChat, { text: songCard }, { quoted: msg }).catch(() => {});
       }
 
-      // 2. Alert message එක ඉවත් කිරීම
+      // 2. Remove Status Alert
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // 3. Send Pure Audio (Direct CDN Stream)
+      // 3. Send Pure Audio Stream
       await sock.sendMessage(targetChat, {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
