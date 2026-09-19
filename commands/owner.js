@@ -1,63 +1,73 @@
 // commands/owner.js
 const fs = require('fs');
 const path = require('path');
-const fetch = require('node-fetch');
+const axios = require('axios');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ⚡ Buffer Cache for Zero-Latency Image Loading
+let cachedOwnerPhoto = null;
+async function getOwnerPhoto() {
+  if (cachedOwnerPhoto) return cachedOwnerPhoto;
+
+  try {
+    const localPhotoPath = path.join(process.cwd(), 'owner.jpg');
+    if (fs.existsSync(localPhotoPath)) {
+      cachedOwnerPhoto = fs.readFileSync(localPhotoPath);
+      return cachedOwnerPhoto;
+    }
+  } catch (e) {}
+
+  try {
+    const res = await axios.get('https://files.catbox.moe/0fmhj2.jpeg', {
+      responseType: 'arraybuffer',
+      timeout: 6000
+    });
+    if (res.status === 200) {
+      cachedOwnerPhoto = Buffer.from(res.data);
+      return cachedOwnerPhoto;
+    }
+  } catch (e) {}
+
+  return null;
+}
+
 module.exports = {
   name: 'owner',
-  alias: ['creator', 'developer', 'dev', 'hesan'],
+  alias: ['creator', 'developer', 'dev', 'heshan'],
   category: 'main',
-  desc: 'Ultra-luxurious official owner profile card with real typewriter',
+  desc: 'Official owner profile card with smooth 2-word animation',
 
-  async execute(sock, msg, args, chatJid, safeReply) {
+  async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
       ? chatJid 
       : msg.key.remoteJid;
 
-    try {
-      // 1. Initial State Reaction
-      await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
+    // Instant Non-blocking reaction
+    sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
+    try {
       const ownerNumber = '94719845166';
       const ownerName = '𝐃𝐈𝐍𝐈𝐃𝐔 𝐇𝐄𝐒𝐇𝐀𝐍';
       const ownerCrown = '🤴';
 
-      // 2. අකුරෙන් අකුර සැබෑ Typewriter Animation එක (Crash-Proof 850ms Rate-Limit Safe Buffer)
-      const chars = Array.from(ownerName);
-      let currentProgress = chars[0];
-
-      // පළමු අකුර යැවීම
-      let animMsg = await sock.sendMessage(targetChat, { 
-        text: `*👑 ARCHITECT :* ${currentProgress} ▎` 
+      // ⚡ වචන දෙකෙන් කෙලින්ම වැටෙන සුපිරි Fast Animation එක
+      // 1. පළමු වචනය (DINIDU)
+      const animMsg = await sock.sendMessage(targetChat, { 
+        text: `*👑 ARCHITECT :* 𝐃𝐈𝐍𝐈𝐃𝐔 ▎` 
       }, { quoted: msg });
 
-      // ඉතිරි අකුරු එකින් එක edit කිරීම
-      for (let i = 1; i < chars.length; i++) {
-        await sleep(850);
-        currentProgress += chars[i];
-
-        const isLastChar = (i === chars.length - 1);
-        const cursor = isLastChar ? ` ${ownerCrown}` : ' ▎';
-
-        try {
-          await sock.sendMessage(targetChat, { 
-            text: `*👑 ARCHITECT :* ${currentProgress}${cursor}`, 
-            edit: animMsg.key 
-          });
-        } catch (editErr) {
-          await sleep(1000);
-          await sock.sendMessage(targetChat, { 
-            text: `*👑 ARCHITECT :* ${currentProgress}${cursor}`, 
-            edit: animMsg.key 
-          }).catch(() => {});
-        }
+      if (animMsg?.key) {
+        await sleep(500);
+        // 2. දෙවෙනි වචනය (HESHAN) එක්ක Crown එක
+        await sock.sendMessage(targetChat, { 
+          text: `*👑 ARCHITECT :* 𝐃𝐈𝐍𝐈𝐃𝐔 𝐇𝐄𝐒𝐇𝐀𝐍 ${ownerCrown}`, 
+          edit: animMsg.key 
+        }).catch(() => {});
       }
 
-      await sleep(600);
+      await sleep(300);
 
-      // 3. High-Tech Identity Poster Caption
       const profileCaption = `╭─── ⚡ *CORE SYSTEM ARCHITECT* ⚡ ───╮
 │
 ├ 👑 *Developer :* ${ownerName} ${ownerCrown}
@@ -74,20 +84,9 @@ module.exports = {
 ╰──────────────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`;
 
-      // 4. Photo Buffer ලබා ගැනීම (ඔයාගේ Catbox Link එක)
-      let imgPayload = null;
-      const localPhotoPath = path.join(process.cwd(), 'owner.jpg');
+      const imgPayload = await getOwnerPhoto();
 
-      if (fs.existsSync(localPhotoPath)) {
-        imgPayload = fs.readFileSync(localPhotoPath);
-      } else {
-        try {
-          const res = await fetch('https://files.catbox.moe/0fmhj2.jpeg', { timeout: 8000 });
-          if (res.ok) imgPayload = await res.buffer();
-        } catch (e) {}
-      }
-
-      // 5. Photo එක Caption එක සමඟ යැවීම
+      // Profile Card Photo එක යැවීම
       if (imgPayload) {
         await sock.sendMessage(targetChat, {
           image: imgPayload,
@@ -97,7 +96,7 @@ module.exports = {
         await sock.sendMessage(targetChat, { text: profileCaption }, { quoted: msg });
       }
 
-      // 6. Structured Contact Card
+      // Structured Contact VCard එක
       const vcard = 'BEGIN:VCARD\n'
         + 'VERSION:3.0\n'
         + `FN:${ownerName} ${ownerCrown}\n`
@@ -108,9 +107,7 @@ module.exports = {
         + 'NOTE:Official Founder & Bot Creator\n'
         + 'END:VCARD';
 
-      await sleep(400);
-
-      // 7. Contact Box එක යැවීම
+      // Contact Card එක යැවීම
       await sock.sendMessage(targetChat, {
         contacts: {
           displayName: `${ownerName} ${ownerCrown}`,
@@ -118,12 +115,12 @@ module.exports = {
         }
       }, { quoted: msg });
 
-      // 8. Signature Crown Reaction
-      await sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
+      // Final signature reaction
+      sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error("Owner Command Error:", err);
-      return sock.sendMessage(targetChat, { text: `❌ *Error:* ${err.message}` }, { quoted: msg });
+      console.error("Owner Command Error:", err?.message || err);
+      sock.sendMessage(targetChat, { text: `❌ *Error:* ${err.message}` }, { quoted: msg }).catch(() => {});
     }
   }
 };
