@@ -21,64 +21,84 @@ module.exports = {
             }, { quoted: msg });
         }
 
-        const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
-        const apiUrl = `https://api.chamindu.site/api/v1/media/instagram?url=${encodeURIComponent(url.trim())}&api_key=${API_KEY}`;
+        // Fast Non-blocking Reaction
+        sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
 
-        try {
-            await sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
+        const cleanUrl = url.trim();
+        let videoUrl = null;
+        let title = "Instagram Reel";
 
-            let videoUrl = null;
-            let title = "Instagram Reel";
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        };
 
-            // 1. Chamindu API හරහා උත්සාහ කිරීම
-            try {
-                const res = await axios.get(apiUrl, { timeout: 25000 });
+        // ⚡ High-Speed Fallback Array (Timeouts reduced for instantaneous switching)
+        const fetchMethods = [
+            // Method 1: Chamindu Media API
+            async () => {
+                const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
+                const apiUrl = `https://api.chamindu.site/api/v1/media/instagram?url=${encodeURIComponent(cleanUrl)}&api_key=${API_KEY}`;
+                const res = await axios.get(apiUrl, { timeout: 8000, headers });
                 const resData = res.data?.data || res.data;
 
                 if (Array.isArray(resData) && resData.length > 0) {
-                    videoUrl = resData[0]?.url || resData[0]?.download_url || resData[0];
+                    return resData[0]?.url || resData[0]?.download_url || (typeof resData[0] === 'string' ? resData[0] : null);
                 } else if (resData) {
-                    videoUrl = resData.fast_download || resData.video || resData.url || resData.download_url;
                     if (resData.title) title = resData.title;
+                    return resData.fast_download || resData.video || resData.url || resData.download_url;
                 }
-            } catch (primaryErr) {
-                // Primary API එක fail වුවහොත් හෝ error message එකක් දුන්නොත් fallback එකට මාරු වේ
+                return null;
+            },
+            // Method 2: David Cyril API
+            async () => {
+                const res = await axios.get(`https://api.davidcyriltech.my.id/instagram?url=${encodeURIComponent(cleanUrl)}`, { timeout: 7000, headers });
+                const data = res.data?.result;
+                if (Array.isArray(data) && data.length > 0) return data[0]?.url || data[0];
+                return data?.url || null;
+            },
+            // Method 3: Agatz API
+            async () => {
+                const res = await axios.get(`https://api.agatz.xyz/api/instagram?url=${encodeURIComponent(cleanUrl)}`, { timeout: 7000, headers });
+                const data = res.data?.data;
+                if (Array.isArray(data) && data.length > 0) return data[0]?.url;
+                return null;
             }
+        ];
 
-            // 2. Backup Fallback API (Chamindu API එකෙන් resolve නොවුවහොත්)
-            if (!videoUrl) {
+        try {
+            for (const method of fetchMethods) {
                 try {
-                    const backupRes = await axios.get(`https://api.agatz.xyz/api/instagram?url=${encodeURIComponent(url.trim())}`, { timeout: 20000 });
-                    const backupData = backupRes.data?.data;
-                    if (Array.isArray(backupData) && backupData.length > 0) {
-                        videoUrl = backupData[0]?.url;
+                    const resultUrl = await method();
+                    if (resultUrl && typeof resultUrl === 'string' && resultUrl.startsWith('http')) {
+                        videoUrl = resultUrl;
+                        break;
                     }
                 } catch (e) {}
             }
 
             if (!videoUrl) {
-                await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+                sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
                 return await sock.sendMessage(targetChat, { 
-                    text: `❌ *Could not resolve Instagram video. Please make sure the account/post is PUBLIC and the link is valid!*${DEFAULT_FOOTER}` 
+                    text: `❌ *Instagram වීඩියෝව ලබාගත නොහැක. Post එක Public එකක් දැයි පරීක්ෂා කරන්න!*${DEFAULT_FOOTER}` 
                 }, { quoted: msg });
             }
 
             const caption = `*📸 𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 📸*\n\n📌 *Title:* ${title}${DEFAULT_FOOTER}`;
 
-            // Video එක යැවීම
+            // ⚡ Zero-Copy Stream Dispatch
             await sock.sendMessage(targetChat, {
                 video: { url: videoUrl },
                 caption: caption,
                 mimetype: 'video/mp4'
             }, { quoted: msg });
 
-            await sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
+            sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
         } catch (err) {
-            console.error('Instagram DL Error:', err.message);
-            await sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+            console.error('Instagram DL Error:', err?.message || err);
+            sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
             await sock.sendMessage(targetChat, { 
-                text: `❌ *Instagram Download Error:* ${err.message}${DEFAULT_FOOTER}` 
+                text: `❌ *Instagram Download Error:* ${err?.message || 'Server connection failed'}${DEFAULT_FOOTER}` 
             }, { quoted: msg });
         }
     }
