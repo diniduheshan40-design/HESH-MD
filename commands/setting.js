@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 
-const SettingsSchema = new mongoose.Schema({
+// Safe Model Extraction (Prevents OverwriteModelError)
+const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', new mongoose.Schema({
   _id: { type: String, required: true },
   workMode: { type: String, default: 'public' },
   autoAiInbox: { type: Boolean, default: true },
@@ -16,46 +17,18 @@ const SettingsSchema = new mongoose.Schema({
   autoPresence: { type: String, default: 'off' },
   securityPin: { type: String, default: '1234' },
   isFirstConnectDone: { type: Boolean, default: false }
-});
-
-const SettingsModel = mongoose.models.BotSettings || mongoose.model('BotSettings', SettingsSchema);
+}, { strict: false }));
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// ⚡ Safe Non-Throttled Loader
-async function applyWithLoader(sock, chatJid, quotedMsg, finalContent) {
-  try {
-    let initialMsg = await sock.sendMessage(chatJid, { 
-      text: "🔄 *Updating Bot Settings...*\n[■■■■■□□□□□] 50%" 
-    }, { quoted: quotedMsg });
-
-    await sleep(400);
-    await sock.sendMessage(chatJid, { 
-      text: finalContent, 
-      edit: initialMsg.key 
-    }).catch(async () => {
-      await sock.sendMessage(chatJid, { text: finalContent }, { quoted: quotedMsg });
-    });
-  } catch (err) {
-    await sock.sendMessage(chatJid, { text: finalContent }, { quoted: quotedMsg });
-  }
-}
-
-// ⚡ In-Memory Buffer Cache
 let cachedLogo = null;
 function getBotLogo() {
   if (cachedLogo) return cachedLogo;
   try {
     const localLogoPath = path.join(process.cwd(), 'assets', 'logo.jpg');
-    if (fs.existsSync(localLogoPath)) {
-      cachedLogo = fs.readFileSync(localLogoPath);
-      return cachedLogo;
-    }
+    if (fs.existsSync(localLogoPath)) return (cachedLogo = fs.readFileSync(localLogoPath));
     const rootPath = path.join(process.cwd(), 'logo.jpg');
-    if (fs.existsSync(rootPath)) {
-      cachedLogo = fs.readFileSync(rootPath);
-      return cachedLogo;
-    }
+    if (fs.existsSync(rootPath)) return (cachedLogo = fs.readFileSync(rootPath));
   } catch (e) {}
   return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
 }
@@ -67,11 +40,11 @@ module.exports = {
   description: 'Manage individual bot settings',
 
   async execute(sock, msg, args, chatJid, safeReply, options = {}) {
-    const isOwner = options.isOwner || msg.key.fromMe;
     const targetChat = chatJid || msg.key.remoteJid;
+    const isOwner = options.isOwner || msg.key.fromMe;
 
     const reply = async (content) => {
-      if (safeReply) return await safeReply(content);
+      if (typeof safeReply === 'function') return await safeReply(content);
       const payload = typeof content === 'string' ? { text: content } : content;
       return await sock.sendMessage(targetChat, payload, { quoted: msg });
     };
@@ -80,7 +53,9 @@ module.exports = {
       return await reply('⛔ *Access Denied!* Only Bot Controller can modify settings.');
     }
 
-    const botNumber = (sock.user?.id || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    // Dynamic Bot Number Fetch
+    const rawBotId = sock.user?.id || '';
+    const botNumber = rawBotId.split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
     if (!botNumber) return await reply('⚠️ Bot Number හඳුනාගත නොහැකි විය.');
 
     let settings = await SettingsModel.findById(botNumber);
@@ -88,15 +63,14 @@ module.exports = {
       settings = await SettingsModel.create({ _id: botNumber });
     }
 
-    settings.ownerReact = true;
-
-    const rawMsg = msg.message?.conversation || 
-                   msg.message?.extendedTextMessage?.text || 
-                   '';
-
-    let input = (args && args.length > 0) ? args.join(' ') : rawMsg;
-    input = input.trim().toLowerCase();
-    input = input.replace(/^[./!#]?(settings|setting|set|config)\s*/i, '').trim();
+    // Extract Clean Input String
+    let input = "";
+    if (args && args.length > 0) {
+      input = args.join(' ').trim().toLowerCase();
+    } else {
+      const rawText = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+      input = rawText.trim().toLowerCase().replace(/^[./!#]?(settings|setting|set|config)\s*/i, '').trim();
+    }
 
     let isUpdated = false;
 
@@ -119,22 +93,22 @@ module.exports = {
     else if (input === '4.2') { settings.statusReact = false; isUpdated = true; }
 
     // 5. FAKE ACTION
-    else if (input === '5.1') { settings.autoPresence = 'typing'; isUpdated = true; }
+    else if (input === '5.1') { settings.autoPresence = 'composing'; isUpdated = true; }
     else if (input === '5.2') { settings.autoPresence = 'recording'; isUpdated = true; }
     else if (input === '5.3') { settings.autoPresence = 'off'; isUpdated = true; }
 
     // 6. OWNER EMOJI
     else if (input.startsWith('6')) {
-      const parts = input.split(/ +/);
+      const parts = input.split(/\s+/);
       const emoji = parts[1];
-      if (!emoji) return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `6 🔥` හෝ `.set 6 🔥`)');
+      if (!emoji) return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 6 🔥`)');
       settings.ownerReactEmoji = emoji;
       isUpdated = true;
     }
 
     // 7. CHANGE PIN
     else if (input.startsWith('pin')) {
-      const parts = input.split(/ +/);
+      const parts = input.split(/\s+/);
       const newPin = parts[1];
       if (!newPin || newPin.length < 4) return await reply('⚠️ අවම අංක 4ක PIN එකක් දෙන්න! (උදා: `pin 7788`)');
       settings.securityPin = newPin;
@@ -142,7 +116,8 @@ module.exports = {
     }
 
     if (isUpdated) {
-      await settings.save();
+      await SettingsModel.findByIdAndUpdate(botNumber, { $set: settings.toObject() }, { upsert: true });
+
       if (typeof global.clearSettingsCache === 'function') {
         global.clearSettingsCache(botNumber);
       }
@@ -155,19 +130,27 @@ module.exports = {
       }[settings.workMode || 'public'] || 'PUBLIC 🌐';
 
       const presenceBadge = {
-        typing: 'TYPING ✍️',
+        composing: 'TYPING ✍️',
         recording: 'RECORDING 🎙️',
         off: 'OFF 🔴'
       }[settings.autoPresence || 'off'] || 'OFF 🔴';
 
-      return await applyWithLoader(
-        sock, 
-        targetChat, 
-        msg, 
-        `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n• Work Mode: *${modeBadge}*\n• Fake Action: *${presenceBadge}*\n• AI Inbox: *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*`
-      );
+      const statusText = `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n\n` +
+                         `• Work Mode: *${modeBadge}*\n` +
+                         `• Fake Action: *${presenceBadge}*\n` +
+                         `• AI Inbox: *${settings.autoAiInbox ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+                         `• Status Seen: *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*`;
+
+      try {
+        const initialMsg = await sock.sendMessage(targetChat, { text: "🔄 *Updating Bot Settings...*" }, { quoted: msg });
+        await sleep(350);
+        return await sock.sendMessage(targetChat, { text: statusText, edit: initialMsg.key });
+      } catch (e) {
+        return await reply(statusText);
+      }
     }
 
+    // RENDER MENU
     const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
@@ -177,7 +160,7 @@ module.exports = {
     }[settings.workMode || 'public'] || 'PUBLIC 🌐';
 
     const presenceBadge = {
-      typing: 'TYPING ✍️',
+      composing: 'TYPING ✍️',
       recording: 'RECORDING 🎙️',
       off: 'OFF 🔴'
     }[settings.autoPresence || 'off'] || 'OFF 🔴';
@@ -224,9 +207,8 @@ module.exports = {
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
     try {
-      const bannerPayload = getBotLogo();
       return await sock.sendMessage(targetChat, {
-        image: bannerPayload,
+        image: getBotLogo(),
         caption: menu,
         mimetype: 'image/jpeg'
       }, { quoted: msg });
