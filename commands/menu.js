@@ -34,7 +34,6 @@ async function getBotLogo() {
         console.error("Local logo read error:", e.message);
     }
 
-    // Local file නැතිනම් GitHub එකෙන් කෙලින්ම Buffer එකක් ලෙස download කරගැනීම
     try {
         const fallbackUrl = 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg';
         const response = await axios.get(fallbackUrl, { responseType: 'arraybuffer', timeout: 5000 });
@@ -42,7 +41,7 @@ async function getBotLogo() {
         return cachedLogo;
     } catch (netErr) {
         console.error("Remote logo fetch failed:", netErr.message);
-        return null; // Image fail වුවහොත් bot crash නොවී plain text යවනු ඇත
+        return null;
     }
 }
 
@@ -111,8 +110,24 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // Direct category: e.g. ".menu 1"
-    const selectedCategory = args && args[0] ? args[0].trim() : null;
+    // 1. Direct Argument (උදා: .menu 1)
+    let selectedCategory = args && args[0] ? args[0].trim() : null;
+
+    // 2. Quoted Reply Catching (Main Menu message එකට 1, 2, 3 ලෙස reply කිරීම)
+    if (!selectedCategory) {
+      const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
+      const quotedContext = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+      
+      const quotedCaption = quotedContext?.imageMessage?.caption || 
+                            quotedContext?.conversation || 
+                            quotedContext?.extendedTextMessage?.text || '';
+
+      if (quotedCaption.includes("COMMAND CATEGORIES") && subMenus[rawText]) {
+        selectedCategory = rawText;
+      }
+    }
+
+    // Submenu execute කිරීම
     if (selectedCategory && subMenus[selectedCategory]) {
         const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
         sock.sendMessage(targetChat, { react: { text: emojis[selectedCategory] || "📜", key: msg.key } }).catch(() => {});
@@ -172,7 +187,7 @@ module.exports = {
       console.error('Menu image dispatch error:', err.message);
     }
 
-    // Image failure එකකදී bot crash නොවී fallback එකක් ලෙස plain text යැවීම
+    // Image fail වුවහොත් plain text message එකක් යැවීම
     await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg }).catch((e) => {
       console.error('Plain text menu dispatch failed:', e.message);
     });
