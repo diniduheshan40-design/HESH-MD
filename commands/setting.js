@@ -39,7 +39,7 @@ async function getBotLogo() {
   }
 }
 
-// Safe Mongo Model Lookup Helper (Never crashes)
+// Safe Mongo Model Lookup Helper
 function getModel() {
   try {
     if (mongoose.connection.readyState !== 1) return null;
@@ -73,23 +73,19 @@ module.exports = {
       }
     };
 
-    // Direct reply එකක්ද, ඒක settings message එකකටද ආවේ කියලා තහවුරු කරගැනීම
     const quotedCaption = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage?.caption || 
                           msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || 
                           msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text || '';
 
     const isSettingsReply = quotedCaption.includes("HESHAN-MD SYSTEM SETTINGS");
 
-    // Message එක ගත්තේ settings command එකෙන්ද (නැතිනම් වෙනත් command එකකින්ද) බැලීම
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
 
-    // Command එක .set නොවී වෙනත් command එකකට reply කරපු 1, 2 වැනි අගයක් නම් settings එකෙන් අයින් වීම
     if (!isExplicitCommand && !isSettingsReply) {
       return;
     }
 
-    // Bot Number & Owner Check
     const rawBotId = sock.user?.id || sock.user?.jid || '';
     const botNumber = rawBotId.split(':')[0].split('@')[0].replace(/\D/g, '') || 'default';
     const senderNumber = (msg.key.participant || targetChat || '').split(':')[0].split('@')[0].replace(/\D/g, '');
@@ -127,12 +123,12 @@ module.exports = {
       statusReact: true,
       statusReactEmoji: '💐',
       autoPresence: 'off',
+      autoChatRead: false,
       securityPin: '1234'
     };
 
     let settings = { ...defaultValues };
 
-    // 1. Fetch current settings from Memory Cache or Mongo
     if (memSettingsCache.has(botNumber)) {
       settings = Object.assign(settings, memSettingsCache.get(botNumber));
     } else {
@@ -148,7 +144,6 @@ module.exports = {
       memSettingsCache.set(botNumber, settings);
     }
 
-    // Input parsing (Supports '.set 1.1' or plain '1.1' on reply)
     let input = "";
     if (Array.isArray(args) && args.length > 0) {
       input = args.join(' ').trim().toLowerCase();
@@ -200,6 +195,10 @@ module.exports = {
       }
     }
 
+    // ⚡ 7. AUTO CHAT READ (BLUE TICK) ON/OFF
+    else if (input === '7.1') { settings.autoChatRead = true; isUpdated = true; }
+    else if (input === '7.2') { settings.autoChatRead = false; isUpdated = true; }
+
     // UPDATE EXECUTOR
     if (isUpdated) {
       memSettingsCache.set(botNumber, settings);
@@ -236,10 +235,11 @@ module.exports = {
 
       return await reply(
         `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n\n` +
-        `• Work Mode     : *${modeBadge}*\n` +
-        `• Auto Status   : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-        `• Status React  : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'} (${settings.statusReactEmoji || '💐'})*\n` +
-        `• Fake Action   : *${presenceBadge}*`
+        `• Work Mode      : *${modeBadge}*\n` +
+        `• Auto Status    : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        `• Status React   : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'} (${settings.statusReactEmoji || '💐'})*\n` +
+        `• Fake Action    : *${presenceBadge}*\n` +
+        `• Auto Chat Seen : *${settings.autoChatRead ? 'ON 🟢 (Blue Tick)' : 'OFF 🔴 (No Blue Tick)'}*`
       );
     }
 
@@ -289,10 +289,14 @@ module.exports = {
 ├─◈ *6. CHANGE PIN* ⤿ [ ${settings.securityPin || '1234'} ]
 │  └ ✦ Type: .set 6 <new_pin>  (හෝ .set pin <pin>)
 │
+├─◈ *7. AUTO mgs SEEN* ⤿ [ ${stateBadge(settings.autoChatRead)} ]
+│  ├ 7.1 Auto Seen On (Blue Tick)
+│  └ 7.2 Auto Seen Off (Default)
+│
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option එක Type කරන්න (උදා: *.set 2.1* හෝ *.set 1.2*)
-• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *1.2*)
+• අදාළ Option එක Type කරන්න (උදා: *.set 7.2* හෝ *.set 1.2*)
+• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *7.2*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
