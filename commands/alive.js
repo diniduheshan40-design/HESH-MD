@@ -1,10 +1,11 @@
 // commands/alive.js
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
 // ⚡ Solid & Cached Logo Finder (Memory-safe)
 let cachedLogo = null;
-function getBotLogo() {
+async function getBotLogo() {
     if (cachedLogo) return cachedLogo;
 
     try {
@@ -24,8 +25,16 @@ function getBotLogo() {
         console.error("Logo cache error:", e.message);
     }
 
-    // Direct Web Fallback
-    return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
+    // Direct Web Fallback (Buffer conversion)
+    try {
+        const fallbackUrl = 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg';
+        const response = await axios.get(fallbackUrl, { responseType: 'arraybuffer', timeout: 5000 });
+        cachedLogo = Buffer.from(response.data, 'binary');
+        return cachedLogo;
+    } catch (netErr) {
+        console.error("Alive remote logo fetch failed:", netErr.message);
+        return null;
+    }
 }
 
 const TIMEZONE_MAP = {
@@ -96,7 +105,9 @@ module.exports = {
     async execute(sock, msg, args, chatJid) {
         const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
             ? chatJid 
-            : msg.key.remoteJid;
+            : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
+
+        if (!targetChat) return;
 
         const senderJid = msg.key.participant || targetChat;
 
@@ -131,16 +142,23 @@ module.exports = {
 > 🔐 *heshan ofc • all rights reserved*`;
 
         try {
-            const logo = getBotLogo();
-            await sock.sendMessage(targetChat, {
-                image: logo,
-                caption: aliveMsg,
-                mimetype: 'image/jpeg'
-            }, { quoted: msg });
+            const logo = await getBotLogo();
+            if (logo) {
+                await sock.sendMessage(targetChat, {
+                    image: logo,
+                    caption: aliveMsg,
+                    mimetype: 'image/jpeg'
+                }, { quoted: msg });
+                return;
+            }
         } catch (err) {
-            console.error("Alive Execution Error (Fallback to text):", err.message);
-            await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg }).catch(() => {});
+            console.error("Alive Execution Error:", err.message);
         }
+
+        // Image upload fail වුවහොත් direct plain text message එකක් යැවීම
+        await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg }).catch((e) => {
+            console.error("Alive Text Fallback Error:", e.message);
+        });
     }
 };
 
