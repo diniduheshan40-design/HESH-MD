@@ -55,14 +55,14 @@ module.exports = {
   category: 'owner',
   desc: 'Manage individual bot settings',
 
-  async execute(sock, msg, args, chatJid, safeReply, options = {}) {
+  async execute(sock, msg, args = [], chatJid, safeReply, options = {}) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
       ? chatJid 
       : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
 
     if (!targetChat) return;
 
-    // ⚡ Channel Context Info (✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨ + View Channel button)
+    // ⚡ Channel Context Info
     const channelContext = global.channelContext?.contextInfo || {
       forwardingScore: 999,
       isForwarded: true,
@@ -77,12 +77,17 @@ module.exports = {
                           msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || 
                           msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text || '';
 
-    const isSettingsReply = quotedCaption.includes("HESHAN-MD SYSTEM SETTINGS");
+    // Fix: Match more generic text so quoted replies never get missed
+    const isSettingsReply = quotedCaption.includes("SYSTEM SETTINGS") || 
+                            quotedCaption.includes("WORK MODE") ||
+                            quotedCaption.includes("FAKE ACTION");
 
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
 
-    if (!isExplicitCommand && !isSettingsReply) {
+    // Fix: If args are passed from index.js (e.g. handleSettingsMenuReply), allow it to run
+    const hasArgsPassed = Array.isArray(args) && args.length > 0;
+    if (!isExplicitCommand && !isSettingsReply && !hasArgsPassed) {
       return;
     }
 
@@ -90,10 +95,11 @@ module.exports = {
     const botNumber = rawBotId.split(':')[0].split('@')[0].replace(/\D/g, '') || 'default';
     const senderNumber = (msg.key.participant || targetChat || '').split(':')[0].split('@')[0].replace(/\D/g, '');
 
+    // Fix: Prioritize options.isOwner from index.js authorization check
     const isOwner = Boolean(
       options.isOwner || 
       msg.key.fromMe || 
-      (global.owner && global.owner.includes(senderNumber)) ||
+      (Array.isArray(global.owner) && global.owner.includes(senderNumber)) ||
       senderNumber === botNumber
     );
 
@@ -144,6 +150,7 @@ module.exports = {
       memSettingsCache.set(botNumber, settings);
     }
 
+    // Input Extraction
     let input = "";
     if (Array.isArray(args) && args.length > 0) {
       input = args.join(' ').trim().toLowerCase();
@@ -154,10 +161,10 @@ module.exports = {
     let isUpdated = false;
 
     // 1. WORK MODE
-    if (input === '1.1') { settings.workMode = 'private'; isUpdated = true; }
-    else if (input === '1.2') { settings.workMode = 'public'; isUpdated = true; }
-    else if (input === '1.3') { settings.workMode = 'inbox'; isUpdated = true; }
-    else if (input === '1.4') { settings.workMode = 'groups'; isUpdated = true; }
+    if (input === '1.1' || input === 'private') { settings.workMode = 'private'; isUpdated = true; }
+    else if (input === '1.2' || input === 'public') { settings.workMode = 'public'; isUpdated = true; }
+    else if (input === '1.3' || input === 'inbox') { settings.workMode = 'inbox'; isUpdated = true; }
+    else if (input === '1.4' || input === 'groups' || input === 'group') { settings.workMode = 'groups'; isUpdated = true; }
 
     // 2. AUTO STATUS SEEN
     else if (input === '2.1') { settings.autoStatusSeen = true; isUpdated = true; }
@@ -195,7 +202,7 @@ module.exports = {
       }
     }
 
-    // ⚡ 7. AUTO CHAT READ (BLUE TICK) ON/OFF
+    // 7. AUTO CHAT READ (BLUE TICK) ON/OFF
     else if (input === '7.1') { settings.autoChatRead = true; isUpdated = true; }
     else if (input === '7.2') { settings.autoChatRead = false; isUpdated = true; }
 
@@ -216,6 +223,7 @@ module.exports = {
         console.error("Settings DB Save Error:", e.message);
       }
 
+      // Flush memory cache in index.js
       if (typeof global.clearSettingsCache === 'function') {
         global.clearSettingsCache(botNumber);
       }
@@ -243,7 +251,7 @@ module.exports = {
       );
     }
 
-    // DISPLAY SETTINGS MENU
+    // DISPLAY SETTINGS MENU (If no valid sub-option was provided)
     const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
