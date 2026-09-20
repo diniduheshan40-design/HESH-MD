@@ -49,7 +49,7 @@ async function fetchFbVideo(facebookUrl) {
     }
   } catch (e) {}
 
-  throw new Error('වීඩියෝව ලබා ගැනීමට නොහැකි විය. Link එක නිවැරදිදැයි බලන්න.');
+  throw new Error('Unable to fetch video. Please check if the link is valid and public.');
 }
 
 // ⚡ Buffer Downloader (Network drop වීම් වැළැක්වීමට)
@@ -83,16 +83,16 @@ module.exports = {
 
     if (!rawUrl || (!rawUrl.includes('facebook.com') && !rawUrl.includes('fb.watch') && !rawUrl.includes('fb.gg') && !rawUrl.includes('fb.me'))) {
       return await sock.sendMessage(targetChat, { 
-        text: `*❪ ERROR ❫*\n\n⚠️ *කරුණාකර නිවැරදි Facebook වීඩියෝ link එකක් ඇතුළත් කරන්න!*\n\n📘 *උදාහරණ:*\n• .fb https://www.facebook.com/share/v/xxxx/${DEFAULT_FOOTER}`,
+        text: `*❪ ERROR ❫*\n\n⚠️ *Please provide a valid Facebook video link!*\n\n📘 *Example:*\n• .fb https://www.facebook.com/share/v/xxxx/${DEFAULT_FOOTER}`,
         contextInfo: global.channelContext?.contextInfo || {}
       }, { quoted: msg });
     }
 
     sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
 
-    // Waiting Message එක
+    // ⚡ English Professional Waiting Message
     let loadMsg = await sock.sendMessage(targetChat, { 
-      text: `⏳ *පොඩ්ඩක් ඉන්න සුදු මැණික...*\nFacebook වීඩියෝව බාගත කරමින් පවතී... 🎥${DEFAULT_FOOTER}` 
+      text: `⚡ *Processing Facebook Video...*\nPlease wait a moment while we download your media. 🎥${DEFAULT_FOOTER}` 
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -103,7 +103,7 @@ module.exports = {
       const videoBuffer = await downloadVideoBuffer(fbData.videoUrl);
 
       if (videoBuffer.length < 10000) {
-        throw new Error('ලබාගත් වීඩියෝව දෝෂ සහිතයි (Corrupted File).');
+        throw new Error('Downloaded file is invalid or corrupted.');
       }
 
       // 3. Waiting Message එක Delete කිරීම
