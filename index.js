@@ -34,7 +34,7 @@ const { useMongoDBAuthState, Auth } = require('./auth');
 // ============================================================================
 
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
-const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨'; // ⚡ Screenshot එකේ පෙන්වන නම
+const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
@@ -69,6 +69,7 @@ const DEFAULT_SETTINGS = {
   statusReactEmoji: '💐',
   botLogo: DEFAULT_BACKUP_LOGO,
   autoPresence: 'off',
+  autoChatRead: false, // ⚡ Default එකෙන්ම Auto Chat Seen (Blue Tick) OFF වේ
   securityPin: '1234',
   isFirstConnectDone: false
 };
@@ -97,6 +98,7 @@ function createSettingsModel() {
     statusReactEmoji: { type: String, default: DEFAULT_SETTINGS.statusReactEmoji },
     botLogo: { type: String, default: DEFAULT_SETTINGS.botLogo },
     autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
+    autoChatRead: { type: Boolean, default: DEFAULT_SETTINGS.autoChatRead }, // ⚡ Database field
     securityPin: { type: String, default: DEFAULT_SETTINGS.securityPin },
     isFirstConnectDone: { type: Boolean, default: DEFAULT_SETTINGS.isFirstConnectDone }
   });
@@ -523,8 +525,8 @@ async function createBaileysSocket(phoneNumber) {
     browser: Browsers.macOS('Safari'),
     msgRetryCounterCache,
     syncFullHistory: false,
-    shouldSyncHistoryMessage: () => false, // ⚡ History sync queue එක මඟහැර නව incoming message එක කෙලින්ම ලබාගැනීම
-    fireInitQueries: true,                 // ⚡ Server query handshake එක ක්ෂණිකව trigger කිරීම
+    shouldSyncHistoryMessage: () => false,
+    fireInitQueries: true,
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 30000,
@@ -880,11 +882,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
-  // ⚡ WhatsApp socket queue එක hold වීම වැළැක්වීමට instant read acknowledgement යැවීම
-  if (!msg.key.fromMe) {
-    sock.readMessages([msg.key]).catch(() => {});
-  }
-
   if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
     if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
     return;
@@ -896,6 +893,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const myBotJid = sock.user?.id || '';
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
+
+  // ⚡ Auto Chat Seen (Blue Tick) Setting එක ON කර ඇත්නම් පමණක් read receipt යැවීම
+  if (settings.autoChatRead && !msg.key.fromMe) {
+    sock.readMessages([msg.key]).catch(() => {});
+  }
 
   if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
 
