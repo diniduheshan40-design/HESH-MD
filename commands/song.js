@@ -7,46 +7,41 @@ try {
   yts = null;
 }
 
-// ⚡ Solid Fallback YouTube Audio Fetcher
+// ⚡ Ultra-Fast Multi-Server Engine (Zero Delay & Quota Fallback)
 async function getAudioDownloadUrl(videoUrl) {
-  // 1. Cobalt Global Engine (High Speed / No Limits)
+  // 1. Chamindu Dedicated API (320kbps High Quality)
   try {
-    const res = await axios.post('https://api.cobalt.tools/api/json', {
-      url: videoUrl,
-      downloadMode: 'audio',
-      audioFormat: 'mp3'
-    }, {
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      timeout: 15000
-    });
-    if (res.data?.url) return res.data.url;
-  } catch (e) {}
+    const chamUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`;
+    const res = await axios.get(chamUrl, { timeout: 6000 });
+    
+    // Quota exhausted නැතිනම් පමණක් download url එක return කිරීම
+    if (res.data?.status && !res.data?.detail?.includes('exhausted')) {
+      const dl = res.data?.download_url || res.data?.result?.download_url || res.data?.data?.url || res.data?.dl;
+      if (dl) return dl;
+    }
+  } catch (e) {
+    // Quota exhausted හෝ network error ආවොත් crash නොවී කෙලින්ම fallback එකට යයි
+  }
 
-  // 2. Okatsu Proxy Engine
+  // 2. High-Speed Direct API 1 (Vepass Cloud)
   try {
-    const res = await axios.get(`https://okatsu-api.vercel.app/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
-    if (res.data?.dl || res.data?.download) return res.data.dl || res.data.download;
-  } catch (e) {}
-
-  // 3. Vepass Fast API
-  try {
-    const res = await axios.get(`https://api.vepass.top/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
+    const res = await axios.get(`https://api.vepass.top/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
     if (res.data?.result?.download_url) return res.data.result.download_url;
   } catch (e) {}
 
-  // 4. Chamindu API (Primary User Key Fallback)
+  // 3. High-Speed Direct API 2 (Siputzx Fast Server)
   try {
-    const chaminduUrl = `https://api.chamindu.site/api/v1/music/sinhalahitsongs/download?url=${encodeURIComponent(videoUrl)}&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`;
-    const res = await axios.get(chaminduUrl, { timeout: 10000 });
-    if (res.data?.status && (res.data?.download_url || res.data?.result?.download_url)) {
-      return res.data.download_url || res.data.result.download_url;
-    }
+    const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
+    if (res.data?.status && res.data?.data?.dl) return res.data.data.dl;
   } catch (e) {}
 
-  throw new Error('All download gateways are temporarily blocked by YouTube. Please try another song title.');
+  // 4. High-Speed Direct API 3 (BK9 Global Gateway)
+  try {
+    const res = await axios.get(`https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
+    if (res.data?.status && res.data?.BK9?.downloadUrl) return res.data.BK9.downloadUrl;
+  } catch (e) {}
+
+  throw new Error('බාගත කිරීමේ සේවාදායකයන් මේ මොහොතේ කාර්යබහුලයි. කරුණාකර වෙනත් සින්දුවක නමක් ලබාදෙන්න.');
 }
 
 module.exports = {
@@ -130,7 +125,7 @@ module.exports = {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Audio file dispatch with stream buffer fallback
+      // Audio stream dispatch (Baileys crash guard)
       await sock.sendMessage(targetChat, {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
