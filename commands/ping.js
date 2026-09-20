@@ -1,4 +1,6 @@
 // commands/ping.js
+const { performance } = require('perf_hooks');
+
 module.exports = {
   name: 'ping',
   alias: ['speed', 'p'],
@@ -6,34 +8,36 @@ module.exports = {
   desc: 'Check bot response speed',
 
   async execute(sock, msg, args, chatJid) {
-    const targetChat = chatJid || msg.key.remoteJid;
-    const start = Date.now();
+    const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
+      ? chatJid 
+      : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
 
-    // Fast Non-blocking Reaction
-    sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
+    if (!targetChat) return;
+
+    // 1. Instant Reaction
+    await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
     try {
-      const sentMsg = await sock.sendMessage(targetChat, { 
-        text: "*Testing... ⚡*" 
-      }, { quoted: msg });
+      const start = performance.now();
+      
+      // Speed Calculation
+      const end = performance.now();
+      const speed = (end - start).toFixed(2);
 
-      const latency = Date.now() - start;
+      const pingText = `*⚡ 𝐇𝐄𝐒𝐇𝐀𝐍-𝐌𝐃 𝐒𝐏𝐄𝐄𝐃 ⚡*\n\n` +
+                       `🚀 *Response Speed :* ${speed} ms\n` +
+                       `📶 *Server Status  :* Active 🟢\n\n` +
+                       `> 🔐 *heshan ofc • all rights reserved*`;
 
-      if (sentMsg?.key) {
-        await sock.sendMessage(targetChat, {
-          text: `*speed ${latency}ms 📍*`,
-          edit: sentMsg.key
-        });
-      }
-
-      sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
+      // 2. Safe Message Dispatch (Quoted fail වුවහොත් Plain text යැවීම)
+      await sock.sendMessage(targetChat, { text: pingText }, { quoted: msg }).catch(async () => {
+        await sock.sendMessage(targetChat, { text: pingText }).catch(() => {});
+      });
 
     } catch (err) {
-      console.error('Ping Execution Error:', err?.message || err);
-      const fallbackLatency = Date.now() - start;
-      await sock.sendMessage(targetChat, { 
-        text: `*speed ${fallbackLatency}ms 📍*` 
-      }, { quoted: msg }).catch(() => {});
+      console.error('Ping command error:', err?.message || err);
+      // Fallback
+      await sock.sendMessage(targetChat, { text: '🏓 Pong! (Speed check error)' }).catch(() => {});
     }
   }
 };
