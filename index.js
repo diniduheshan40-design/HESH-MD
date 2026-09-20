@@ -491,7 +491,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION (⚡ OPTIMIZED FOR INSTANT RESPONSE)
+// 🔌 SOCKET CREATION (⚡ OPTIMIZED FOR INSTANT FIRST-ATTEMPT EXECUTION)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -508,11 +508,13 @@ async function createBaileysSocket(phoneNumber) {
     browser: Browsers.macOS('Safari'),
     msgRetryCounterCache,
     syncFullHistory: false,
+    shouldSyncHistoryMessage: () => false, // ⚡ History sync queue එක මඟහැර නව incoming message එක කෙලින්ම ලබාගැනීම
+    fireInitQueries: true,                 // ⚡ Server query handshake එක ක්ෂණිකව trigger කිරීම
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 30000,
-    keepAliveIntervalMs: 10000, // ⚡ Socket sleep නොවී තබා ගැනීමට ping interval එක තත්පර 10 දක්වා අඩු කිරීම
-    markOnlineOnConnect: true,  // ⚡ Online state එක පවත්වාගෙන ක්ෂණිකව message භාර ගැනීම
+    keepAliveIntervalMs: 10000,
+    markOnlineOnConnect: true,
     emitOwnEvents: false,
     shouldIgnoreJid: () => false
   });
@@ -849,6 +851,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
+  // ⚡ WhatsApp socket queue එක hold වීම වැළැක්වීමට instant read acknowledgement යැවීම
+  if (!msg.key.fromMe) {
+    sock.readMessages([msg.key]).catch(() => {});
+  }
+
   if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
     if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
     return;
@@ -1094,7 +1101,7 @@ function startKeepAlivePing() {
     try {
       await fetch(keepAliveUrl);
     } catch (e) {}
-  }, 2 * 60 * 1000); // ⚡ මිනිත්තු 2කට වරක් self-ping යවා server hibernation වළක්වයි
+  }, 2 * 60 * 1000);
 }
 
 // ============================================================================
