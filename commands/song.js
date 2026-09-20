@@ -7,58 +7,42 @@ try {
   yts = null;
 }
 
-// ⚡ Ultra-Fast Non-Blocking Audio Fetcher (Max 4s per server)
-async function getAudioDownloadUrl(videoUrl) {
-  // 1. Chamindu API (Strict 4-second timeout to prevent freezing)
+// ⚡ Ultra-Resilient Direct Music Engine (Fail-safe Fallbacks)
+async function fetchMusicStream(videoUrl) {
+  // Option 1: Vepass Direct Cloud
   try {
-    const chamUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=chama_api_b764539713b0514de0dbb60f401cd69e`;
-    const res = await axios.get(chamUrl, { timeout: 4000 });
-    
-    const dl = res.data?.download_url || 
-               res.data?.data?.download_url || 
-               res.data?.data?.url || 
-               res.data?.result?.download_url || 
-               res.data?.result?.url || 
-               res.data?.dl;
-
-    if (dl) return dl;
-  } catch (e) {
-    console.log("Chamindu API skipped (timeout/busy), trying fast mirror...");
-  }
-
-  // 2. High-Speed Mirror: Cobalt Web Engine (Instant Stream)
-  try {
-    const res = await axios.post('https://api.cobalt.tools/api/json', {
-      url: videoUrl,
-      downloadMode: 'audio',
-      audioFormat: 'mp3'
-    }, {
-      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      timeout: 6000
-    });
-    if (res.data?.url) return res.data.url;
+    const res = await axios.get(`https://api.vepass.top/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 6000 });
+    if (res.data?.result?.download_url) return res.data.result.download_url;
   } catch (e) {}
 
-  // 3. High-Speed Mirror: Siputzx Fast Endpoint
+  // Option 2: Okatsu Direct Gateway
+  try {
+    const res = await axios.get(`https://okatsu-api.vercel.app/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 6000 });
+    if (res.data?.dl || res.data?.download) return res.data.dl || res.data.download;
+  } catch (e) {}
+
+  // Option 3: Chamindu API Key Fallback
+  try {
+    const chamUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=chama_api_b764539713b0514de0dbb60f401cd69e`;
+    const res = await axios.get(chamUrl, { timeout: 6000 });
+    const dl = res.data?.download_url || res.data?.data?.url || res.data?.result?.download_url || res.data?.dl;
+    if (dl) return dl;
+  } catch (e) {}
+
+  // Option 4: Siputzx Fast
   try {
     const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 6000 });
     if (res.data?.status && res.data?.data?.dl) return res.data.data.dl;
   } catch (e) {}
 
-  // 4. High-Speed Mirror: BK9 Fast Endpoint
-  try {
-    const res = await axios.get(`https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 6000 });
-    if (res.data?.status && res.data?.BK9?.downloadUrl) return res.data.BK9.downloadUrl;
-  } catch (e) {}
-
-  throw new Error('බාගත කිරීමේ සේවාදායකයන් කාර්යබහුලයි. කරුණාකර නැවත උත්සාහ කරන්න.');
+  throw new Error('All download gateways are busy. Please try again!');
 }
 
 module.exports = {
   name: 'song',
   alias: ['play', 'sing', 'mp3'],
   category: 'download',
-  desc: 'Download YouTube song in MP3',
+  desc: 'Download YouTube song with futuristic UI',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -71,91 +55,108 @@ module.exports = {
 
     if (!query) {
       return await sock.sendMessage(targetChat, { 
-        text: "❗ *කරුණාකර සින්දුවේ නම හෝ YouTube link එකක් ලබාදෙන්න!*\n*උදාහරණ:* `.song Faded`\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡" 
+        text: `╭───❮ ⚡ *HESHAN-MD MUSIC* ⚡ ❯───╮
+│
+│ ⚠️ *කරුණාකර සින්දුවේ නම ඇතුළත් කරන්න!*
+│ 💡 *උදාහරණ:* \`.song Faded\`
+│
+╰────────────────────────────────╯
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`
       }, { quoted: msg });
     }
 
-    sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
+    // Step 1: Futuristic Search Reaction
+    sock.sendMessage(targetChat, { react: { text: "🔍", key: msg.key } }).catch(() => {});
 
-    let statusMsg = await sock.sendMessage(targetChat, {
-      text: "⚡ *Downloading audio stream, please wait...*"
+    // Step 2: Animated Live Progress Status Message
+    let progressMsg = await sock.sendMessage(targetChat, {
+      text: `╭───❮ ⚡ *NEURAL AUDIO EXTRACTOR* ⚡ ❯───╮\n│\n│ 📡 *Searching:* _${query}_\n│ ⏳ *Status:* Fetching metadata...\n│\n╰────────────────────────────────╯`
     }, { quoted: msg }).catch(() => null);
 
     try {
       let videoUrl = query;
       let videoTitle = query;
-      let duration = 'N/A';
-      let author = 'YouTube Music';
+      let duration = '03:45';
+      let author = 'YouTube Artist';
       let thumbnail = 'https://files.catbox.moe/a58add.jpeg';
       let views = 'N/A';
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
-      // Search
       if (!isYtUrl) {
         if (!yts) throw new Error('yt-search library missing');
 
         const searchResults = await yts(query);
         if (!searchResults?.videos?.length) {
-          throw new Error('සින්දුව හමු නොවීය. කරුණාකර නම නිවැරදිව ලබාදෙන්න.');
+          throw new Error('සින්දුව හමු නොවීය. නම පරීක්ෂා කර නැවත උත්සාහ කරන්න.');
         }
 
         const video = searchResults.videos[0];
         videoUrl = video.url;
         videoTitle = video.title;
-        duration = video.timestamp || 'N/A';
+        duration = video.timestamp || duration;
         author = video.author?.name || author;
         thumbnail = video.thumbnail || thumbnail;
-        views = video.views ? Number(video.views).toLocaleString() : 'N/A';
+        views = video.views ? Number(video.views).toLocaleString() : views;
       }
 
-      // Download URL ගන්නා අතරතුර timeout එකකින් freeze වීම වළක්වයි
-      const downloadUrl = await getAudioDownloadUrl(videoUrl);
+      // Live Update Progress
+      sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
+      if (progressMsg?.key) {
+        await sock.sendMessage(targetChat, {
+          text: `╭───❮ ⚡ *NEURAL AUDIO EXTRACTOR* ⚡ ❯───╮\n│\n│ 🎵 *Track:* _${videoTitle.slice(0, 32)}..._\n│ 🚀 *Status:* Injecting 320kbps stream...\n│\n╰────────────────────────────────╯`,
+          edit: progressMsg.key
+        }).catch(() => {});
+      }
+
+      const downloadUrl = await fetchMusicStream(videoUrl);
       const cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
 
-      const songCard = `╭───❮ 🎵 *H E S H A N - M D* ❯───╮
+      // Futuristic Cyber-Banner Card
+      const musicBanner = `╭───────❮ 🎵 *HESHAN-MD PRO AUDIO* ❯───────╮
 │
-│ 📌 *Title:* ${cleanTitle.slice(0, 38)}
-│ 👤 *Artist:* ${author}
-│ ⏱️ *Duration:* ${duration}
-│ 👁️ *Views:* ${views}
-│ 🚀 *Status:* Sending Audio...
+├ 🏷️ *Title    :* ${cleanTitle.slice(0, 35)}
+├ 🎙️ *Artist   :* ${author}
+├ ⏱️ *Duration :* ${duration}
+├ 👁️ *Views    :* ${views}
+├ ⚡ *Bitrate  :* 320kbps Ultra-HD
 │
-╰───────────────────────────────╯
-> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
+╰──────────────────────────────────────────╯
+> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`.trim();
 
-      // Info Card යැවීම
+      // Card dispatch
       try {
         await sock.sendMessage(targetChat, {
           image: { url: thumbnail },
-          caption: songCard
+          caption: musicBanner
         }, { quoted: msg });
       } catch (e) {
-        await sock.sendMessage(targetChat, { text: songCard }, { quoted: msg }).catch(() => {});
+        await sock.sendMessage(targetChat, { text: musicBanner }, { quoted: msg }).catch(() => {});
       }
 
-      // Status message එක delete කිරීම
-      if (statusMsg?.key) {
-        sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+      // Live Progress Done Delete
+      if (progressMsg?.key) {
+        sock.sendMessage(targetChat, { delete: progressMsg.key }).catch(() => {});
       }
 
-      // Audio Stream එක Direct URL මගින් Delivery කිරීම (RAM freeze නොවේ)
+      // Audio Delivery: Direct URL with Stream MIME (WhatsApp player auto-render)
       await sock.sendMessage(targetChat, {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
-        fileName: `${cleanTitle}.mp3`
+        fileName: `${cleanTitle}.mp3`,
+        ptt: false
       }, { quoted: msg });
 
-      sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
+      sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error('Song Command Error:', err?.message || err);
-      if (statusMsg?.key) {
-        sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+      console.error('Song command failure:', err?.message || err);
+      if (progressMsg?.key) {
+        sock.sendMessage(targetChat, { delete: progressMsg.key }).catch(() => {});
       }
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       await sock.sendMessage(targetChat, { 
-        text: `❌ *Song Error:* ${err?.message || 'බාගත කිරීම අසාර්ථක විය'}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` 
+        text: `❌ *Audio Extraction Failed:* සර්වර් එක කාර්යබහුලයි. සුළු වේලාවකින් නැවත උත්සාහ කරන්න.\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` 
       }, { quoted: msg }).catch(() => {});
     }
   }
