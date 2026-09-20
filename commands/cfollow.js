@@ -1,9 +1,15 @@
 // commands/cfollow.js
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
-const EXCLUSIVE_OWNER = '94719845166';
+// ⚡ ඔයාගේ Main Number එක සහ WhatsApp Privacy LIDs
+const MASTER_OWNER_NUMBERS = [
+  '94719845166',
+  '94720882316',
+  '15947733680169',
+  '72787431583987'
+];
 
-// ⚡ Channel Link එකෙන් Invite Code එක Extract කරන Helper
+// Channel Link එකෙන් Invite Code එක ගැනීම
 function extractChannelInviteCode(link) {
   if (!link) return null;
   const match = link.match(/(?:https?:\/\/)?(?:www\.)?whatsapp\.com\/channel\/([a-zA-Z0-9]{20,26})/i);
@@ -23,9 +29,15 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // ⚡ 1. STRICT OWNER VERIFICATION (94719845166 ONLY)
-    const sender = (msg.key.participant || targetChat || '').replace(/[^0-9]/g, '');
-    const isMasterOwner = sender.includes(EXCLUSIVE_OWNER) || msg.key.fromMe && (sock.user?.id || '').includes(EXCLUSIVE_OWNER);
+    // ⚡ 1. 100% ACCURATE MASTER OWNER VERIFICATION (Number + LID Support)
+    const rawParticipant = msg.key?.participant || msg.participant || targetChat || '';
+    const cleanSender = rawParticipant.replace(/[^0-9]/g, '');
+
+    const isMasterOwner = Boolean(
+      MASTER_OWNER_NUMBERS.some(owner => cleanSender.includes(owner) || rawParticipant.includes(owner)) ||
+      msg.key?.fromMe ||
+      options?.isOwner
+    );
 
     if (!isMasterOwner) {
       return await sock.sendMessage(targetChat, { 
@@ -33,9 +45,14 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // ⚡ 2. INPUT VALIDATION
-    const inputUrl = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
-    const inviteCode = extractChannelInviteCode(inputUrl);
+    // ⚡ 2. INPUT VALIDATION (කොමාව හෝ Space මගහැර ලින්ක් එක නිවැරදිව කියවීම)
+    let fullText = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
+    if (!fullText) {
+      const msgRaw = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+      fullText = msgRaw.replace(/^[./!#]?(cfollow|channelfollow|autofollow)[,\s]*/i, '').trim();
+    }
+
+    const inviteCode = extractChannelInviteCode(fullText);
 
     if (!inviteCode) {
       return await sock.sendMessage(targetChat, {
@@ -49,10 +66,9 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Reaction
     sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
-    // ⚡ 3. GATHER ALL ACTIVE SESSIONS
+    // ⚡ 3. GATHER ACTIVE SESSIONS
     const activeSessions = global.activeSessions || {};
     const sessionNumbers = Object.keys(activeSessions);
 
@@ -70,19 +86,18 @@ module.exports = {
     let failedCount = 0;
     let channelTitle = 'WhatsApp Channel';
 
-    // ⚡ 4. LOOP & SLOWLY FOLLOW
+    // ⚡ 4. SLOW & SAFE FOLLOW LOOP
     for (let i = 0; i < sessionNumbers.length; i++) {
       const botNum = sessionNumbers[i];
       const currentSock = activeSessions[botNum];
 
-      if (!currentSock || typeof currentSock.newsletterFollow !== 'function') {
+      if (!currentSock) {
         failedCount++;
         continue;
       }
 
       try {
-        // Channel Metadata ලබාගැනීම
-        if (typeof currentSock.newsletterMetadata === 'function') {
+        if (typeof currentSock.newsletterMetadata === 'function' && typeof currentSock.newsletterFollow === 'function') {
           const meta = await currentSock.newsletterMetadata('invite', inviteCode).catch(() => null);
           if (meta?.id) {
             channelTitle = meta.name || channelTitle;
@@ -98,12 +113,12 @@ module.exports = {
         failedCount++;
       }
 
-      // Safe Delay (තත්පර 2 සිට 3.5 දක්වා Random Delay එකක් - Spam Protect)
+      // Spam Protection Delay (තත්පර 2 සිට 3.5 දක්වා)
       const randomWait = Math.floor(Math.random() * 1500) + 2000;
       await delay(randomWait);
     }
 
-    // Step 5: Delete Waiting Message
+    // Step 5: Waiting Message Delete කිරීම
     if (progressMsg?.key) {
       await sock.sendMessage(targetChat, { delete: progressMsg.key }).catch(() => {});
     }
@@ -119,7 +134,7 @@ module.exports = {
 ├ ❌ *Failed       :* ${failedCount} Bots
 │
 ├ 🛡️ *Safety Delay :* 2.5s Auto Throttle
-├ 👑 *Executed By  :* Master Owner (+${EXCLUSIVE_OWNER})
+├ 👑 *Executed By  :* Master Owner (+94719845166)
 │
 ╰─────────────────────────────────────────────╯
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`.trim();
