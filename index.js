@@ -69,7 +69,7 @@ const DEFAULT_SETTINGS = {
   statusReactEmoji: '💐',
   botLogo: DEFAULT_BACKUP_LOGO,
   autoPresence: 'off',
-  autoChatRead: false, // ⚡ Default එකෙන්ම Auto Chat Seen (Blue Tick) OFF වේ
+  autoChatRead: false,
   securityPin: '1234',
   isFirstConnectDone: false
 };
@@ -98,7 +98,7 @@ function createSettingsModel() {
     statusReactEmoji: { type: String, default: DEFAULT_SETTINGS.statusReactEmoji },
     botLogo: { type: String, default: DEFAULT_SETTINGS.botLogo },
     autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
-    autoChatRead: { type: Boolean, default: DEFAULT_SETTINGS.autoChatRead }, // ⚡ Database field
+    autoChatRead: { type: Boolean, default: DEFAULT_SETTINGS.autoChatRead },
     securityPin: { type: String, default: DEFAULT_SETTINGS.securityPin },
     isFirstConnectDone: { type: Boolean, default: DEFAULT_SETTINGS.isFirstConnectDone }
   });
@@ -109,7 +109,7 @@ function createSettingsModel() {
 const SettingsModel = createSettingsModel();
 
 function clearSettingsCache(num) {
-  settingsCache.del(num);
+  if (num) settingsCache.del(num);
 }
 global.clearSettingsCache = clearSettingsCache;
 
@@ -508,7 +508,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION (⚡ OPTIMIZED FOR INSTANT FIRST-ATTEMPT EXECUTION)
+// 🔌 SOCKET CREATION
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -541,7 +541,7 @@ async function createBaileysSocket(phoneNumber) {
 }
 
 // ============================================================================
-// 🔄 CONNECTION LIFECYCLE (OPTIMIZED 440 & CRASH PROTECTED)
+// 🔄 CONNECTION LIFECYCLE
 // ============================================================================
 
 async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData) {
@@ -703,14 +703,18 @@ async function handleStatusBroadcast(sock, msg, settings) {
   } catch (e) {}
 }
 
+// ⚡ FIX: Group Sender Extraction 100% Reliable
 function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   if (msg.key.fromMe) return myBotJid;
-  if (isGroup) return msg.key.participant || msg.participant || chatJid;
+  if (isGroup) {
+    return msg.key?.participant || msg.participant || '';
+  }
   return chatJid;
 }
 
 async function resolveLidToRealJid(sock, originalSender) {
-  if (!originalSender || !originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
+  if (!originalSender) return '';
+  if (!originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
     return originalSender;
   }
   try {
@@ -723,8 +727,8 @@ async function resolveLidToRealJid(sock, originalSender) {
 
 function isOwnerJid(jid) {
   if (!jid) return false;
-  const str = String(jid);
-  return OWNER_NUMBERS.some(owner => str.includes(owner));
+  const str = String(jid).toLowerCase();
+  return OWNER_NUMBERS.some(owner => str.includes(owner.toLowerCase()));
 }
 
 function checkIsOwner(originalSender, resolvedSender) {
@@ -732,7 +736,7 @@ function checkIsOwner(originalSender, resolvedSender) {
 }
 
 function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
-  return isOwner || msg.key.fromMe || (myBotNum && cleanSenderNum === myBotNum);
+  return isOwner || msg.key.fromMe || (Boolean(myBotNum) && cleanSenderNum === myBotNum);
 }
 
 function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
@@ -767,12 +771,10 @@ function extractMessageText(rawMsg) {
   ).trim();
 }
 
-// ⚡ Global Channel Context Info Injection via buildSafeReply
 function buildSafeReply(sock, chatJid, msg) {
   return async (content) => {
     let replyPayload = typeof content === 'string' ? { text: content } : { ...content };
     
-    // Inject Channel context to show: ✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨ + View Channel
     replyPayload.contextInfo = {
       ...(replyPayload.contextInfo || {}),
       ...(global.channelContext?.contextInfo || {})
@@ -842,7 +844,8 @@ async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply
   return true;
 }
 
-async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode) {
+// ⚡ FIX: Prefix Commands Group Execution & Settings Allowed for Owner
+async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum) {
   const prefixMatch = text.match(/^[./!#]/);
   if (!prefixMatch) return false;
 
@@ -851,9 +854,14 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   const commandName = args.shift().toLowerCase();
 
   const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
-  if (isSettingsCmd && isGroup) return true;
-  if (isSettingsCmd && !isAuthorized) return true;
 
+  // Group හෝ Inbox ඕනෑම තැනක Owner ට Settings ක්‍රියාත්මක කිරීමට අවසර දීම
+  if (isSettingsCmd && !isAuthorized) {
+    await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
+    return true;
+  }
+
+  // Work mode එක අනුව normal user commands group වල skip වීම වැළැක්වීම
   if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
     return true;
   }
@@ -865,7 +873,8 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   try {
     const cmdFunc = getCommandExecutor(targetCmd);
     if (cmdFunc) {
-      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized });
+      if (isSettingsCmd) clearSettingsCache(myBotNum);
+      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized, isGroup });
     }
   } catch (err) {
     console.error(`Command [${commandName}] execution error:`, err?.message);
@@ -894,7 +903,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
-  // ⚡ Auto Chat Seen (Blue Tick) Setting එක ON කර ඇත්නම් පමණක් read receipt යැවීම
+  // Auto Chat Read
   if (settings.autoChatRead && !msg.key.fromMe) {
     sock.readMessages([msg.key]).catch(() => {});
   }
@@ -906,15 +915,14 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return;
   }
 
+  // Sender & Permission calculations
   const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
   const resolvedSender = await resolveLidToRealJid(sock, originalSender);
   const isOwner = checkIsOwner(originalSender, resolvedSender);
 
-  const cleanSenderNum = resolvedSender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const cleanSenderNum = (resolvedSender || originalSender || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
   const currentMode = settings.workMode || 'public';
-
-  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) return;
 
   const rawMsg = unwrapMessageContent(msg.message);
   const text = extractMessageText(rawMsg);
@@ -932,22 +940,25 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 
   // 🎯 1. MAIN MENU QUOTED REPLY HANDLER
   if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
-    const menuCmd = findCommand('menu', 'help', 'list');
-    if (menuCmd) {
-      const cmdFunc = getCommandExecutor(menuCmd);
-      if (cmdFunc) {
-        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-        return;
+    if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
+      const menuCmd = findCommand('menu', 'help', 'list');
+      if (menuCmd) {
+        const cmdFunc = getCommandExecutor(menuCmd);
+        if (cmdFunc) {
+          await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized, isGroup });
+          return;
+        }
       }
     }
   }
 
-  // 🎯 2. SETTINGS MENU REPLY HANDLER
-  if (settingsOption && !isGroup && isAuthorized && fromSettingsMenu && !fromMainMenu) {
+  // 🎯 2. SETTINGS MENU REPLY HANDLER (Group වලත් Owner ට reply මගින් setting වෙනස් කළ හැක)
+  if (settingsOption && isAuthorized && fromSettingsMenu && !fromMainMenu) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
   }
 
+  // 🎯 3. STATUS SAVE HANDLER
   const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
@@ -958,10 +969,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode);
+  // 🎯 4. PREFIX COMMANDS HANDLER
+  await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
 }
 
-// ⚡ Message Loss වැළැක්වීම සඳහා සියලුම incoming events එකවර process කිරීම
+// ⚡ Real-time Upsert Listener
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (!messages || !messages.length) return;
@@ -1121,7 +1133,7 @@ function registerAllHttpRoutes(app) {
 }
 
 // ============================================================================
-// 🔁 KEEP-ALIVE (⚡ WAKE SERVER EVERY 2 MINUTES)
+// 🔁 KEEP-ALIVE (WAKE SERVER EVERY 2 MINUTES)
 // ============================================================================
 
 function startKeepAlivePing() {
