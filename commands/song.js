@@ -9,24 +9,24 @@ try {
 
 // ⚡ Ultra-Resilient Direct Music Engine (Fail-safe Fallbacks)
 async function fetchMusicStream(videoUrl) {
-  // Option 1: Vepass Direct Cloud
+  // Option 1: Chamindu 320kbps API (Short 5s Timeout)
+  try {
+    const chamUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=chama_api_b764539713b0514de0dbb60f401cd69e`;
+    const res = await axios.get(chamUrl, { timeout: 5000 });
+    const dl = res.data?.download_url || res.data?.data?.url || res.data?.result?.download_url || res.data?.dl;
+    if (dl) return dl;
+  } catch (e) {}
+
+  // Option 2: Vepass Direct Cloud
   try {
     const res = await axios.get(`https://api.vepass.top/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 6000 });
     if (res.data?.result?.download_url) return res.data.result.download_url;
   } catch (e) {}
 
-  // Option 2: Okatsu Direct Gateway
+  // Option 3: Okatsu Direct Gateway
   try {
     const res = await axios.get(`https://okatsu-api.vercel.app/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 6000 });
     if (res.data?.dl || res.data?.download) return res.data.dl || res.data.download;
-  } catch (e) {}
-
-  // Option 3: Chamindu API Key Fallback
-  try {
-    const chamUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=chama_api_b764539713b0514de0dbb60f401cd69e`;
-    const res = await axios.get(chamUrl, { timeout: 6000 });
-    const dl = res.data?.download_url || res.data?.data?.url || res.data?.result?.download_url || res.data?.dl;
-    if (dl) return dl;
   } catch (e) {}
 
   // Option 4: Siputzx Fast
@@ -51,6 +51,17 @@ module.exports = {
 
     if (!targetChat) return;
 
+    // ⚡ Channel Context Info (✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨ + View Channel button)
+    const channelContext = global.channelContext?.contextInfo || {
+      forwardingScore: 999,
+      isForwarded: true,
+      forwardedNewsletterMessageInfo: {
+        newsletterJid: '120363421906774107@newsletter',
+        newsletterName: '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨',
+        serverMessageId: 1
+      }
+    };
+
     const query = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
 
     if (!query) {
@@ -61,7 +72,8 @@ module.exports = {
 │ 💡 *උදාහරණ:* \`.song Faded\`
 │
 ╰────────────────────────────────╯
-> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`,
+        contextInfo: channelContext
       }, { quoted: msg });
     }
 
@@ -70,7 +82,8 @@ module.exports = {
 
     // Step 2: Animated Live Progress Status Message
     let progressMsg = await sock.sendMessage(targetChat, {
-      text: `╭───❮ ⚡ *NEURAL AUDIO EXTRACTOR* ⚡ ❯───╮\n│\n│ 📡 *Searching:* _${query}_\n│ ⏳ *Status:* Fetching metadata...\n│\n╰────────────────────────────────╯`
+      text: `╭───❮ ⚡ *NEURAL AUDIO EXTRACTOR* ⚡ ❯───╮\n│\n│ 📡 *Searching:* _${query}_\n│ ⏳ *Status:* Fetching metadata...\n│\n╰────────────────────────────────╯`,
+      contextInfo: channelContext
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -100,7 +113,7 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : views;
       }
 
-      // Live Update Progress
+      // Live Update Progress (Safe Baileys edit payload)
       sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
       if (progressMsg?.key) {
         await sock.sendMessage(targetChat, {
@@ -124,14 +137,18 @@ module.exports = {
 ╰──────────────────────────────────────────╯
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`.trim();
 
-      // Card dispatch
+      // Card dispatch with Channel Context
       try {
         await sock.sendMessage(targetChat, {
           image: { url: thumbnail },
-          caption: musicBanner
+          caption: musicBanner,
+          contextInfo: channelContext
         }, { quoted: msg });
       } catch (e) {
-        await sock.sendMessage(targetChat, { text: musicBanner }, { quoted: msg }).catch(() => {});
+        await sock.sendMessage(targetChat, { 
+          text: musicBanner,
+          contextInfo: channelContext
+        }, { quoted: msg }).catch(() => {});
       }
 
       // Live Progress Done Delete
@@ -139,12 +156,13 @@ module.exports = {
         sock.sendMessage(targetChat, { delete: progressMsg.key }).catch(() => {});
       }
 
-      // Audio Delivery: Direct URL with Stream MIME (WhatsApp player auto-render)
+      // Audio Delivery: Direct Stream URL with context badge
       await sock.sendMessage(targetChat, {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
         fileName: `${cleanTitle}.mp3`,
-        ptt: false
+        ptt: false,
+        contextInfo: channelContext
       }, { quoted: msg });
 
       sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
@@ -156,7 +174,8 @@ module.exports = {
       }
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       await sock.sendMessage(targetChat, { 
-        text: `❌ *Audio Extraction Failed:* සර්වර් එක කාර්යබහුලයි. සුළු වේලාවකින් නැවත උත්සාහ කරන්න.\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡` 
+        text: `❌ *Audio Extraction Failed:* සර්වර් එක කාර්යබහුලයි. සුළු වේලාවකින් නැවත උත්සාහ කරන්න.\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`,
+        contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
     }
   }
