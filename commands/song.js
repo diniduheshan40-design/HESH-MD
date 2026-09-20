@@ -7,46 +7,46 @@ try {
   yts = null;
 }
 
-// ⚡ Chamindu API with Auto Fallback Engine
+// ⚡ Solid Fallback YouTube Audio Fetcher
 async function getAudioDownloadUrl(videoUrl) {
-  // 1. Chamindu API (Primary)
+  // 1. Cobalt Global Engine (High Speed / No Limits)
+  try {
+    const res = await axios.post('https://api.cobalt.tools/api/json', {
+      url: videoUrl,
+      downloadMode: 'audio',
+      audioFormat: 'mp3'
+    }, {
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      timeout: 15000
+    });
+    if (res.data?.url) return res.data.url;
+  } catch (e) {}
+
+  // 2. Okatsu Proxy Engine
+  try {
+    const res = await axios.get(`https://okatsu-api.vercel.app/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
+    if (res.data?.dl || res.data?.download) return res.data.dl || res.data.download;
+  } catch (e) {}
+
+  // 3. Vepass Fast API
+  try {
+    const res = await axios.get(`https://api.vepass.top/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
+    if (res.data?.result?.download_url) return res.data.result.download_url;
+  } catch (e) {}
+
+  // 4. Chamindu API (Primary User Key Fallback)
   try {
     const chaminduUrl = `https://api.chamindu.site/api/v1/music/sinhalahitsongs/download?url=${encodeURIComponent(videoUrl)}&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`;
-    const res = await axios.get(chaminduUrl, { timeout: 12000 });
-    
-    // Quota ඉවර නැතිනම් සහ direct download url එකක් ලැබුණොත්
-    if (res.data?.status && (res.data?.download_url || res.data?.result?.download_url || res.data?.data?.url)) {
-      return res.data.download_url || res.data.result?.download_url || res.data.data?.url;
-    }
-  } catch (e) {
-    console.log("Chamindu API Quota/Error, switching to fallback server...");
-  }
-
-  // 2. Fallback Option 1: Fast YTMP3 Endpoint
-  try {
-    const res = await axios.get(`https://api-pink-venom.vercel.app/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
-    if (res.data?.result?.download_url || res.data?.download) {
-      return res.data.result?.download_url || res.data.download;
+    const res = await axios.get(chaminduUrl, { timeout: 10000 });
+    if (res.data?.status && (res.data?.download_url || res.data?.result?.download_url)) {
+      return res.data.download_url || res.data.result.download_url;
     }
   } catch (e) {}
 
-  // 3. Fallback Option 2: BK9 Downloader
-  try {
-    const res = await axios.get(`https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
-    if (res.data?.status && res.data?.BK9?.downloadUrl) {
-      return res.data.BK9.downloadUrl;
-    }
-  } catch (e) {}
-
-  // 4. Fallback Option 3: Siputzx Downloader
-  try {
-    const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
-    if (res.data?.status && res.data?.data?.dl) {
-      return res.data.data.dl;
-    }
-  } catch (e) {}
-
-  throw new Error('Download servers සියල්ල කාර්යබහුලයි. කරුණාකර සුළු වේලාවකින් නැවත උත්සාහ කරන්න.');
+  throw new Error('All download gateways are temporarily blocked by YouTube. Please try another song title.');
 }
 
 module.exports = {
@@ -72,8 +72,8 @@ module.exports = {
 
     sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
 
-    let statusMsg = await sock.sendMessage(targetChat, {
-      text: "⚡ *Downloading your song, please wait...*"
+    const statusMsg = await sock.sendMessage(targetChat, {
+      text: "⚡ *Downloading audio stream, please wait...*"
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -86,11 +86,8 @@ module.exports = {
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
-      // YouTube Search
       if (!isYtUrl) {
-        if (!yts) {
-          throw new Error('yt-search library missing');
-        }
+        if (!yts) throw new Error('yt-search library missing');
 
         const searchResults = await yts(query);
         if (!searchResults?.videos?.length) {
@@ -106,7 +103,6 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : 'N/A';
       }
 
-      // Fetch download URL (Chamindu -> Fallback)
       const downloadUrl = await getAudioDownloadUrl(videoUrl);
       const cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
 
@@ -116,12 +112,11 @@ module.exports = {
 │ 👤 *Artist:* ${author}
 │ ⏱️ *Duration:* ${duration}
 │ 👁️ *Views:* ${views}
-│ 🚀 *Status:* Uploading Audio...
+│ 🚀 *Status:* Sending Audio...
 │
 ╰───────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-      // Send Info Card
       try {
         await sock.sendMessage(targetChat, {
           image: { url: thumbnail },
@@ -131,12 +126,11 @@ module.exports = {
         await sock.sendMessage(targetChat, { text: songCard }, { quoted: msg }).catch(() => {});
       }
 
-      // Delete processing message
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Send MP3 Audio
+      // Audio file dispatch with stream buffer fallback
       await sock.sendMessage(targetChat, {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
