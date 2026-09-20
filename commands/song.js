@@ -7,9 +7,22 @@ try {
   yts = null;
 }
 
-// ⚡ Active Multi-API Downloader Engine with Auto-Fallback
+// ⚡ Chamindu API with Auto Fallback Engine
 async function getAudioDownloadUrl(videoUrl) {
-  // Option 1: Vepass / Yt-Dl API
+  // 1. Chamindu API (Primary)
+  try {
+    const chaminduUrl = `https://api.chamindu.site/api/v1/music/sinhalahitsongs/download?url=${encodeURIComponent(videoUrl)}&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`;
+    const res = await axios.get(chaminduUrl, { timeout: 12000 });
+    
+    // Quota ඉවර නැතිනම් සහ direct download url එකක් ලැබුණොත්
+    if (res.data?.status && (res.data?.download_url || res.data?.result?.download_url || res.data?.data?.url)) {
+      return res.data.download_url || res.data.result?.download_url || res.data.data?.url;
+    }
+  } catch (e) {
+    console.log("Chamindu API Quota/Error, switching to fallback server...");
+  }
+
+  // 2. Fallback Option 1: Fast YTMP3 Endpoint
   try {
     const res = await axios.get(`https://api-pink-venom.vercel.app/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
     if (res.data?.result?.download_url || res.data?.download) {
@@ -17,7 +30,7 @@ async function getAudioDownloadUrl(videoUrl) {
     }
   } catch (e) {}
 
-  // Option 2: BK9 Fast Endpoint
+  // 3. Fallback Option 2: BK9 Downloader
   try {
     const res = await axios.get(`https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
     if (res.data?.status && res.data?.BK9?.downloadUrl) {
@@ -25,7 +38,7 @@ async function getAudioDownloadUrl(videoUrl) {
     }
   } catch (e) {}
 
-  // Option 3: Siputzx API
+  // 4. Fallback Option 3: Siputzx Downloader
   try {
     const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 15000 });
     if (res.data?.status && res.data?.data?.dl) {
@@ -33,15 +46,7 @@ async function getAudioDownloadUrl(videoUrl) {
     }
   } catch (e) {}
 
-  // Option 4: NexOracle Direct Stream
-  try {
-    const res = await axios.get(`https://api.giftedtech.my.id/api/download/ytmp3?url=${encodeURIComponent(videoUrl)}&apikey=gifted`, { timeout: 15000 });
-    if (res.data?.success && res.data?.result?.download_url) {
-      return res.data.result.download_url;
-    }
-  } catch (e) {}
-
-  throw new Error('සින්දුව Download කරගැනීමට නොහැකි විය. කරුණාකර තත්පර කිහිපයකින් නැවත උත්සාහ කරන්න.');
+  throw new Error('Download servers සියල්ල කාර්යබහුලයි. කරුණාකර සුළු වේලාවකින් නැවත උත්සාහ කරන්න.');
 }
 
 module.exports = {
@@ -81,10 +86,10 @@ module.exports = {
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
-      // Search YouTube
+      // YouTube Search
       if (!isYtUrl) {
         if (!yts) {
-          throw new Error('yt-search dependency missing! Terminal එකේ "npm install yt-search" run කරන්න.');
+          throw new Error('yt-search library missing');
         }
 
         const searchResults = await yts(query);
@@ -101,7 +106,7 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : 'N/A';
       }
 
-      // Download link එක ලබාගැනීම
+      // Fetch download URL (Chamindu -> Fallback)
       const downloadUrl = await getAudioDownloadUrl(videoUrl);
       const cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
 
@@ -116,7 +121,7 @@ module.exports = {
 ╰───────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
-      // 1. Thumbnail එක සහිත විස්තරය යැවීම
+      // Send Info Card
       try {
         await sock.sendMessage(targetChat, {
           image: { url: thumbnail },
@@ -126,12 +131,12 @@ module.exports = {
         await sock.sendMessage(targetChat, { text: songCard }, { quoted: msg }).catch(() => {});
       }
 
-      // 2. Status message එක ඉවත් කිරීම
+      // Delete processing message
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // 3. Audio file එක Safe Payload එකක් ලෙස යැවීම
+      // Send MP3 Audio
       await sock.sendMessage(targetChat, {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
