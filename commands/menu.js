@@ -104,10 +104,21 @@ module.exports = {
 
     if (!targetChat) return;
 
+    // ⚡ Channel Context Info (✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨ + View Channel button)
+    const channelContext = global.channelContext?.contextInfo || {
+        forwardingScore: 999,
+        isForwarded: true,
+        forwardedNewsletterMessageInfo: {
+            newsletterJid: '120363421906774107@newsletter',
+            newsletterName: '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨',
+            serverMessageId: 1
+        }
+    };
+
     // Direct Argument හෝ Reply කළ අගය (1, 2, 3, 4)
     let selectedCategory = args && args[0] ? args[0].trim() : null;
 
-    // Submenu එකක් නම් Image එක සමඟ යැවීම
+    // Submenu එකක් නම් Image එක සමඟ Channel Badge සහිතව යැවීම
     if (selectedCategory && subMenus[selectedCategory]) {
         const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
         sock.sendMessage(targetChat, { react: { text: emojis[selectedCategory] || "📜", key: msg.key } }).catch(() => {});
@@ -118,11 +129,16 @@ module.exports = {
                 return await sock.sendMessage(targetChat, {
                     image: logo,
                     caption: subMenus[selectedCategory],
-                    mimetype: 'image/jpeg'
+                    mimetype: 'image/jpeg',
+                    contextInfo: channelContext
                 }, { quoted: msg });
             }
         } catch (e) {}
-        return await sock.sendMessage(targetChat, { text: subMenus[selectedCategory] }, { quoted: msg });
+
+        return await sock.sendMessage(targetChat, { 
+            text: subMenus[selectedCategory],
+            contextInfo: channelContext
+        }, { quoted: msg });
     }
 
     // Main Menu එක Render කිරීම
@@ -159,13 +175,17 @@ module.exports = {
           await sock.sendMessage(targetChat, {
               image: logo,
               caption: mainText,
-              mimetype: 'image/jpeg'
+              mimetype: 'image/jpeg',
+              contextInfo: channelContext
           }, { quoted: msg });
           return;
       }
     } catch (err) {}
 
-    await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg }).catch(() => {});
+    await sock.sendMessage(targetChat, { 
+        text: mainText,
+        contextInfo: channelContext
+    }, { quoted: msg }).catch(() => {});
   }
 };
 
