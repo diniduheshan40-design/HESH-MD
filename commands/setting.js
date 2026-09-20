@@ -42,7 +42,7 @@ async function getBotLogo() {
 // Safe Mongo Model Lookup Helper (Never crashes)
 function getModel() {
   try {
-    if (mongoose.connection.readyState !== 1) return null; // DB connected නැතිනම් null
+    if (mongoose.connection.readyState !== 1) return null;
     return mongoose.models.BotSettings || mongoose.model('BotSettings');
   } catch (e) {
     return null;
@@ -56,15 +56,39 @@ module.exports = {
   desc: 'Manage individual bot settings',
 
   async execute(sock, msg, args, chatJid, safeReply, options = {}) {
-    const targetChat = chatJid || (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
+    const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
+      ? chatJid 
+      : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
+
     if (!targetChat) return;
 
-    // Identify target bot number safely
+    // Direct reply එකක්ද, ඒක settings message එකකටද ආවේ කියලා තහවුරු කරගැනීම
+    const quotedCaption = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage?.caption || 
+                          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || 
+                          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text || '';
+
+    const isSettingsReply = quotedCaption.includes("HESHAN-MD SYSTEM SETTINGS");
+
+    // Message එක ගත්තේ settings command එකෙන්ද (නැතිනම් වෙනත් command එකකින්ද) බැලීම
+    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
+    const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
+
+    // Command එක .set නොවී වෙනත් command එකකට (උදා: Main Menu) reply කරපු 1, 2 වැනි අගයක් නම් settings එකෙන් අයින් වීම
+    if (!isExplicitCommand && !isSettingsReply) {
+      return;
+    }
+
+    // Bot Number & Owner Check
     const rawBotId = sock.user?.id || sock.user?.jid || '';
     const botNumber = rawBotId.split(':')[0].split('@')[0].replace(/\D/g, '') || 'default';
+    const senderNumber = (msg.key.participant || targetChat || '').split(':')[0].split('@')[0].replace(/\D/g, '');
 
-    // Flexible Owner Check (msg.key.fromMe හෝ options.isOwner)
-    const isOwner = Boolean(options.isOwner || msg.key.fromMe);
+    const isOwner = Boolean(
+      options.isOwner || 
+      msg.key.fromMe || 
+      (global.owner && global.owner.includes(senderNumber)) ||
+      senderNumber === botNumber
+    );
 
     const reply = async (content) => {
       try {
@@ -109,17 +133,12 @@ module.exports = {
       memSettingsCache.set(botNumber, settings);
     }
 
-    // Input parsing (Supports '.set 1.1' or plain '1.1')
+    // Input parsing (Supports '.set 1.1' or plain '1.1' on reply)
     let input = "";
     if (Array.isArray(args) && args.length > 0) {
       input = args.join(' ').trim().toLowerCase();
-    }
-    
-    if (!input) {
-      const rawText = msg.message?.conversation || 
-                      msg.message?.extendedTextMessage?.text || 
-                      '';
-      input = rawText.trim().toLowerCase().replace(/^[./!#]?(settings|setting|set|config)\s*/i, '').trim();
+    } else if (isSettingsReply) {
+      input = rawText.toLowerCase();
     }
 
     let isUpdated = false;
@@ -276,7 +295,6 @@ module.exports = {
       console.error("Settings Menu Image dispatch failed:", err.message);
     }
 
-    // Image failure එකකදී fallback text message එකක් යැවීම
     await reply(menu);
   }
 };
