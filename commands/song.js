@@ -7,60 +7,50 @@ try {
   yts = null;
 }
 
-// ⚡ 100% Working YouTube MP3 Link Extractors (Direct Mirrors)
+// ⚡ Custom API Gateway Integration
 async function fetchSongAudioUrl(videoUrl) {
   const cleanUrl = encodeURIComponent(videoUrl);
 
-  // 1. Ryzendesu Downloader API
+  // 1. ඔයා දුන්න Thinuzz API එක (Primary Engine)
   try {
-    const res = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${cleanUrl}`, { timeout: 10000 });
-    const dl = res.data?.url || res.data?.downloadUrl || res.data?.link;
+    const thinuzzUrl = `https://mr-thinuzz-api-build.vercel.app/api/ytmp3/download?url=${cleanUrl}&apiKey=key_525b5ceb068ac7f2`;
+    const res = await axios.get(thinuzzUrl, { timeout: 15000 });
+    const dl = res.data?.result?.download_url || 
+               res.data?.result?.url || 
+               res.data?.result?.download || 
+               res.data?.download_url || 
+               res.data?.downloadUrl || 
+               res.data?.url || 
+               res.data?.data?.download_url || 
+               res.data?.data?.url || 
+               res.data?.dl;
     if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
-  } catch (e) {}
+  } catch (e) {
+    console.error("Thinuzz API failed, switching to backup:", e.message);
+  }
 
-  // 2. Siputzx Fast Endpoint
+  // 2. High-Speed Backup Gateway
   try {
     const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${cleanUrl}`, { timeout: 10000 });
     const dl = res.data?.data?.dl || res.data?.data?.download_url || res.data?.download_url;
     if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
   } catch (e) {}
 
-  // 3. Widipe Engine
-  try {
-    const res = await axios.get(`https://widipe.com/download/ytdl?url=${cleanUrl}`, { timeout: 10000 });
-    const dl = res.data?.result?.mp3 || res.data?.result?.download;
-    if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
-  } catch (e) {}
-
-  // 4. David Cyril Mirror
+  // 3. Secondary Backup Gateway
   try {
     const res = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${cleanUrl}`, { timeout: 10000 });
     const dl = res.data?.result?.download_url || res.data?.result?.url;
     if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
   } catch (e) {}
 
-  // 5. Ytdl Cobalt Service
-  try {
-    const res = await axios.post('https://co.wuk.sh/api/json', {
-      url: videoUrl,
-      isAudioOnly: true,
-      aFormat: 'mp3'
-    }, {
-      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      timeout: 10000
-    });
-    const dl = res.data?.url;
-    if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
-  } catch (e) {}
-
-  throw new Error('සින්දුව බාගත කිරීමට Links සොයාගත නොහැකි විය.');
+  throw new Error('සින්දුව ලබා ගැනීමට නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.');
 }
 
-// ⚡ Convert Audio URL to Direct Buffer (Fixes Baileys Audio Drop)
+// ⚡ Buffer Downloader (Drop වීම වැළැක්වීමට)
 async function downloadToBuffer(url) {
   const response = await axios.get(url, {
     responseType: 'arraybuffer',
-    timeout: 30000,
+    timeout: 45000,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
@@ -81,7 +71,7 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // ⚡ Newsletter Forward Badge (කාඩ් එකට පමණක්)
+    // ⚡ Newsletter Forward Badge (කාඩ් එකට පමණි)
     const channelContext = global.channelContext?.contextInfo || {
       forwardingScore: 999,
       isForwarded: true,
@@ -107,10 +97,10 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Step 1: Instant reaction
+    // Reaction
     sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
 
-    // Step 2: Waiting message
+    // Waiting Message (Badge නැත)
     let statusMsg = await sock.sendMessage(targetChat, {
       text: `⏳ *පොඩ්ඩක් ඉන්න සුදු මැණික...*\nඔයා ඉල්ලපු *"${query}"* සින්දුව බාගත කරමින් පවතී... 🎵`
     }, { quoted: msg }).catch(() => null);
@@ -125,7 +115,7 @@ module.exports = {
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
-      // Search via yt-search
+      // Search Query Logic
       if (!isYtUrl) {
         if (!yts) throw new Error('yt-search package එක නොමැත.');
 
@@ -143,17 +133,17 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : views;
       }
 
-      // Step 3: Fetch Audio Stream
+      // Audio Link ලබාගෙන Buffer බවට පත්කිරීම
       const rawAudioUrl = await fetchSongAudioUrl(videoUrl);
       const audioBuffer = await downloadToBuffer(rawAudioUrl);
       const cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Step 4: Delete waiting message
+      // Waiting message එක delete කිරීම
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Step 5: Details Card with Channel Context Badge
+      // Song Details Card
       const songCard = `╭──────❮ 🎵 *HESHAN-MD MUSIC* ❯──────╮
 │
 ├ 🏷️ *Title    :* ${cleanTitle.slice(0, 36)}
@@ -165,6 +155,7 @@ module.exports = {
 ╰────────────────────────────────────╯
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`.trim();
 
+      // Card එක Channel Forward Badge එක සහිතව යැවීම
       try {
         await sock.sendMessage(targetChat, {
           image: { url: thumbnail },
@@ -175,7 +166,7 @@ module.exports = {
         await sock.sendMessage(targetChat, { text: songCard, contextInfo: channelContext }, { quoted: msg }).catch(() => {});
       }
 
-      // Step 6: Dispatch Audio as a Direct Buffer
+      // Audio එක WhatsApp Player එක සඳහා යැවීම (Badge නැත)
       await sock.sendMessage(targetChat, {
         audio: audioBuffer,
         mimetype: 'audio/mpeg',
@@ -183,11 +174,11 @@ module.exports = {
         ptt: false
       }, { quoted: msg });
 
-      // Step 7: Success Reaction
+      // සාර්ථක Reaction එක
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error('Song command execution error:', err?.message || err);
+      console.error('Song download execution error:', err?.message || err);
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
