@@ -12,35 +12,29 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// ⚡ Solid Logo Buffer Finder (Cached & Safe)
 let cachedLogo = null;
 async function getBotLogo() {
     if (cachedLogo) return cachedLogo;
-
     try {
         const paths = [
-            path.join(__dirname, '../logo.jpg'),
             path.join(process.cwd(), 'logo.jpg'),
+            path.join(__dirname, '../logo.jpg'),
             path.join(process.cwd(), 'assets', 'logo.jpg')
         ];
-
         for (const p of paths) {
             if (fs.existsSync(p)) {
                 cachedLogo = fs.readFileSync(p);
                 return cachedLogo;
             }
         }
-    } catch (e) {
-        console.error("Local logo read error:", e.message);
-    }
+    } catch (e) {}
 
     try {
         const fallbackUrl = 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg';
-        const response = await axios.get(fallbackUrl, { responseType: 'arraybuffer', timeout: 5000 });
-        cachedLogo = Buffer.from(response.data, 'binary');
+        const res = await axios.get(fallbackUrl, { responseType: 'arraybuffer', timeout: 5000 });
+        cachedLogo = Buffer.from(res.data, 'binary');
         return cachedLogo;
-    } catch (netErr) {
-        console.error("Remote logo fetch failed:", netErr.message);
+    } catch (e) {
         return null;
     }
 }
@@ -110,24 +104,10 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // 1. Direct Argument (උදා: .menu 1)
+    // Direct Argument හෝ Reply කළ අගය (1, 2, 3, 4)
     let selectedCategory = args && args[0] ? args[0].trim() : null;
 
-    // 2. Quoted Reply Catching (Main Menu message එකට 1, 2, 3 ලෙස reply කිරීම)
-    if (!selectedCategory) {
-      const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
-      const quotedContext = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-      
-      const quotedCaption = quotedContext?.imageMessage?.caption || 
-                            quotedContext?.conversation || 
-                            quotedContext?.extendedTextMessage?.text || '';
-
-      if (quotedCaption.includes("COMMAND CATEGORIES") && subMenus[rawText]) {
-        selectedCategory = rawText;
-      }
-    }
-
-    // Submenu execute කිරීම
+    // Submenu එකක් නම් Image එක සමඟ යැවීම
     if (selectedCategory && subMenus[selectedCategory]) {
         const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
         sock.sendMessage(targetChat, { react: { text: emojis[selectedCategory] || "📜", key: msg.key } }).catch(() => {});
@@ -141,12 +121,11 @@ module.exports = {
                     mimetype: 'image/jpeg'
                 }, { quoted: msg });
             }
-        } catch (e) {
-            console.error("Submenu image dispatch error:", e.message);
-        }
+        } catch (e) {}
         return await sock.sendMessage(targetChat, { text: subMenus[selectedCategory] }, { quoted: msg });
     }
 
+    // Main Menu එක Render කිරීම
     let pushName = msg.pushName || "User";
     let firstName = pushName.split(/[\s_+-]+/)[0] || "User";
     if (firstName.length > 15) firstName = firstName.substring(0, 15);
@@ -163,12 +142,13 @@ module.exports = {
 ┃
 ┣━━『 📑 *COMMAND CATEGORIES* 』
 ┃
-┃ ◈ *.menu 1*  ➜ 📥 *DOWNLOAD MENU*
-┃ ◈ *.menu 2*  ➜ 🛠️ *TOOLS & UTILITY*
-┃ ◈ *.menu 3*  ➜ 👥 *GROUP & ADMIN*
-┃ ◈ *.menu 4*  ➜ ⚡ *SYSTEM & OWNER*
+┃ ◈ *1*  ➜ 📥 *DOWNLOAD MENU*
+┃ ◈ *2*  ➜ 🛠️ *TOOLS & UTILITY*
+┃ ◈ *3*  ➜ 👥 *GROUP & ADMIN*
+┃ ◈ *4*  ➜ ⚡ *SYSTEM & OWNER*
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
+> 💡 *මෙම පණිවිඩයට අංකය (1, 2, 3, 4) Reply කරන්න.*
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
 
     sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
@@ -183,14 +163,9 @@ module.exports = {
           }, { quoted: msg });
           return;
       }
-    } catch (err) {
-      console.error('Menu image dispatch error:', err.message);
-    }
+    } catch (err) {}
 
-    // Image fail වුවහොත් plain text message එකක් යැවීම
-    await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg }).catch((e) => {
-      console.error('Plain text menu dispatch failed:', e.message);
-    });
+    await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg }).catch(() => {});
   }
 };
 
