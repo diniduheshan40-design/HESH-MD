@@ -7,55 +7,47 @@ try {
   yts = null;
 }
 
-// ⚡ Custom API Gateway Integration
+// ⚡ Dynamic Stream Extractor
 async function fetchSongAudioUrl(videoUrl) {
   const cleanUrl = encodeURIComponent(videoUrl);
 
-  // 1. ඔයා දුන්න Thinuzz API එක (Primary Engine)
+  // 1. Thinuzz API (Primary)
   try {
-    const thinuzzUrl = `https://mr-thinuzz-api-build.vercel.app/api/ytmp3/download?url=${cleanUrl}&apiKey=key_525b5ceb068ac7f2`;
-    const res = await axios.get(thinuzzUrl, { timeout: 15000 });
-    const dl = res.data?.result?.download_url || 
-               res.data?.result?.url || 
-               res.data?.result?.download || 
-               res.data?.download_url || 
-               res.data?.downloadUrl || 
-               res.data?.url || 
-               res.data?.data?.download_url || 
-               res.data?.data?.url || 
-               res.data?.dl;
+    const thinUrl = `https://mr-thinuzz-api-build.vercel.app/api/ytmp3/download?url=${cleanUrl}&apiKey=key_525b5ceb068ac7f2`;
+    const res = await axios.get(thinUrl, { timeout: 12000 });
+    const data = res.data;
+    const dl = data?.result?.download_url || 
+               data?.result?.url || 
+               data?.result?.dl || 
+               data?.data?.download_url || 
+               data?.data?.url || 
+               data?.download_url || 
+               data?.url;
     if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
-  } catch (e) {
-    console.error("Thinuzz API failed, switching to backup:", e.message);
-  }
+  } catch (e) {}
 
-  // 2. High-Speed Backup Gateway
+  // 2. High Speed Fallback: Ryzendesu
+  try {
+    const res = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${cleanUrl}`, { timeout: 10000 });
+    const dl = res.data?.url || res.data?.downloadUrl;
+    if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
+  } catch (e) {}
+
+  // 3. High Speed Fallback: Siputzx
   try {
     const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${cleanUrl}`, { timeout: 10000 });
     const dl = res.data?.data?.dl || res.data?.data?.download_url || res.data?.download_url;
     if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
   } catch (e) {}
 
-  // 3. Secondary Backup Gateway
+  // 4. High Speed Fallback: Widipe
   try {
-    const res = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${cleanUrl}`, { timeout: 10000 });
-    const dl = res.data?.result?.download_url || res.data?.result?.url;
+    const res = await axios.get(`https://widipe.com/download/ytdl?url=${cleanUrl}`, { timeout: 10000 });
+    const dl = res.data?.result?.mp3 || res.data?.result?.download;
     if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
   } catch (e) {}
 
-  throw new Error('සින්දුව ලබා ගැනීමට නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.');
-}
-
-// ⚡ Buffer Downloader (Drop වීම වැළැක්වීමට)
-async function downloadToBuffer(url) {
-  const response = await axios.get(url, {
-    responseType: 'arraybuffer',
-    timeout: 45000,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
-  });
-  return Buffer.from(response.data);
+  throw new Error('බාගත කිරීමට හැකි සබැඳියක් හමු නොවීය.');
 }
 
 module.exports = {
@@ -71,7 +63,7 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // ⚡ Newsletter Forward Badge (කාඩ් එකට පමණි)
+    // ⚡ Channel Forward Badge (Image Card එකට පමණි)
     const channelContext = global.channelContext?.contextInfo || {
       forwardingScore: 999,
       isForwarded: true,
@@ -86,21 +78,14 @@ module.exports = {
 
     if (!query) {
       return await sock.sendMessage(targetChat, { 
-        text: `╭───❮ 🎵 *HESHAN-MD MUSIC* ❯───╮
-│
-│ ⚠️ *කරුණාකර සින්දුවේ නම හෝ Link එකක් ලබාදෙන්න!*
-│ 💡 *උදාහරණ:* \`.song Faded\`
-│
-╰────────────────────────────────╯
-> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
+        text: `╭───❮ 🎵 *HESHAN-MD MUSIC* ❯───╮\n│\n│ ⚠️ *කරුණාකර සින්දුවේ නම හෝ Link එකක් ලබාදෙන්න!*\n│ 💡 *උදාහරණ:* \`.song Lelena\`\n│\n╰────────────────────────────────╯\n> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
-    // Reaction
     sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
 
-    // Waiting Message (Badge නැත)
+    // පොඩි Waiting Message එක
     let statusMsg = await sock.sendMessage(targetChat, {
       text: `⏳ *පොඩ්ඩක් ඉන්න සුදු මැණික...*\nඔයා ඉල්ලපු *"${query}"* සින්දුව බාගත කරමින් පවතී... 🎵`
     }, { quoted: msg }).catch(() => null);
@@ -115,13 +100,12 @@ module.exports = {
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
-      // Search Query Logic
       if (!isYtUrl) {
-        if (!yts) throw new Error('yt-search package එක නොමැත.');
+        if (!yts) throw new Error('yt-search library missing');
 
         const searchResults = await yts(query);
         if (!searchResults?.videos?.length) {
-          throw new Error('සින්දුව සොයාගත නොහැකි විය. නම නිවැරදිදැයි බලන්න.');
+          throw new Error('සින්දුව සොයාගත නොහැකි විය.');
         }
 
         const video = searchResults.videos[0];
@@ -133,14 +117,13 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : views;
       }
 
-      // Audio Link ලබාගෙන Buffer බවට පත්කිරීම
+      // Download URL ලබා ගැනීම
       const rawAudioUrl = await fetchSongAudioUrl(videoUrl);
-      const audioBuffer = await downloadToBuffer(rawAudioUrl);
       const cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Waiting message එක delete කිරීම
+      // Waiting message එක ක්ෂණිකව Delete කිරීම
       if (statusMsg?.key) {
-        await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+        sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
       // Song Details Card
@@ -150,7 +133,7 @@ module.exports = {
 ├ 👤 *Artist   :* ${author}
 ├ ⏱️ *Duration :* ${duration}
 ├ 👁️ *Views    :* ${views}
-├ ⚡ *Quality  :* 320kbps High Quality
+├ ⚡ *Quality  :* 320kbps Audio
 │
 ╰────────────────────────────────────╯
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`.trim();
@@ -166,25 +149,24 @@ module.exports = {
         await sock.sendMessage(targetChat, { text: songCard, contextInfo: channelContext }, { quoted: msg }).catch(() => {});
       }
 
-      // Audio එක WhatsApp Player එක සඳහා යැවීම (Badge නැත)
+      // Audio එක Direct Stream URL ලෙස යැවීම (RAM Drop වීම වළක්වයි)
       await sock.sendMessage(targetChat, {
-        audio: audioBuffer,
-        mimetype: 'audio/mpeg',
+        audio: { url: rawAudioUrl },
+        mimetype: 'audio/mp4',
         fileName: `${cleanTitle}.mp3`,
         ptt: false
       }, { quoted: msg });
 
-      // සාර්ථක Reaction එක
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error('Song download execution error:', err?.message || err);
+      console.error('Song command error:', err?.message || err);
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
-      
+
       await sock.sendMessage(targetChat, { 
         text: `❌ *දෝෂයක් සිදු විය:* ${err?.message || 'සින්දුව ලබා ගැනීමට නොහැකි විය.'}\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
       }, { quoted: msg }).catch(() => {});
