@@ -1,6 +1,7 @@
 // commands/menu.js
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 
 function formatUptime(seconds) {
     seconds = Math.floor(Number(seconds) || 0);
@@ -11,9 +12,9 @@ function formatUptime(seconds) {
     return `${d > 0 ? d + 'd ' : ''}${h}h ${m}m ${s}s`;
 }
 
-// ⚡ Solid Logo Buffer Finder (Cached)
+// ⚡ Solid Logo Buffer Finder (Cached & Safe)
 let cachedLogo = null;
-function getBotLogo() {
+async function getBotLogo() {
     if (cachedLogo) return cachedLogo;
 
     try {
@@ -30,10 +31,19 @@ function getBotLogo() {
             }
         }
     } catch (e) {
-        console.error("Logo cache error:", e.message);
+        console.error("Local logo read error:", e.message);
     }
 
-    return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
+    // Local file නැතිනම් GitHub එකෙන් කෙලින්ම Buffer එකක් ලෙස download කරගැනීම
+    try {
+        const fallbackUrl = 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg';
+        const response = await axios.get(fallbackUrl, { responseType: 'arraybuffer', timeout: 5000 });
+        cachedLogo = Buffer.from(response.data, 'binary');
+        return cachedLogo;
+    } catch (netErr) {
+        console.error("Remote logo fetch failed:", netErr.message);
+        return null; // Image fail වුවහොත් bot crash නොවී plain text යවනු ඇත
+    }
 }
 
 const subMenus = {
@@ -97,23 +107,29 @@ module.exports = {
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
       ? chatJid 
-      : msg.key.remoteJid;
+      : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
 
-    // Direct argument support: e.g. ".menu 1" or ".menu 2"
+    if (!targetChat) return;
+
+    // Direct category: e.g. ".menu 1"
     const selectedCategory = args && args[0] ? args[0].trim() : null;
     if (selectedCategory && subMenus[selectedCategory]) {
         const emojis = { "1": "📥", "2": "🛠️", "3": "👥", "4": "⚡" };
         sock.sendMessage(targetChat, { react: { text: emojis[selectedCategory] || "📜", key: msg.key } }).catch(() => {});
         
         try {
-            return await sock.sendMessage(targetChat, {
-                image: getBotLogo(),
-                caption: subMenus[selectedCategory],
-                mimetype: 'image/jpeg'
-            }, { quoted: msg });
+            const logo = await getBotLogo();
+            if (logo) {
+                return await sock.sendMessage(targetChat, {
+                    image: logo,
+                    caption: subMenus[selectedCategory],
+                    mimetype: 'image/jpeg'
+                }, { quoted: msg });
+            }
         } catch (e) {
-            return await sock.sendMessage(targetChat, { text: subMenus[selectedCategory] }, { quoted: msg });
+            console.error("Submenu image dispatch error:", e.message);
         }
+        return await sock.sendMessage(targetChat, { text: subMenus[selectedCategory] }, { quoted: msg });
     }
 
     let pushName = msg.pushName || "User";
@@ -143,16 +159,23 @@ module.exports = {
     sock.sendMessage(targetChat, { react: { text: "📜", key: msg.key } }).catch(() => {});
 
     try {
-      const logo = getBotLogo();
-      await sock.sendMessage(targetChat, {
-          image: logo,
-          caption: mainText,
-          mimetype: 'image/jpeg'
-      }, { quoted: msg });
+      const logo = await getBotLogo();
+      if (logo) {
+          await sock.sendMessage(targetChat, {
+              image: logo,
+              caption: mainText,
+              mimetype: 'image/jpeg'
+          }, { quoted: msg });
+          return;
+      }
     } catch (err) {
-      console.error('Menu Execution Error:', err.message);
-      await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg }).catch(() => {});
+      console.error('Menu image dispatch error:', err.message);
     }
+
+    // Image failure එකකදී bot crash නොවී fallback එකක් ලෙස plain text යැවීම
+    await sock.sendMessage(targetChat, { text: mainText }, { quoted: msg }).catch((e) => {
+      console.error('Plain text menu dispatch failed:', e.message);
+    });
   }
 };
 
