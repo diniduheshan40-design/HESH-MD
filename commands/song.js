@@ -7,14 +7,14 @@ try {
   yts = null;
 }
 
-// ⚡ Multi-Stream Robust YouTube MP3 Extractor
+// ⚡ 2026 Multi-Stream Fast YouTube MP3 Extractors
 async function fetchSongAudio(videoUrl) {
   const cleanUrl = encodeURIComponent(videoUrl);
 
-  // 1. Chamindu 320kbps API Gateway (Fast Timeout)
+  // 1. Chamindu High-Speed API Gateway
   try {
     const chamUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${cleanUrl}&quality=320kbps&api_key=chama_api_b764539713b0514de0dbb60f401cd69e`;
-    const res = await axios.get(chamUrl, { timeout: 6000 });
+    const res = await axios.get(chamUrl, { timeout: 8000 });
     const dl = res.data?.download_url || 
                res.data?.data?.download_url || 
                res.data?.data?.url || 
@@ -24,35 +24,42 @@ async function fetchSongAudio(videoUrl) {
     if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
   } catch (e) {}
 
-  // 2. High-Speed Mirror: Vepass Engine
+  // 2. David Cyril YouTube API
   try {
-    const res = await axios.get(`https://api.vepass.top/api/ytmp3?url=${cleanUrl}`, { timeout: 6000 });
+    const res = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${cleanUrl}`, { timeout: 8000 });
+    const dl = res.data?.result?.download_url || res.data?.result?.url;
+    if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
+  } catch (e) {}
+
+  // 3. Siputzx Fast Endpoint
+  try {
+    const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${cleanUrl}`, { timeout: 8000 });
+    const dl = res.data?.data?.dl || res.data?.data?.download_url || res.data?.download_url;
+    if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
+  } catch (e) {}
+
+  // 4. Vepass Engine
+  try {
+    const res = await axios.get(`https://api.vepass.top/api/ytmp3?url=${cleanUrl}`, { timeout: 8000 });
     const dl = res.data?.result?.download_url || res.data?.download_url;
     if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
   } catch (e) {}
 
-  // 3. High-Speed Mirror: Okatsu Gateway
+  // 5. Okatsu Gateway
   try {
-    const res = await axios.get(`https://okatsu-api.vercel.app/api/ytmp3?url=${cleanUrl}`, { timeout: 6000 });
+    const res = await axios.get(`https://okatsu-api.vercel.app/api/ytmp3?url=${cleanUrl}`, { timeout: 8000 });
     const dl = res.data?.dl || res.data?.download;
     if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
   } catch (e) {}
 
-  // 4. High-Speed Mirror: Siputzx Fast Endpoint
-  try {
-    const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${cleanUrl}`, { timeout: 6000 });
-    const dl = res.data?.data?.dl || res.data?.download_url;
-    if (dl && typeof dl === 'string' && dl.startsWith('http')) return dl;
-  } catch (e) {}
-
-  throw new Error('All download gateways are temporarily busy. Please retry shortly.');
+  throw new Error('සින්දුව බාගත කිරීමට නොහැකි විය. කරුණාකර නැවත උත්සාහ කරන්න.');
 }
 
 module.exports = {
   name: 'song',
   alias: ['play', 'sing', 'mp3'],
   category: 'download',
-  desc: 'Download YouTube song in MP3 with live status and channel badge',
+  desc: 'Download YouTube songs in high quality MP3',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -61,7 +68,7 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // ⚡ Global Newsletter Forward Badge (✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨)
+    // ⚡ Newsletter Forward Badge Context (කාඩ් එකට පමණක් ලබාදීමට)
     const channelContext = global.channelContext?.contextInfo || {
       forwardingScore: 999,
       isForwarded: true,
@@ -78,8 +85,8 @@ module.exports = {
       return await sock.sendMessage(targetChat, { 
         text: `╭───❮ 🎵 *HESHAN-MD MUSIC* ❯───╮
 │
-│ ⚠️ *Please provide a song title or YouTube link!*
-│ 💡 *Example:* \`.song Faded\`
+│ ⚠️ *කරුණාකර සින්දුවේ නම හෝ Link එකක් ලබාදෙන්න!*
+│ 💡 *උදාහරණ:* \`.song Faded\`
 │
 ╰────────────────────────────────╯
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
@@ -87,13 +94,12 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Step 1: Instant reaction 🎵
-    sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
+    // Step 1: Reaction 🎧
+    sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
 
-    // Step 2: Beautiful English waiting message
+    // Step 2: පොඩි Waiting Message එකක් යැවීම (Badge එකක් නැතුව)
     let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Searching for "${query}"...*\nPlease hold on for a moment while we process your request. ⏳`,
-      contextInfo: channelContext
+      text: `⏳ *පොඩ්ඩක් ඉන්න සුදු මැණික...*\nඔයා ඉල්ලපු *"${query}"* සින්දුව හොයන ගමන්... 🎵`
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -106,13 +112,13 @@ module.exports = {
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
-      // Search if query is not a direct URL
+      // YouTube සෙවීම
       if (!isYtUrl) {
-        if (!yts) throw new Error('yt-search library missing');
+        if (!yts) throw new Error('yt-search library එක නොමැත.');
 
         const searchResults = await yts(query);
         if (!searchResults?.videos?.length) {
-          throw new Error('Song not found! Please check the title and try again.');
+          throw new Error('සින්දුව සොයාගත නොහැකි විය. කරුණාකර නම නිවැරදිදැයි බලන්න.');
         }
 
         const video = searchResults.videos[0];
@@ -124,19 +130,16 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : views;
       }
 
-      // Download audio URL
+      // Audio Download URL එක ලබාගැනීම
       const downloadUrl = await fetchSongAudio(videoUrl);
       const cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Step 3: Message edit to English "Here is your requested song!"
+      // Step 3: Waiting message එක ක්ෂණිකව Delete කර දැමීම
       if (statusMsg?.key) {
-        await sock.sendMessage(targetChat, {
-          text: `✨ *Here is your requested song! Delivering high quality audio now...* 🎧`,
-          edit: statusMsg.key
-        }).catch(() => {});
+        await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Step 4: Song Details Card
+      // Step 4: සින්දු කාඩ් එක (චැනල් Badge එක සහිතව)
       const songCard = `╭──────❮ 🎵 *HESHAN-MD MUSIC* ❯──────╮
 │
 ├ 🏷️ *Title    :* ${cleanTitle.slice(0, 36)}
@@ -148,11 +151,12 @@ module.exports = {
 ╰────────────────────────────────────╯
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`.trim();
 
+      // ලෝගෝ එක සහ විස්තර කාඩ් එක යැවීම
       try {
         await sock.sendMessage(targetChat, {
           image: { url: thumbnail },
           caption: songCard,
-          contextInfo: channelContext
+          contextInfo: channelContext // ⚡ මෙතනට පමණක් Channel Badge එක දමා ඇත
         }, { quoted: msg });
       } catch (imgErr) {
         await sock.sendMessage(targetChat, {
@@ -161,32 +165,28 @@ module.exports = {
         }, { quoted: msg }).catch(() => {});
       }
 
-      // Step 5: Audio dispatch with WhatsApp player support
+      // Step 5: Audio එක යැවීම (Badge එකක් නැත, කෙලින්ම Player එකේ play වේ)
       await sock.sendMessage(targetChat, {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
         fileName: `${cleanTitle}.mp3`,
-        ptt: false,
-        contextInfo: channelContext
+        ptt: false
       }, { quoted: msg });
 
-      // Clean up waiting message
-      if (statusMsg?.key) {
-        sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
-      }
-
-      // Step 6: Success reaction ✅
+      // Step 6: සාර්ථකයි Reaction ✅
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error('Song command execution error:', err?.message || err);
+      console.error('Song download error:', err?.message || err);
+
+      // Error එකක් ආවත් Waiting message එක Delete කර දමයි
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
+      
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       await sock.sendMessage(targetChat, { 
-        text: `❌ *Error:* ${err?.message || 'Download failed. Please try again!'}\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
-        contextInfo: channelContext
+        text: `❌ *දෝෂයක් සිදුවිය:* ${err?.message || 'සින්දුව බාගත කිරීමට නොහැකි විය.'}\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
       }, { quoted: msg }).catch(() => {});
     }
   }
