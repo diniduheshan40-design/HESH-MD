@@ -776,9 +776,17 @@ function extractQuotedCaption(quotedMsgObj) {
 function isQuotedFromSettingsMenu(quotedCaption) {
   return (
     quotedCaption.includes('SYSTEM SETTINGS') ||
-    quotedCaption.includes('HESHAN-MD') ||
     quotedCaption.includes('WORK MODE') ||
     quotedCaption.includes('FAKE ACTION')
+  );
+}
+
+// ⚡ Main Menu එකෙන් ආපු Quoted Message එකක්ද තහවුරු කිරීම
+function isQuotedFromMainMenu(quotedCaption) {
+  return (
+    quotedCaption.includes('COMMAND CATEGORIES') ||
+    quotedCaption.includes('DOWNLOAD MENU') ||
+    (quotedCaption.includes('USER PROFILE') && quotedCaption.includes('Prefix'))
   );
 }
 
@@ -884,8 +892,22 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const settingsOption = isSettingsMenuOption(cleanInput);
   const quotedCaption = extractQuotedCaption(quotedMsgObj);
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
+  const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
 
-  if (settingsOption && !isGroup && isAuthorized && (fromSettingsMenu || quotedMsgObj)) {
+  // 🎯 1. MAIN MENU QUOTED REPLY HANDLER (1, 2, 3, 4 ගැහුවම කෙලින්ම Submenu එක Open වීම)
+  if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
+    const menuCmd = findCommand('menu', 'help', 'list');
+    if (menuCmd) {
+      const cmdFunc = getCommandExecutor(menuCmd);
+      if (cmdFunc) {
+        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
+        return;
+      }
+    }
+  }
+
+  // 🎯 2. SETTINGS MENU REPLY HANDLER (Settings Menu එකකට පමණක් 1.1, 1.2 ආදී ලෙස Reply කරද්දී)
+  if (settingsOption && !isGroup && isAuthorized && fromSettingsMenu && !fromMainMenu) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
   }
@@ -1125,3 +1147,4 @@ async function main() {
 }
 
 main();
+
