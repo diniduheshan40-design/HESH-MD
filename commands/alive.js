@@ -141,13 +141,25 @@ module.exports = {
 └─────────────────────┘
 > 🔐 *heshan ofc • all rights reserved*`;
 
+        // ⚡ Channel Context Info (✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨ + View Channel button)
+        const channelContext = global.channelContext?.contextInfo || {
+            forwardingScore: 999,
+            isForwarded: true,
+            forwardedNewsletterMessageInfo: {
+                newsletterJid: '120363421906774107@newsletter',
+                newsletterName: '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨',
+                serverMessageId: 1
+            }
+        };
+
         try {
             const logo = await getBotLogo();
             if (logo) {
                 await sock.sendMessage(targetChat, {
                     image: logo,
                     caption: aliveMsg,
-                    mimetype: 'image/jpeg'
+                    mimetype: 'image/jpeg',
+                    contextInfo: channelContext
                 }, { quoted: msg });
                 return;
             }
@@ -155,8 +167,11 @@ module.exports = {
             console.error("Alive Execution Error:", err.message);
         }
 
-        // Image upload fail වුවහොත් direct plain text message එකක් යැවීම
-        await sock.sendMessage(targetChat, { text: aliveMsg }, { quoted: msg }).catch((e) => {
+        // Image upload fail වුවහොත් direct plain text message එකක් context එක සහිතව යැවීම
+        await sock.sendMessage(targetChat, { 
+            text: aliveMsg,
+            contextInfo: channelContext
+        }, { quoted: msg }).catch((e) => {
             console.error("Alive Text Fallback Error:", e.message);
         });
     }
