@@ -8,7 +8,7 @@ const parseKeys = () => {
 };
 
 // Ensure MongoDB URI has a safe connection pool limit for free tiers
-const rawMongoUri = process.env.MONGODB_URI || "mongodb+srv://diniduheshan40_db_user:Heshan2007@cluster0.5gazebm.mongodb.net/HESHAN-MD?retryWrites=true&w=majority&appName=Cluster0";
+const rawMongoUri = process.env.MONGODB_URI || "mongodb+srv://kethmi12345_db_user:nipun1234@cluster0.3fhoect.mongodb.net/heshan_bot?retryWrites=true&w=majority";
 const MONGODB_URI = rawMongoUri.includes('maxPoolSize') 
   ? rawMongoUri 
   : `${rawMongoUri}&maxPoolSize=10`;
@@ -29,3 +29,4 @@ module.exports = {
   OWNER_NUMBER: (process.env.OWNER_NUMBER || "94719845166").replace(/[^0-9]/g, ''),
   PORT: process.env.PORT || 3000
 };
+
