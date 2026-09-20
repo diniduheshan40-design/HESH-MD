@@ -1,14 +1,17 @@
 // commands/settings.js
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 const mongoose = require('mongoose');
 
 // In-memory cache to prevent database hammering & freeze
 const memSettingsCache = new Map();
 
+// ⚡ Safe Logo Fetcher with Buffer Fallback
 let cachedLogo = null;
-function getBotLogo() {
+async function getBotLogo() {
   if (cachedLogo) return cachedLogo;
+
   try {
     const paths = [
       path.join(process.cwd(), 'logo.jpg'),
@@ -22,14 +25,28 @@ function getBotLogo() {
       }
     }
   } catch (e) {
-    console.error("Logo error:", e.message);
+    console.error("Local logo error:", e.message);
   }
-  return { url: 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg' };
+
+  try {
+    const fallbackUrl = 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg';
+    const res = await axios.get(fallbackUrl, { responseType: 'arraybuffer', timeout: 5000 });
+    cachedLogo = Buffer.from(res.data, 'binary');
+    return cachedLogo;
+  } catch (e) {
+    console.error("Remote logo fetch failed:", e.message);
+    return null;
+  }
 }
 
-// Model lookup helper
+// Safe Mongo Model Lookup Helper (Never crashes)
 function getModel() {
-  return mongoose.models.BotSettings || mongoose.model('BotSettings');
+  try {
+    if (mongoose.connection.readyState !== 1) return null; // DB connected නැතිනම් null
+    return mongoose.models.BotSettings || mongoose.model('BotSettings');
+  } catch (e) {
+    return null;
+  }
 }
 
 module.exports = {
@@ -39,13 +56,21 @@ module.exports = {
   desc: 'Manage individual bot settings',
 
   async execute(sock, msg, args, chatJid, safeReply, options = {}) {
-    const targetChat = chatJid || msg.key.remoteJid;
-    const isOwner = options.isOwner || msg.key.fromMe;
+    const targetChat = chatJid || (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
+    if (!targetChat) return;
+
+    // Identify target bot number safely
+    const rawBotId = sock.user?.id || sock.user?.jid || '';
+    const botNumber = rawBotId.split(':')[0].split('@')[0].replace(/\D/g, '') || 'default';
+
+    // Flexible Owner Check (msg.key.fromMe හෝ options.isOwner)
+    const isOwner = Boolean(options.isOwner || msg.key.fromMe);
 
     const reply = async (content) => {
       try {
         if (typeof safeReply === 'function') return await safeReply(content);
-        return await sock.sendMessage(targetChat, typeof content === 'string' ? { text: content } : content, { quoted: msg });
+        const payload = typeof content === 'string' ? { text: content } : content;
+        return await sock.sendMessage(targetChat, payload, { quoted: msg });
       } catch (err) {
         console.error("Reply sending failed:", err.message);
       }
@@ -56,10 +81,6 @@ module.exports = {
     }
 
     sock.sendMessage(targetChat, { react: { text: "⚙️", key: msg.key } }).catch(() => {});
-
-    // Identify target bot number
-    const botNumber = (sock.user?.id || '').split(':')[0].split('@')[0].replace(/\D/g, '');
-    if (!botNumber) return await reply('⚠️ Bot Number හඳුනාගත නොහැකි විය.');
 
     const defaultValues = {
       workMode: 'public',
@@ -72,23 +93,23 @@ module.exports = {
 
     let settings = { ...defaultValues };
 
-    // 1. Fetch current settings from Cache or Mongo Model
+    // 1. Fetch current settings from Memory Cache or Mongo
     if (memSettingsCache.has(botNumber)) {
       settings = Object.assign(settings, memSettingsCache.get(botNumber));
     } else {
       try {
         const SettingsModel = getModel();
-        const doc = await SettingsModel.findById(botNumber).lean();
-        if (doc) {
-          settings = Object.assign(settings, doc);
-          memSettingsCache.set(botNumber, settings);
+        if (SettingsModel) {
+          const doc = await SettingsModel.findById(botNumber).lean();
+          if (doc) settings = Object.assign(settings, doc);
         }
       } catch (e) {
-        console.error("Settings Fetch Error:", e.message);
+        console.error("Settings DB Fetch Error:", e.message);
       }
+      memSettingsCache.set(botNumber, settings);
     }
 
-    // Input parsing (Works for `.set 1.1` as well as direct reply `1.1`)
+    // Input parsing (Supports '.set 1.1' or plain '1.1')
     let input = "";
     if (Array.isArray(args) && args.length > 0) {
       input = args.join(' ').trim().toLowerCase();
@@ -151,11 +172,13 @@ module.exports = {
 
       try {
         const SettingsModel = getModel();
-        await SettingsModel.findByIdAndUpdate(
-          botNumber,
-          { $set: settings },
-          { upsert: true, new: true }
-        );
+        if (SettingsModel) {
+          await SettingsModel.findByIdAndUpdate(
+            botNumber,
+            { $set: settings },
+            { upsert: true, new: true }
+          );
+        }
       } catch (e) {
         console.error("Settings DB Save Error:", e.message);
       }
@@ -240,14 +263,21 @@ module.exports = {
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
     try {
-      await sock.sendMessage(targetChat, {
-        image: getBotLogo(),
-        caption: menu,
-        mimetype: 'image/jpeg'
-      }, { quoted: msg });
+      const logo = await getBotLogo();
+      if (logo) {
+        await sock.sendMessage(targetChat, {
+          image: logo,
+          caption: menu,
+          mimetype: 'image/jpeg'
+        }, { quoted: msg });
+        return;
+      }
     } catch (err) {
-      await reply(menu);
+      console.error("Settings Menu Image dispatch failed:", err.message);
     }
+
+    // Image failure එකකදී fallback text message එකක් යැවීම
+    await reply(menu);
   }
 };
 
