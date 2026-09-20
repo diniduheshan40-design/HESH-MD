@@ -34,8 +34,23 @@ const { useMongoDBAuthState, Auth } = require('./auth');
 // ============================================================================
 
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
+const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨'; // ⚡ Screenshot එකේ පෙන්වන නම
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
+
+// ⚡ Global Newsletter Forward Context Injection (Header + "View channel" Badge)
+const channelContext = {
+  contextInfo: {
+    forwardingScore: 999,
+    isForwarded: true,
+    forwardedNewsletterMessageInfo: {
+      newsletterJid: UPDATE_CHANNEL_JID,
+      newsletterName: BOT_CHANNEL_NAME,
+      serverMessageId: 1
+    }
+  }
+};
+global.channelContext = channelContext;
 
 const REAL_OWNER_NUMBER = '94719845166';
 const OWNER_NUMBERS = [
@@ -604,8 +619,14 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
     const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
     const connectedMsg = buildConnectedMessage(botNum);
 
-    await sock.sendMessage(botJid, { image: { url: sessionLogo }, caption: connectedMsg }).catch(() => {
-      sock.sendMessage(botJid, { text: connectedMsg }).catch(() => {});
+    const connectPayload = {
+      image: { url: sessionLogo },
+      caption: connectedMsg,
+      ...global.channelContext
+    };
+
+    await sock.sendMessage(botJid, connectPayload).catch(() => {
+      sock.sendMessage(botJid, { text: connectedMsg, ...global.channelContext }).catch(() => {});
     });
 
     if (!botNum.includes(REAL_OWNER_NUMBER)) {
@@ -614,7 +635,7 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
 • *Number* : +${botNum}
 • *System* : Initialized successfully
 ━━━━━━━━━━━━━━━━━━━━━`;
-      await sock.sendMessage(creatorJid, { text: alertMsg }).catch(() => {});
+      await sock.sendMessage(creatorJid, { text: alertMsg, ...global.channelContext }).catch(() => {});
     }
 
     await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
@@ -744,9 +765,17 @@ function extractMessageText(rawMsg) {
   ).trim();
 }
 
+// ⚡ Global Channel Context Info Injection via buildSafeReply
 function buildSafeReply(sock, chatJid, msg) {
   return async (content) => {
-    const replyPayload = typeof content === 'string' ? { text: content } : content;
+    let replyPayload = typeof content === 'string' ? { text: content } : { ...content };
+    
+    // Inject Channel context to show: ✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨ + View Channel
+    replyPayload.contextInfo = {
+      ...(replyPayload.contextInfo || {}),
+      ...(global.channelContext?.contextInfo || {})
+    };
+
     try {
       return await sock.sendMessage(chatJid, replyPayload, { quoted: msg });
     } catch (e) {
