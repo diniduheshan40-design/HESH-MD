@@ -7,48 +7,52 @@ try {
   yts = null;
 }
 
-// ⚡ Ultra-Fast Multi-Server Engine (Zero Delay & Quota Fallback)
+// ⚡ Active Chamindu 320kbps Engine with Instant Fallbacks
 async function getAudioDownloadUrl(videoUrl) {
-  // 1. Chamindu Dedicated API (320kbps High Quality)
+  // 1. Chamindu Dedicated API (New Working Key - 320kbps)
   try {
-    const chamUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`;
-    const res = await axios.get(chamUrl, { timeout: 6000 });
+    const chamUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=chama_api_b764539713b0514de0dbb60f401cd69e`;
+    const res = await axios.get(chamUrl, { timeout: 15000 });
     
-    // Quota exhausted නැතිනම් පමණක් download url එක return කිරීම
-    if (res.data?.status && !res.data?.detail?.includes('exhausted')) {
-      const dl = res.data?.download_url || res.data?.result?.download_url || res.data?.data?.url || res.data?.dl;
-      if (dl) return dl;
-    }
+    // API Response Extraction (Direct download_url, data.url, or result.download_url)
+    const dl = res.data?.download_url || 
+               res.data?.data?.download_url || 
+               res.data?.data?.url || 
+               res.data?.result?.download_url || 
+               res.data?.result?.url || 
+               res.data?.dl;
+
+    if (dl) return dl;
   } catch (e) {
-    // Quota exhausted හෝ network error ආවොත් crash නොවී කෙලින්ම fallback එකට යයි
+    console.error("Chamindu API primary failed, trying backup engines:", e.message);
   }
 
-  // 2. High-Speed Direct API 1 (Vepass Cloud)
+  // 2. High-Speed Fallback 1 (Okatsu / Vepass Engine)
   try {
-    const res = await axios.get(`https://api.vepass.top/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
+    const res = await axios.get(`https://api.vepass.top/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 10000 });
     if (res.data?.result?.download_url) return res.data.result.download_url;
   } catch (e) {}
 
-  // 3. High-Speed Direct API 2 (Siputzx Fast Server)
+  // 3. High-Speed Fallback 2 (BK9 Global Gateway)
   try {
-    const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
-    if (res.data?.status && res.data?.data?.dl) return res.data.data.dl;
-  } catch (e) {}
-
-  // 4. High-Speed Direct API 3 (BK9 Global Gateway)
-  try {
-    const res = await axios.get(`https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 8000 });
+    const res = await axios.get(`https://bk9.fun/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 10000 });
     if (res.data?.status && res.data?.BK9?.downloadUrl) return res.data.BK9.downloadUrl;
   } catch (e) {}
 
-  throw new Error('බාගත කිරීමේ සේවාදායකයන් මේ මොහොතේ කාර්යබහුලයි. කරුණාකර වෙනත් සින්දුවක නමක් ලබාදෙන්න.');
+  // 4. High-Speed Fallback 3 (Siputzx Fast Engine)
+  try {
+    const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 10000 });
+    if (res.data?.status && res.data?.data?.dl) return res.data.data.dl;
+  } catch (e) {}
+
+  throw new Error('බාගත කිරීමේ සේවාදායකයන් මේ මොහොතේ කාර්යබහුලයි. කරුණාකර සුළු වේලාවකින් නැවත උත්සාහ කරන්න.');
 }
 
 module.exports = {
   name: 'song',
   alias: ['play', 'sing', 'mp3'],
   category: 'download',
-  desc: 'Download YouTube song in MP3',
+  desc: 'Download YouTube song in MP3 320kbps',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -65,10 +69,11 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    // Reaction
     sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
 
     const statusMsg = await sock.sendMessage(targetChat, {
-      text: "⚡ *Downloading audio stream, please wait...*"
+      text: "⚡ *Downloading high quality audio, please wait...*"
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -81,6 +86,7 @@ module.exports = {
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
+      // YouTube Search (නම දුන් විට link එක සොයාගැනීම)
       if (!isYtUrl) {
         if (!yts) throw new Error('yt-search library missing');
 
@@ -98,6 +104,7 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : 'N/A';
       }
 
+      // Download URL Fetch (Chamindu New Key)
       const downloadUrl = await getAudioDownloadUrl(videoUrl);
       const cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
 
@@ -107,11 +114,13 @@ module.exports = {
 │ 👤 *Artist:* ${author}
 │ ⏱️ *Duration:* ${duration}
 │ 👁️ *Views:* ${views}
+│ 🎧 *Quality:* 320kbps
 │ 🚀 *Status:* Sending Audio...
 │
 ╰───────────────────────────────╯
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
+      // 1. Info Card එක Thumbnail සහිතව යැවීම
       try {
         await sock.sendMessage(targetChat, {
           image: { url: thumbnail },
@@ -121,11 +130,12 @@ module.exports = {
         await sock.sendMessage(targetChat, { text: songCard }, { quoted: msg }).catch(() => {});
       }
 
+      // 2. Status message එක ඉවත් කිරීම
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Audio stream dispatch (Baileys crash guard)
+      // 3. Audio එක Audio Player format එකෙන්ම යැවීම
       await sock.sendMessage(targetChat, {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
