@@ -9,8 +9,8 @@ const MASTER_OWNER_NUMBERS = [
 ];
 
 module.exports = {
-  name: 'bot',
-  alias: ['pair', 'getpair', 'connectbot'],
+  name: 'code',
+  alias: ['bot', 'pair', 'getcode', 'paircode'],
   category: 'tools',
   desc: 'Generate WhatsApp pairing code directly inside WhatsApp',
 
@@ -21,12 +21,10 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // ⚡ Raw Message Check
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
-    const isSlashSet = rawText.startsWith('/set') || rawText.startsWith('.set');
-    const isBotCmd = rawText.startsWith('.bot') || rawText.startsWith('/bot') || rawText.startsWith('.pair');
+    const isOwnerCommand = rawText.startsWith('/code') || rawText.startsWith('.code');
 
-    // ⚡ Owner Verification
+    // ⚡ Master Owner Verification
     const rawParticipant = msg.key?.participant || msg.participant || targetChat || '';
     const cleanSender = rawParticipant.replace(/[^0-9]/g, '');
 
@@ -36,8 +34,8 @@ module.exports = {
       options?.isOwner
     );
 
-    // `/set <number>` ගැහුවොත් ඒක Owner ට පමණක් ක්‍රියාත්මක වේ
-    if (isSlashSet && !isMasterOwner) {
+    // /code හෝ .code ගැහුවොත් Master Owner පමණක් විය යුතුය
+    if (isOwnerCommand && !isMasterOwner) {
       return await sock.sendMessage(targetChat, {
         text: '⛔ *Access Denied!* මෙම command එක භාවිතා කළ හැක්කේ Master Owner හට පමණි.'
       }, { quoted: msg });
@@ -47,7 +45,7 @@ module.exports = {
     const inputNumber = (Array.isArray(args) ? args.join('') : String(args || '')).replace(/[^0-9]/g, '');
 
     if (!inputNumber || inputNumber.length < 10) {
-      const exampleCmd = isMasterOwner ? '/set 9471xxxxxxx' : '.bot 9471xxxxxxx';
+      const exampleCmd = isMasterOwner ? '/code 9471xxxxxxx' : '.bot 9471xxxxxxx';
       return await sock.sendMessage(targetChat, {
         text: `╭───❮ ⚡ *HESHAN-MD PAIRING* ⚡ ❯───╮
 │
@@ -60,21 +58,17 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Reaction එකක් දැමීම
     sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
-    // Processing Message එකක් යැවීම
     let waitMsg = await sock.sendMessage(targetChat, {
       text: `🔄 *Generating Pairing Code for +${inputNumber}...*\nකරුණාකර තත්පර කිහිපයක් රැඳී සිටින්න... ⏳`
     }, { quoted: msg }).catch(() => null);
 
     try {
-      // Local port එකෙන් internal API එකට call කර Pairing code එක ගැනීම
       const port = process.env.PORT || 3000;
       const response = await fetch(`http://127.0.0.1:${port}/pair?num=${inputNumber}`, { timeout: 35000 });
       const data = await response.json();
 
-      // Waiting message එක delete කිරීම
       if (waitMsg?.key) {
         await sock.sendMessage(targetChat, { delete: waitMsg.key }).catch(() => {});
       }
@@ -82,7 +76,6 @@ module.exports = {
       if (data && data.code) {
         const pairCode = data.code;
 
-        // 1. කාඩ් එක සහ විස්තර යැවීම
         const infoCard = `╭───❮ ⚡ *HESHAN-MD PAIRING CODE* ⚡ ❯───╮
 │
 ├ 📱 *Target Number :* +${inputNumber}
@@ -104,7 +97,7 @@ module.exports = {
           contextInfo: global.channelContext?.contextInfo || {}
         }, { quoted: msg });
 
-        // 2. ක්ෂණිකව Copy කරගත හැකි වන පරිදි Code එක පමණක් වෙනම යැවීම
+        // ක්ෂණිකව Copy කරගැනීමට Code එක පමණක් වෙනම යැවීම
         await sock.sendMessage(targetChat, {
           text: `${pairCode}`
         }, { quoted: msg });
@@ -119,7 +112,7 @@ module.exports = {
       }
 
     } catch (err) {
-      console.error('Pairbot command error:', err.message);
+      console.error('Pairbot error:', err.message);
       if (waitMsg?.key) {
         await sock.sendMessage(targetChat, { delete: waitMsg.key }).catch(() => {});
       }
