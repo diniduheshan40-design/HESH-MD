@@ -7,69 +7,47 @@ try {
   yts = null;
 }
 
-// ⚡ Thinuzz API & Fallback Stream Extractor
-async function fetchSongData(videoUrl) {
-  // 1. Primary: Mr Thinuzz API
-  try {
-    const thinUrl = `https://mr-thinuzz-api-build.vercel.app/api/ytmp3/download?url=${encodeURIComponent(videoUrl)}&apiKey=key_525b5ceb068ac7f2`;
-    const res = await axios.get(thinUrl, {
-      timeout: 20000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-
-    const data = res.data;
-    const audioUrl = data?.data?.links?.audio || 
-                     data?.result?.download_url || 
-                     data?.result?.url || 
-                     data?.download_url || 
-                     data?.url;
-
-    if (audioUrl && typeof audioUrl === 'string' && audioUrl.startsWith('http')) {
-      return {
-        audioUrl,
-        title: data?.data?.title || data?.result?.title,
-        thumbnail: data?.data?.thumbnail || data?.result?.thumbnail,
-        duration: data?.data?.duration || 'N/A',
-        quality: data?.data?.quality_found || '128kbps (MP3)'
-      };
-    }
-  } catch (e) {
-    console.error("Thinuzz API failed:", e.message);
-  }
-
-  // 2. High-Speed Fallback Mirror 1: Siputzx
-  try {
-    const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 12000 });
-    const dl = res.data?.data?.dl || res.data?.data?.download_url || res.data?.download_url;
-    if (dl && typeof dl === 'string' && dl.startsWith('http')) {
-      return { audioUrl: dl };
-    }
-  } catch (e) {}
-
-  // 3. High-Speed Fallback Mirror 2: Ryzendesu
-  try {
-    const res = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 12000 });
-    const dl = res.data?.url || res.data?.downloadUrl;
-    if (dl && typeof dl === 'string' && dl.startsWith('http')) {
-      return { audioUrl: dl };
-    }
-  } catch (e) {}
-
-  throw new Error('සින්දුව ලබා ගැනීමට නොහැකි විය. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.');
+// ⚡ YouTube Video ID Extract Helper
+function extractYouTubeId(url) {
+  const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/;
+  const match = url.match(regExp);
+  return match ? match[1] : null;
 }
 
-// ⚡ Buffer Fetcher (WhatsApp Audio Dropping විසඳීමට)
-async function getAudioBuffer(url) {
-  const res = await axios.get(url, {
-    responseType: 'arraybuffer',
-    timeout: 35000,
+// ⚡ Thinuzz Paid API Direct Integration
+async function fetchSongData(videoUrl) {
+  // Always convert to full standard YouTube URL
+  const videoId = extractYouTubeId(videoUrl);
+  const cleanStandardUrl = videoId 
+    ? `https://www.youtube.com/watch?v=jvWTIvk2Wss`.replace('jvWTIvk2Wss', videoId)
+    : videoUrl;
+
+  const apiKey = 'key_525b5ceb068ac7f2';
+  const apiUrl = `https://mr-thinuzz-api-build.vercel.app/api/ytmp3/download?url=${encodeURIComponent(cleanStandardUrl)}&apiKey=${apiKey}`;
+
+  console.log(`[SONG API] Calling Thinuzz API for: ${cleanStandardUrl}`);
+
+  const res = await axios.get(apiUrl, {
+    timeout: 30000,
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
   });
-  return Buffer.from(res.data);
+
+  const body = res.data;
+  const audioUrl = body?.data?.links?.audio;
+
+  if (!audioUrl) {
+    throw new Error('API එකෙන් Audio Link එක ලබාගත නොහැකි විය.');
+  }
+
+  return {
+    audioUrl: audioUrl,
+    title: body?.data?.title || 'Unknown Song',
+    thumbnail: body?.data?.thumbnail || 'https://files.catbox.moe/a58add.jpeg',
+    duration: body?.data?.duration || 'N/A',
+    quality: body?.data?.quality_found || '128kbps (MP3)'
+  };
 }
 
 module.exports = {
@@ -100,14 +78,14 @@ module.exports = {
 
     if (!query) {
       return await sock.sendMessage(targetChat, { 
-        text: `╭───❮ 🎵 *HESHAN-MD MUSIC* ❯───╮\n│\n│ ⚠️ *කරුණාකර සින්දුවේ නම හෝ Link එකක් ලබාදෙන්න!*\n│ 💡 *උදාහරණ:* \`.song Lelena\`\n│\n╰────────────────────────────────╯\n> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
+        text: `╭───❮ 🎵 *HESHAN-MD MUSIC* ❯───╮\n│\n│ ⚠️ *කරුණාකර සින්දුවේ නම ලබාදෙන්න!*\n│ 💡 *උදාහරණ:* \`.song Lelena\`\n│\n╰────────────────────────────────╯\n> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
     sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
 
-    // Waiting Message (Badge නැත)
+    // Step 1: Waiting Message (Badge නැත)
     let statusMsg = await sock.sendMessage(targetChat, {
       text: `⏳ *පොඩ්ඩක් ඉන්න සුදු මැණික...*\nඔයා ඉල්ලපු *"${query}"* සින්දුව බාගත කරමින් පවතී... 🎵`
     }, { quoted: msg }).catch(() => null);
@@ -115,16 +93,15 @@ module.exports = {
     try {
       let videoUrl = query;
       let videoTitle = query;
-      let duration = 'N/A';
       let author = 'YouTube Music';
-      let thumbnail = 'https://files.catbox.moe/a58add.jpeg';
       let views = 'N/A';
+      let duration = 'N/A';
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
-      // Search if not URL
+      // Search Query Logic
       if (!isYtUrl) {
-        if (!yts) throw new Error('yt-search library missing');
+        if (!yts) throw new Error('yt-search package එක install කර නොමැත.');
 
         const searchResults = await yts(query);
         if (!searchResults?.videos?.length) {
@@ -136,56 +113,61 @@ module.exports = {
         videoTitle = video.title || query;
         duration = video.timestamp || duration;
         author = video.author?.name || author;
-        thumbnail = video.thumbnail || thumbnail;
         views = video.views ? Number(video.views).toLocaleString() : views;
       }
 
-      // Audio Link ලබා ගැනීම
-      const songResult = await fetchSongData(videoUrl);
-      const audioUrl = songResult.audioUrl;
-      const finalTitle = (songResult.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
-      const finalThumb = songResult.thumbnail || thumbnail;
-      const finalQuality = songResult.quality || '128kbps (MP3)';
+      // Step 2: Call Thinuzz API
+      const songData = await fetchSongData(videoUrl);
+      const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Audio එක Buffer එකක් විදියට download කිරීම
-      const audioBuffer = await getAudioBuffer(audioUrl);
+      // Step 3: Stream download audio buffer (Axios Stream to Buffer)
+      console.log(`[SONG API] Fetching audio buffer from: ${songData.audioUrl}`);
+      const audioStreamRes = await axios.get(songData.audioUrl, {
+        responseType: 'arraybuffer',
+        timeout: 45000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Referer': 'https://savetube.vip/'
+        }
+      });
+      const audioBuffer = Buffer.from(audioStreamRes.data);
 
-      // Waiting message එක delete කිරීම
+      // Step 4: Waiting message එක Delete කිරීම
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Song Details Card
+      // Step 5: Song Details Card එක යැවීම
       const songCard = `╭──────❮ 🎵 *HESHAN-MD MUSIC* ❯──────╮
 │
-├ 🏷️ *Title    :* ${finalTitle.slice(0, 36)}
+├ 🏷️ *Title    :* ${cleanTitle.slice(0, 36)}
 ├ 👤 *Artist   :* ${author}
-├ ⏱️ *Duration :* ${duration}
+├ ⏱️ *Duration :* ${songData.duration !== 'N/A' ? songData.duration : duration}
 ├ 👁️ *Views    :* ${views}
-├ ⚡ *Quality  :* ${finalQuality}
+├ ⚡ *Quality  :* ${songData.quality}
 │
 ╰────────────────────────────────────╯
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`.trim();
 
-      // Card එක Channel Forward Badge එක සහිතව යැවීම
       try {
         await sock.sendMessage(targetChat, {
-          image: { url: finalThumb },
+          image: { url: songData.thumbnail },
           caption: songCard,
-          contextInfo: channelContext
+          contextInfo: channelContext // ⚡ මෙතනට පමණක් Channel Badge එක
         }, { quoted: msg });
       } catch (e) {
         await sock.sendMessage(targetChat, { text: songCard, contextInfo: channelContext }, { quoted: msg }).catch(() => {});
       }
 
-      // Audio Buffer එක WhatsApp Player එකට යැවීම (Badge නැත)
+      // Step 6: Audio File එක WhatsApp එකට Push කිරීම (Direct Buffer)
       await sock.sendMessage(targetChat, {
         audio: audioBuffer,
-        mimetype: 'audio/mp4',
-        fileName: `${finalTitle}.mp3`,
+        mimetype: 'audio/mpeg',
+        fileName: `${cleanTitle}.mp3`,
         ptt: false
       }, { quoted: msg });
 
+      // Step 7: Success Reaction
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
