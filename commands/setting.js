@@ -62,6 +62,17 @@ module.exports = {
 
     if (!targetChat) return;
 
+    // ⚡ Channel Context Info (✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨ + View Channel button)
+    const channelContext = global.channelContext?.contextInfo || {
+      forwardingScore: 999,
+      isForwarded: true,
+      forwardedNewsletterMessageInfo: {
+        newsletterJid: '120363421906774107@newsletter',
+        newsletterName: '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨',
+        serverMessageId: 1
+      }
+    };
+
     // Direct reply එකක්ද, ඒක settings message එකකටද ආවේ කියලා තහවුරු කරගැනීම
     const quotedCaption = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage?.caption || 
                           msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || 
@@ -73,7 +84,7 @@ module.exports = {
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
 
-    // Command එක .set නොවී වෙනත් command එකකට (උදා: Main Menu) reply කරපු 1, 2 වැනි අගයක් නම් settings එකෙන් අයින් වීම
+    // Command එක .set නොවී වෙනත් command එකකට reply කරපු 1, 2 වැනි අගයක් නම් settings එකෙන් අයින් වීම
     if (!isExplicitCommand && !isSettingsReply) {
       return;
     }
@@ -93,7 +104,11 @@ module.exports = {
     const reply = async (content) => {
       try {
         if (typeof safeReply === 'function') return await safeReply(content);
-        const payload = typeof content === 'string' ? { text: content } : content;
+        const payload = typeof content === 'string' ? { text: content } : { ...content };
+        payload.contextInfo = {
+          ...(payload.contextInfo || {}),
+          ...channelContext
+        };
         return await sock.sendMessage(targetChat, payload, { quoted: msg });
       } catch (err) {
         console.error("Reply sending failed:", err.message);
@@ -287,7 +302,8 @@ module.exports = {
         await sock.sendMessage(targetChat, {
           image: logo,
           caption: menu,
-          mimetype: 'image/jpeg'
+          mimetype: 'image/jpeg',
+          contextInfo: channelContext
         }, { quoted: msg });
         return;
       }
@@ -295,7 +311,10 @@ module.exports = {
       console.error("Settings Menu Image dispatch failed:", err.message);
     }
 
-    await reply(menu);
+    await sock.sendMessage(targetChat, { 
+      text: menu,
+      contextInfo: channelContext
+    }, { quoted: msg }).catch(() => {});
   }
 };
 
