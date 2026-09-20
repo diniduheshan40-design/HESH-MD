@@ -491,7 +491,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION
+// 🔌 SOCKET CREATION (⚡ OPTIMIZED FOR INSTANT RESPONSE)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -511,8 +511,8 @@ async function createBaileysSocket(phoneNumber) {
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 30000,
-    keepAliveIntervalMs: 25000,
-    markOnlineOnConnect: false,
+    keepAliveIntervalMs: 10000, // ⚡ Socket sleep නොවී තබා ගැනීමට ping interval එක තත්පර 10 දක්වා අඩු කිරීම
+    markOnlineOnConnect: true,  // ⚡ Online state එක පවත්වාගෙන ක්ෂණිකව message භාර ගැනීම
     emitOwnEvents: false,
     shouldIgnoreJid: () => false
   });
@@ -543,7 +543,6 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
     return;
   }
 
-  // 🛡️ Code 440 (Conflict / Replaced Session) & Exponential Cooldown
   reconnectAttempts[phoneNumber] = (reconnectAttempts[phoneNumber] || 0) + 1;
   let delayTime = 6000;
 
@@ -781,7 +780,6 @@ function isQuotedFromSettingsMenu(quotedCaption) {
   );
 }
 
-// ⚡ Main Menu එකෙන් ආපු Quoted Message එකක්ද තහවුරු කිරීම
 function isQuotedFromMainMenu(quotedCaption) {
   return (
     quotedCaption.includes('COMMAND CATEGORIES') ||
@@ -894,7 +892,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
   const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
 
-  // 🎯 1. MAIN MENU QUOTED REPLY HANDLER (1, 2, 3, 4 ගැහුවම කෙලින්ම Submenu එක Open වීම)
+  // 🎯 1. MAIN MENU QUOTED REPLY HANDLER
   if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
     const menuCmd = findCommand('menu', 'help', 'list');
     if (menuCmd) {
@@ -906,7 +904,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🎯 2. SETTINGS MENU REPLY HANDLER (Settings Menu එකකට පමණක් 1.1, 1.2 ආදී ලෙස Reply කරද්දී)
+  // 🎯 2. SETTINGS MENU REPLY HANDLER
   if (settingsOption && !isGroup && isAuthorized && fromSettingsMenu && !fromMainMenu) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
@@ -925,14 +923,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode);
 }
 
+// ⚡ Message Loss වැළැක්වීම සඳහා සියලුම incoming events එකවර process කිරීම
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (!messages || !messages.length) return;
     for (const msg of messages) {
-      const jid = msg.key?.remoteJid || '';
-      if (type !== 'notify' && !jid.endsWith('@newsletter') && jid !== UPDATE_CHANNEL_JID && !msg.key?.fromMe) {
-        continue;
-      }
       processSingleMessage(sock, msg, phoneNumber).catch(() => {});
     }
   });
@@ -1039,7 +1034,8 @@ function registerPairRoute(app) {
         browser: Browsers.macOS('Safari'),
         connectTimeoutMs: 30000,
         defaultQueryTimeoutMs: 25000,
-        keepAliveIntervalMs: 25000,
+        keepAliveIntervalMs: 10000,
+        markOnlineOnConnect: true,
         emitOwnEvents: false
       });
 
@@ -1087,7 +1083,7 @@ function registerAllHttpRoutes(app) {
 }
 
 // ============================================================================
-// 🔁 KEEP-ALIVE
+// 🔁 KEEP-ALIVE (⚡ WAKE SERVER EVERY 2 MINUTES)
 // ============================================================================
 
 function startKeepAlivePing() {
@@ -1098,7 +1094,7 @@ function startKeepAlivePing() {
     try {
       await fetch(keepAliveUrl);
     } catch (e) {}
-  }, 4 * 60 * 1000);
+  }, 2 * 60 * 1000); // ⚡ මිනිත්තු 2කට වරක් self-ping යවා server hibernation වළක්වයි
 }
 
 // ============================================================================
