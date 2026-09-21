@@ -3,62 +3,85 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
-// ⚡ Fast Multi-Host Cloud Uploader (Catbox + Pomf Backup)
-async function uploadToCloud(buffer, ext = 'png') {
+// ⚡ Ultra-Reliable Multi-Host Cloud Uploader
+async function uploadToCloud(buffer, ext = 'png', mimeType = 'image/png') {
   const fileName = `hesh_media_${Date.now()}.${ext}`;
 
-  // 1. Primary Host: Catbox.moe (Permanent URL)
+  // 1. Primary: Catbox.moe (Permanent URL)
   try {
     const form = new FormData();
     form.append('reqtype', 'fileupload');
-    form.append('fileToUpload', buffer, { filename: fileName });
+    form.append('fileToUpload', buffer, { filename: fileName, contentType: mimeType });
 
     const res = await axios.post('https://catbox.moe/user/api.php', form, {
-      headers: form.getHeaders(),
-      timeout: 25000
+      headers: {
+        ...form.getHeaders(),
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+      },
+      timeout: 30000,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
     });
 
     if (res.data && typeof res.data === 'string' && res.data.startsWith('http')) {
       return res.data.trim();
     }
   } catch (e) {
-    console.error("Catbox upload error, switching to backup:", e.message);
+    console.error("Catbox error:", e.response?.data || e.message);
   }
 
-  // 2. Backup Host: Pomf Mirror (Zero Rate-Limit)
+  // 2. Secondary Host: Litterbox (Temporary / Instant fallback)
   try {
-    const formBackup = new FormData();
-    formBackup.append('files[]', buffer, { filename: fileName });
+    const formLitter = new FormData();
+    formLitter.append('reqtype', 'fileupload');
+    formLitter.append('time', '72h');
+    formLitter.append('fileToUpload', buffer, { filename: fileName, contentType: mimeType });
 
-    const backupRes = await axios.post('https://pomf2.lain.la/upload.php', formBackup, {
-      headers: formBackup.getHeaders(),
-      timeout: 25000
+    const resLitter = await axios.post('https://litterbox.catbox.moe/resources/internals/api.php', formLitter, {
+      headers: formLitter.getHeaders(),
+      timeout: 30000
     });
 
-    if (backupRes.data?.files?.[0]?.url) {
-      return backupRes.data.files[0].url;
+    if (resLitter.data && typeof resLitter.data === 'string' && resLitter.data.startsWith('http')) {
+      return resLitter.data.trim();
     }
   } catch (e) {
-    console.error("Pomf backup upload error:", e.message);
+    console.error("Litterbox backup error:", e.response?.data || e.message);
   }
 
-  throw new Error("සියලුම Cloud සේවාදායකයන් කාර්යබහුලයි. නැවත උත්සාහ කරන්න.");
+  // 3. Third Host: Quax.at / Pomf Mirror
+  try {
+    const formPomf = new FormData();
+    formPomf.append('files[]', buffer, { filename: fileName, contentType: mimeType });
+
+    const resPomf = await axios.post('https://pomf2.lain.la/upload.php', formPomf, {
+      headers: formPomf.getHeaders(),
+      timeout: 30000
+    });
+
+    if (resPomf.data?.files?.[0]?.url) {
+      return resPomf.data.files[0].url;
+    }
+  } catch (e) {
+    console.error("Pomf error:", e.message);
+  }
+
+  throw new Error("සියලුම Cloud Hosts කාර්යබහුලයි. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.");
 }
 
 module.exports = {
   name: 'tourl',
-  alias: ['url', 'img2url', 'upload'],
+  alias: ['url', 'img2url', 'upload', 'link'],
   category: 'utility',
-  desc: 'Generate permanent URL for any Image or Media',
+  desc: 'Generate permanent or direct URL for any media file',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
       ? chatJid 
-      : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
+      : (msg.key?.remoteJid || null);
 
     if (!targetChat) return;
 
-    // ⚡ Channel Context Info (✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨ + View Channel button)
     const channelContext = global.channelContext?.contextInfo || {
       forwardingScore: 999,
       isForwarded: true,
@@ -69,36 +92,56 @@ module.exports = {
       }
     };
 
-    // Message unwrapper
-    const messageContent = msg.message?.ephemeralMessage?.message || 
-                           msg.message?.viewOnceMessage?.message || 
-                           msg.message?.viewOnceMessageV2?.message || 
-                           msg.message?.documentWithCaptionMessage?.message ||
-                           msg.message;
+    // Deep unwrap for ephemeral / viewOnce v1 & v2
+    const unwrap = (m) => {
+      if (!m) return null;
+      return m.ephemeralMessage?.message || 
+             m.viewOnceMessage?.message || 
+             m.viewOnceMessageV2?.message || 
+             m.viewOnceMessageV2Extension?.message ||
+             m.documentWithCaptionMessage?.message || 
+             m;
+    };
 
+    const directMsg = unwrap(msg.message);
     const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
-    const quotedMsg = quotedContext?.quotedMessage;
-    const unwrapQuoted = quotedMsg?.ephemeralMessage?.message || 
-                         quotedMsg?.viewOnceMessage?.message || 
-                         quotedMsg?.viewOnceMessageV2?.message || 
-                         quotedMsg;
+    const quotedMsg = unwrap(quotedContext?.quotedMessage);
 
-    // Direct හෝ Quoted මාධ්‍ය තහවුරු කරගැනීම
-    const targetMedia = messageContent?.imageMessage || 
-                        unwrapQuoted?.imageMessage || 
-                        messageContent?.videoMessage || 
-                        unwrapQuoted?.videoMessage ||
-                        messageContent?.stickerMessage || 
-                        unwrapQuoted?.stickerMessage ||
-                        messageContent?.documentMessage || 
-                        unwrapQuoted?.documentMessage;
+    // Identify target message and media category
+    let mediaNode = null;
+    let mediaType = null;
+    let defaultExt = 'bin';
 
-    if (!targetMedia) {
+    const checkList = [
+      { key: 'imageMessage', type: 'image', ext: 'png' },
+      { key: 'videoMessage', type: 'video', ext: 'mp4' },
+      { key: 'audioMessage', type: 'audio', ext: 'mp3' },
+      { key: 'stickerMessage', type: 'sticker', ext: 'webp' },
+      { key: 'documentMessage', type: 'document', ext: 'bin' }
+    ];
+
+    // Priority: Quoted first, then direct media
+    for (const item of checkList) {
+      if (quotedMsg?.[item.key]) {
+        mediaNode = quotedMsg[item.key];
+        mediaType = item.type;
+        defaultExt = item.ext;
+        break;
+      }
+      if (directMsg?.[item.key]) {
+        mediaNode = directMsg[item.key];
+        mediaType = item.type;
+        defaultExt = item.ext;
+        break;
+      }
+    }
+
+    if (!mediaNode || !mediaType) {
       return await sock.sendMessage(targetChat, {
         text: `╭───❮ ⚡ *HESHAN-MD MEDIA URL* ⚡ ❯───╮
 │
-│ ⚠️ *කරුණාකර Photo එකකට හෝ Video එකකට Reply කරන්න!*
-│ 💡 *භාවිතය:* Photo එක Reply කර \`.tourl\` ටයිප් කරන්න.
+│ ⚠️ *කරුණාකර Photo / Video / Sticker හෝ Voice Note එකකට Reply කරන්න!*
+│ 💡 *භාවිතය:* Media එක Reply කර \`.tourl\` යවන්න.
 │
 ╰────────────────────────────────╯
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
@@ -106,57 +149,57 @@ module.exports = {
       }, { quoted: msg });
     }
 
+    // Reaction indicator
     sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
     const statusMsg = await sock.sendMessage(targetChat, {
-      text: "⚡ *Uploading media to cloud server, please wait...*",
+      text: "⚡ *Downloading & uploading media to cloud server...*",
       contextInfo: channelContext
     }, { quoted: msg }).catch(() => null);
 
     try {
-      // Direct Baileys Stream Reader (Crash Guard)
-      let mediaType = 'image';
-      let extension = 'png';
-
-      if (messageContent?.imageMessage || unwrapQuoted?.imageMessage) {
-        mediaType = 'image';
-        extension = 'png';
-      } else if (messageContent?.videoMessage || unwrapQuoted?.videoMessage) {
-        mediaType = 'video';
-        extension = 'mp4';
-      } else if (messageContent?.stickerMessage || unwrapQuoted?.stickerMessage) {
-        mediaType = 'sticker';
-        extension = 'webp';
-      } else if (messageContent?.documentMessage || unwrapQuoted?.documentMessage) {
-        mediaType = 'document';
-        extension = (targetMedia.fileName?.split('.').pop()) || 'bin';
-      }
-
-      const stream = await downloadContentFromMessage(targetMedia, mediaType);
+      // Direct stream fetching
+      const stream = await downloadContentFromMessage(mediaNode, mediaType);
       let buffer = Buffer.from([]);
       for await (const chunk of stream) {
         buffer = Buffer.concat([buffer, chunk]);
       }
 
       if (!buffer || buffer.length === 0) {
-        throw new Error("Media stream download failed.");
+        throw new Error("Media decrypt download failed. Media එක නැවත එවන්න.");
       }
 
-      const fileSizeBytes = (buffer.length / (1024 * 1024)).toFixed(2);
-      const directUrl = await uploadToCloud(buffer, extension);
+      // Extension handling for documents or custom mime
+      let finalExt = defaultExt;
+      let mime = mediaNode.mimetype || '';
 
+      if (mediaType === 'document' && mediaNode.fileName) {
+        finalExt = mediaNode.fileName.split('.').pop() || defaultExt;
+      } else if (mime) {
+        if (mime.includes('image/jpeg')) finalExt = 'jpg';
+        else if (mime.includes('image/png')) finalExt = 'png';
+        else if (mime.includes('video/mp4')) finalExt = 'mp4';
+        else if (mime.includes('audio/ogg')) finalExt = 'opus';
+        else if (mime.includes('audio/mpeg')) finalExt = 'mp3';
+        else if (mime.includes('webp')) finalExt = 'webp';
+      }
+
+      const directUrl = await uploadToCloud(buffer, finalExt, mime);
+      const fileSizeBytes = (buffer.length / (1024 * 1024)).toFixed(2);
+
+      // Delete status message
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
       const responseText = `╭───❮ 🌐 *PERMANENT MEDIA LINK* ❯───╮
 │
-├ 📁 *Format :* ${extension.toUpperCase()}
+├ 📁 *Format :* ${finalExt.toUpperCase()}
 ├ 📊 *Size   :* ${fileSizeBytes} MB
 ├ 🔗 *Link   :* ${directUrl}
 │
 ╰────────────────────────────────╯
-> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`.trim();
+> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
 
       await sock.sendMessage(targetChat, {
         text: responseText,
@@ -166,13 +209,16 @@ module.exports = {
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error("tourl command execution error:", err.message);
+      console.error("tourl execution error:", err);
+
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
+
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+
       await sock.sendMessage(targetChat, {
-        text: `❌ *Upload Failed:* ${err.message || "Server busy"}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`,
+        text: `❌ *Upload Failed:* ${err.message || "Unknown error occurred"}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
     }
