@@ -2,7 +2,6 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const { sendInteractiveButton } = require('../lib/buttonHelper');
 
 let cachedLogo = null;
 async function getBotLogo() {
@@ -100,7 +99,7 @@ module.exports = {
     category: 'general',
     desc: 'Check bot operational status and info',
 
-    async execute(sock, msg, args, chatJid, safeReply) {
+    async execute(sock, msg, args, chatJid) {
         const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
             ? chatJid 
             : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
@@ -148,36 +147,6 @@ module.exports = {
             }
         };
 
-        const myBotNum = sock.user?.id?.split(':')[0]?.replace(/\D/g, '') || '';
-        let isButtonOn = false;
-
-        if (typeof global.getBotSettings === 'function' && myBotNum) {
-            try {
-                const settings = await global.getBotSettings(myBotNum);
-                isButtonOn = Boolean(settings?.buttonMode);
-            } catch (e) {}
-        }
-
-        // 🟢 Button Mode ON නම් interactive buttons try කරනවා
-        if (isButtonOn) {
-            try {
-                await sendInteractiveButton(sock, targetChat, {
-                    title: '⚔️ 𝐇𝐄𝐒𝐇𝐀𝐍-𝐌𝐃 𝐀𝐋𝐈𝐕𝐄 ⚔️',
-                    text: aliveMsg,
-                    footer: '⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡',
-                    buttons: [
-                        { type: 'reply', displayText: '📜 MAIN MENU', id: '.menu' },
-                        { type: 'reply', displayText: '⚡ SPEED TEST', id: '.ping' },
-                        { type: 'url', displayText: '📢 CHANNEL', url: 'https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V' }
-                    ]
-                }, msg);
-                return;
-            } catch (btnErr) {
-                console.error("Button dispatch error, falling back to standard image:", btnErr);
-            }
-        }
-
-        // 🔴 Button Mode OFF නම් හෝ Button එක යැවීමට නොහැකි වුවහොත් fallback image message
         try {
             const logo = await getBotLogo();
             if (logo) {
@@ -189,12 +158,16 @@ module.exports = {
                 }, { quoted: msg });
                 return;
             }
-        } catch (err) {}
+        } catch (err) {
+            console.error("Alive Execution Error:", err.message);
+        }
 
         await sock.sendMessage(targetChat, { 
             text: aliveMsg,
             contextInfo: channelContext
-        }, { quoted: msg }).catch(() => {});
+        }, { quoted: msg }).catch((e) => {
+            console.error("Alive Text Fallback Error:", e.message);
+        });
     }
 };
 
