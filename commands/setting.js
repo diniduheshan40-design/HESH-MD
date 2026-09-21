@@ -80,7 +80,8 @@ module.exports = {
     const isSettingsReply = quotedCaption.includes("SYSTEM SETTINGS") || 
                             quotedCaption.includes("WORK MODE") ||
                             quotedCaption.includes("FAKE ACTION") ||
-                            quotedCaption.includes("AI AUTO CHAT");
+                            quotedCaption.includes("AI AUTO CHAT") ||
+                            quotedCaption.includes("ANTI-DELETE");
 
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
@@ -128,7 +129,10 @@ module.exports = {
       statusReactEmoji: '💐',
       autoPresence: 'off',
       autoChatRead: false,
-      aiChatEnabled: false, // Default AI Chat OFF
+      aiChatEnabled: false,
+      antiDeleteEnabled: true,
+      antiDeleteType: 'all',
+      antiDeleteDest: 'me',
       securityPin: '1234'
     };
 
@@ -209,6 +213,19 @@ module.exports = {
     else if (input === '8.1' || input === 'aichat on') { settings.aiChatEnabled = true; isUpdated = true; }
     else if (input === '8.2' || input === 'aichat off') { settings.aiChatEnabled = false; isUpdated = true; }
 
+    // 🛡️ 9. ANTI-DELETE STATUS (ON / OFF)
+    else if (input === '9.1' || input === 'antidel on') { settings.antiDeleteEnabled = true; isUpdated = true; }
+    else if (input === '9.2' || input === 'antidel off') { settings.antiDeleteEnabled = false; isUpdated = true; }
+
+    // 🛡️ 10. ANTI-DELETE SCOPE (INBOX / GROUP / ALL)
+    else if (input === '10.1' || input === 'antidel inbox') { settings.antiDeleteType = 'inbox'; isUpdated = true; }
+    else if (input === '10.2' || input === 'antidel group') { settings.antiDeleteType = 'group'; isUpdated = true; }
+    else if (input === '10.3' || input === 'antidel all') { settings.antiDeleteType = 'all'; isUpdated = true; }
+
+    // 🛡️ 11. ANTI-DELETE DESTINATION (ME / FROM)
+    else if (input === '11.1' || input === 'antidel to me') { settings.antiDeleteDest = 'me'; isUpdated = true; }
+    else if (input === '11.2' || input === 'antidel to from') { settings.antiDeleteDest = 'from'; isUpdated = true; }
+
     // UPDATE EXECUTOR
     if (isUpdated) {
       memSettingsCache.set(botNumber, settings);
@@ -244,14 +261,19 @@ module.exports = {
         off: 'OFF 🔴'
       }[settings.autoPresence] || 'OFF 🔴';
 
+      const antiDelDestBadge = settings.antiDeleteDest === 'from' ? 'SAME CHAT 💬' : 'BOT OWNER INBOX 👤';
+
       return await reply(
         `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n\n` +
-        `• Work Mode      : *${modeBadge}*\n` +
-        `• Auto Status    : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-        `• Status React   : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'} (${settings.statusReactEmoji || '💐'})*\n` +
-        `• Fake Action    : *${presenceBadge}*\n` +
-        `• Auto Chat Seen : *${settings.autoChatRead ? 'ON 🟢 (Blue Tick)' : 'OFF 🔴 (No Blue Tick)'}*\n` +
-        `• AI Auto Chat   : *${settings.aiChatEnabled ? 'ON 🟢' : 'OFF 🔴'}*`
+        `• Work Mode       : *${modeBadge}*\n` +
+        `• Auto Status     : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        `• Status React    : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'} (${settings.statusReactEmoji || '💐'})*\n` +
+        `• Fake Action     : *${presenceBadge}*\n` +
+        `• Auto Chat Seen  : *${settings.autoChatRead ? 'ON 🟢 (Blue Tick)' : 'OFF 🔴 (No Blue Tick)'}*\n` +
+        `• AI Auto Chat    : *${settings.aiChatEnabled ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        `• Anti-Delete     : *${settings.antiDeleteEnabled ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        `• Anti-Del Scope  : *${(settings.antiDeleteType || 'all').toUpperCase()}*\n` +
+        `• Anti-Del Target : *${antiDelDestBadge}*`
       );
     }
 
@@ -269,6 +291,8 @@ module.exports = {
       recording: 'RECORDING 🎙️',
       off: 'OFF 🔴'
     }[settings.autoPresence] || 'OFF 🔴';
+
+    const antiDelDestBadge = settings.antiDeleteDest === 'from' ? 'SAME CHAT' : 'BOT INBOX (ME)';
 
     const menu = `╭─── ⚡ *HESHAN-MD SYSTEM SETTINGS* ⚡ ───╮
 │
@@ -309,10 +333,23 @@ module.exports = {
 │  ├ 8.1 AI Chat On 🤖
 │  └ 8.2 AI Chat Off 🛑
 │
+├─◈ *9. ANTI-DELETE STATUS* ⤿ [ ${stateBadge(settings.antiDeleteEnabled)} ]
+│  ├ 9.1 Anti-Delete On 🛡️
+│  └ 9.2 Anti-Delete Off 🛑
+│
+├─◈ *10. ANTI-DELETE SCOPE* ⤿ [ ${(settings.antiDeleteType || 'all').toUpperCase()} ]
+│  ├ 10.1 Inbox Only 📥
+│  ├ 10.2 Group Only 👥
+│  └ 10.3 All Chats 🌐
+│
+├─◈ *11. ANTI-DELETE TARGET* ⤿ [ ${antiDelDestBadge} ]
+│  ├ 11.1 Send To Me (Owner Chat) 👤
+│  └ 11.2 Send To Chat (Where Deleted) 💬
+│
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option එක Type කරන්න (උදා: *.set 8.1* හෝ *.set 8.2*)
-• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *8.1*)
+• අදාළ Option එක Type කරන්න (උදා: *.set 9.1*, *.set 10.2*, *.set 11.1*)
+• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *9.1*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
