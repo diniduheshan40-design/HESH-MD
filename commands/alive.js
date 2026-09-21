@@ -4,7 +4,6 @@ const path = require('path');
 const axios = require('axios');
 const { sendInteractiveButton } = require('../lib/buttonHelper');
 
-// ⚡ Solid & Cached Logo Finder (Memory-safe)
 let cachedLogo = null;
 async function getBotLogo() {
     if (cachedLogo) return cachedLogo;
@@ -26,14 +25,12 @@ async function getBotLogo() {
         console.error("Logo cache error:", e.message);
     }
 
-    // Direct Web Fallback (Buffer conversion)
     try {
         const fallbackUrl = 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg';
         const response = await axios.get(fallbackUrl, { responseType: 'arraybuffer', timeout: 5000 });
         cachedLogo = Buffer.from(response.data, 'binary');
         return cachedLogo;
     } catch (netErr) {
-        console.error("Alive remote logo fetch failed:", netErr.message);
         return null;
     }
 }
@@ -103,7 +100,7 @@ module.exports = {
     category: 'general',
     desc: 'Check bot operational status and info',
 
-    async execute(sock, msg, args, chatJid) {
+    async execute(sock, msg, args, chatJid, safeReply) {
         const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
             ? chatJid 
             : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
@@ -112,7 +109,6 @@ module.exports = {
 
         const senderJid = msg.key.participant || targetChat;
 
-        // Instant reaction
         sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
         const pushName = msg.pushName || "User";  
@@ -142,7 +138,6 @@ module.exports = {
 └─────────────────────┘
 > 🔐 *heshan ofc • all rights reserved*`;
 
-        // ⚡ Channel Context Info
         const channelContext = global.channelContext?.contextInfo || {
             forwardingScore: 999,
             isForwarded: true,
@@ -153,7 +148,6 @@ module.exports = {
             }
         };
 
-        // 🔘 Settings වලින් Button Mode එක ON ද කියා බැලීම
         const myBotNum = sock.user?.id?.split(':')[0]?.replace(/\D/g, '') || '';
         let isButtonOn = false;
 
@@ -164,7 +158,7 @@ module.exports = {
             } catch (e) {}
         }
 
-        // 🟢 1. BUTTON MODE ON නම් INTERACTIVE BUTTONS YAWANNA
+        // 🟢 Button Mode ON නම් interactive buttons try කරනවා
         if (isButtonOn) {
             try {
                 await sendInteractiveButton(sock, targetChat, {
@@ -173,17 +167,17 @@ module.exports = {
                     footer: '⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡',
                     buttons: [
                         { type: 'reply', displayText: '📜 MAIN MENU', id: '.menu' },
-                        { type: 'reply', displayText: '⚡ PING SPEED', id: '.ping' },
-                        { type: 'url', displayText: '📢 WHATSAPP CHANNEL', url: 'https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V' }
+                        { type: 'reply', displayText: '⚡ SPEED TEST', id: '.ping' },
+                        { type: 'url', displayText: '📢 CHANNEL', url: 'https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V' }
                     ]
                 }, msg);
                 return;
             } catch (btnErr) {
-                console.error("Alive Button Dispatch Error:", btnErr.message);
+                console.error("Button dispatch error, falling back to standard image:", btnErr);
             }
         }
 
-        // 🔴 2. BUTTON MODE OFF නම් (හෝ Button Error වුවහොත්) පරණ විදියටම IMAGE CAPTION එක යැවීම
+        // 🔴 Button Mode OFF නම් හෝ Button එක යැවීමට නොහැකි වුවහොත් fallback image message
         try {
             const logo = await getBotLogo();
             if (logo) {
@@ -195,17 +189,12 @@ module.exports = {
                 }, { quoted: msg });
                 return;
             }
-        } catch (err) {
-            console.error("Alive Execution Error:", err.message);
-        }
+        } catch (err) {}
 
-        // Image upload fail වුවහොත් direct plain text fallback
         await sock.sendMessage(targetChat, { 
             text: aliveMsg,
             contextInfo: channelContext
-        }, { quoted: msg }).catch((e) => {
-            console.error("Alive Text Fallback Error:", e.message);
-        });
+        }, { quoted: msg }).catch(() => {});
     }
 };
 
