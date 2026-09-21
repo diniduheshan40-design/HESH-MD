@@ -13,8 +13,7 @@ const {
   DisconnectReason,
   delay,
   Browsers,
-  makeCacheableSignalKeyStore,
-  fetchLatestBaileysVersion
+  makeCacheableSignalKeyStore
 } = require('@whiskeysockets/baileys');
 
 // 🟢 Global Process Crash Guards
@@ -38,7 +37,7 @@ const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
-// ⚡ Global Newsletter Forward Context Injection (Header + "View channel" Badge)
+// ⚡ Global Newsletter Forward Context Injection
 const channelContext = {
   contextInfo: {
     forwardingScore: 999,
@@ -71,7 +70,6 @@ const DEFAULT_SETTINGS = {
   autoPresence: 'off',
   autoChatRead: false,
   securityPin: '1234',
-  buttonMode: false,
   isFirstConnectDone: false
 };
 
@@ -101,7 +99,6 @@ function createSettingsModel() {
     autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
     autoChatRead: { type: Boolean, default: DEFAULT_SETTINGS.autoChatRead },
     securityPin: { type: String, default: DEFAULT_SETTINGS.securityPin },
-    buttonMode: { type: Boolean, default: DEFAULT_SETTINGS.buttonMode },
     isFirstConnectDone: { type: Boolean, default: DEFAULT_SETTINGS.isFirstConnectDone }
   });
 
@@ -466,7 +463,7 @@ function renderPortalHtml(botName) {
               navigator.clipboard.writeText(data.code).catch(()=>{});
               alert('✅ Pairing Code: ' + data.code);
             } else {
-              alert(data.error || 'Connection rate-limited. Please wait 15 seconds.');
+              alert(data.error || 'Connection busy. Please wait 10 seconds and retry.');
             }
           } catch(e) {
             alert('Server connection error. Refresh page and retry!');
@@ -760,14 +757,6 @@ function unwrapMessageContent(message) {
 }
 
 function extractMessageText(rawMsg) {
-  let interactiveId = '';
-  if (rawMsg?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson) {
-    try {
-      const parsed = JSON.parse(rawMsg.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
-      interactiveId = parsed.id || '';
-    } catch (e) {}
-  }
-
   return (
     rawMsg?.conversation ||
     rawMsg?.extendedTextMessage?.text ||
@@ -775,7 +764,6 @@ function extractMessageText(rawMsg) {
     rawMsg?.videoMessage?.caption ||
     rawMsg?.buttonsResponseMessage?.selectedButtonId ||
     rawMsg?.templateButtonReplyMessage?.selectedId ||
-    interactiveId ||
     ''
   ).trim();
 }
@@ -799,12 +787,10 @@ function buildSafeReply(sock, chatJid, msg) {
 
 function isSettingsMenuOption(cleanInput) {
   return (
-    /^([1-8](\.[1-4])?)$/.test(cleanInput) ||
+    /^([1-7](\.[1-4])?)$/.test(cleanInput) ||
     cleanInput.startsWith('6 ') ||
     cleanInput.startsWith('pin ') ||
-    cleanInput.startsWith('set ') ||
-    cleanInput.startsWith('btn ') ||
-    cleanInput.startsWith('button ')
+    cleanInput.startsWith('set ')
   );
 }
 
@@ -911,7 +897,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
-  // Auto Chat Read
   if (settings.autoChatRead && !msg.key.fromMe) {
     sock.readMessages([msg.key]).catch(() => {});
   }
@@ -1014,7 +999,7 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE
+// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE (CRASH & CONFLICT FIXED)
 // ============================================================================
 
 function stopAndRemoveSession(num) {
@@ -1034,11 +1019,7 @@ function registerResetAllRoute(app) {
         await mongoose.connection.db.collection('auths').deleteMany({});
       }
       Object.keys(activeSessions).forEach(num => {
-        try {
-          activeSessions[num].ev.removeAllListeners();
-          activeSessions[num].ws?.close();
-        } catch (e) {}
-        delete activeSessions[num];
+        stopAndRemoveSession(num);
       });
       settingsCache.flushAll();
       res.json({ success: true, message: 'All sessions successfully wiped!' });
@@ -1058,6 +1039,7 @@ function registerResetSingleNumberRoute(app) {
       stopAndRemoveSession(num);
       delete isStarting[num];
       await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+      clearSettingsCache(num);
       return res.json({ success: true, message: `Session cleared for ${num}` });
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -1075,6 +1057,7 @@ function registerPairRoute(app) {
       return res.status(400).json({ error: 'Invalid phone number format!' });
     }
 
+    // 🛡️ Fix 1: Stop prior instances cleanly
     stopAndRemoveSession(num);
     delete isStarting[num];
 
@@ -1122,7 +1105,8 @@ function registerPairRoute(app) {
         }
       });
 
-      await delay(3500);
+      // 🛡️ Fix 2: Sync delay before requesting code
+      await delay(3000);
 
       if (!pairSock.authState.creds.registered) {
         let code = await pairSock.requestPairingCode(num);
