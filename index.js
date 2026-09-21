@@ -969,13 +969,13 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const isCmdHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
   if (isCmdHandled) return;
 
-  // 🎯 5. AI AUTO CHAT HANDLER (SETTINGS හරහා පාලනය වන ස්වයංක්‍රීය පිළිතුරු - ai.js සමඟ)
+  // 🎯 5. AI AUTO CHAT HANDLER (SETTINGS හරහා පාලනය වන ස්වයංක්‍රීය පිළිතුරු - Channel context ඉවත් කර direct send වේ)
   if (settings.aiChatEnabled && !msg.key.fromMe) {
     if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
       await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
       const aiReply = await askAI(text, originalSender || chatJid);
       if (aiReply) {
-        await safeReply(aiReply);
+        await sock.sendMessage(chatJid, { text: aiReply }, { quoted: msg }).catch(() => {});
       }
     }
   }
