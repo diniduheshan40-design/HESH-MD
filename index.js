@@ -13,7 +13,8 @@ const {
   DisconnectReason,
   delay,
   Browsers,
-  makeCacheableSignalKeyStore
+  makeCacheableSignalKeyStore,
+  WAMessageStubType
 } = require('@whiskeysockets/baileys');
 
 // 🟢 Global Process Crash Guards
@@ -27,7 +28,7 @@ process.on('unhandledRejection', (err) => {
 // 🟢 Config & DB Models
 const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
-const { askAI } = require('./ai'); // ⚡ AI Engine එක සම්බන්ධ කිරීම
+const { askAI } = require('./ai');
 
 // ============================================================================
 // 🌍 GLOBAL CONSTANTS
@@ -38,7 +39,6 @@ const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨';
 const CHANNEL_REACTIONS = ['🩶', '💙', '❤️', '💛', '🧡', '💗', '🩵'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
-// ⚡ Global Newsletter Forward Context Injection
 const channelContext = {
   contextInfo: {
     forwardingScore: 999,
@@ -79,10 +79,13 @@ const DEFAULT_SETTINGS = {
 };
 
 // ============================================================================
-// 🧠 RUNTIME STATE
+// 🧠 RUNTIME STATE & PERMANENT MESSAGE STORE
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 200 });
+// පැය 4ක් යනතුරු ලැබෙන messages මතක තබා ගන්නා cache එක
+const globalMsgStore = new NodeCache({ stdTTL: 14400, checkperiod: 300, maxKeys: 20000 });
+
 const activeSessions = {};
 global.activeSessions = activeSessions;
 const isStarting = {};
@@ -220,9 +223,7 @@ function renderPortalHtml(botName) {
           --text-main: #fcfcfd;
           --text-muted: #9f8e93;
         }
-
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        
         body {
           background-color: var(--bg-core);
           background-image: 
@@ -236,233 +237,94 @@ function renderPortalHtml(botName) {
           min-height: 100vh;
           padding: 24px;
         }
-
         .portal-card {
           background: var(--panel-bg);
           backdrop-filter: blur(28px) saturate(160%);
-          -webkit-backdrop-filter: blur(28px) saturate(160%);
           border: 1px solid var(--border-glass);
           border-radius: 28px;
           padding: 44px 34px;
           width: 100%;
           max-width: 440px;
           text-align: center;
-          box-shadow: 
-            0 24px 60px rgba(0, 0, 0, 0.65),
-            0 0 45px var(--accent-glow);
+          box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 45px var(--accent-glow);
           position: relative;
           overflow: hidden;
         }
-
         .portal-card::before {
           content: '';
           position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 3px;
+          top: 0; left: 0; right: 0; height: 3px;
           background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
         }
-
         .badge-status {
-          display: inline-flex;
-          align-items: center;
-          gap: 7px;
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          color: var(--crimson-soft);
-          background: rgba(225, 29, 72, 0.12);
-          border: 1px solid rgba(225, 29, 72, 0.28);
-          padding: 5px 14px;
-          border-radius: 30px;
-          margin-bottom: 20px;
+          display: inline-flex; align-items: center; gap: 7px;
+          font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+          color: var(--crimson-soft); background: rgba(225, 29, 72, 0.12);
+          border: 1px solid rgba(225, 29, 72, 0.28); padding: 5px 14px; border-radius: 30px; margin-bottom: 20px;
         }
-
-        .badge-dot {
-          width: 6px;
-          height: 6px;
-          background: var(--accent-red);
-          border-radius: 50%;
-          box-shadow: 0 0 8px var(--accent-red);
-        }
-
+        .badge-dot { width: 6px; height: 6px; background: var(--accent-red); border-radius: 50%; box-shadow: 0 0 8px var(--accent-red); }
         .app-title {
-          font-size: 30px;
-          font-weight: 800;
-          letter-spacing: -0.5px;
+          font-size: 30px; font-weight: 800; letter-spacing: -0.5px;
           background: linear-gradient(135deg, #ffffff 40%, var(--crimson-soft) 80%, var(--accent-red) 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          margin-bottom: 6px;
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px;
         }
-
-        .app-desc {
-          font-size: 13.5px;
-          color: var(--text-muted);
-          margin-bottom: 30px;
-          font-weight: 400;
-        }
-
-        .input-wrap {
-          position: relative;
-          margin-bottom: 16px;
-        }
-
+        .app-desc { font-size: 13.5px; color: var(--text-muted); margin-bottom: 30px; font-weight: 400; }
+        .input-wrap { position: relative; margin-bottom: 16px; }
         .phone-input {
-          width: 100%;
-          padding: 16px 20px;
-          border-radius: 16px;
-          border: 1px solid var(--border-glass);
-          background: rgba(12, 3, 6, 0.7);
-          color: var(--text-main);
-          font-size: 17px;
-          font-weight: 600;
-          letter-spacing: 0.8px;
-          text-align: center;
-          outline: none;
-          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          width: 100%; padding: 16px 20px; border-radius: 16px; border: 1px solid var(--border-glass);
+          background: rgba(12, 3, 6, 0.7); color: var(--text-main); font-size: 17px; font-weight: 600;
+          letter-spacing: 0.8px; text-align: center; outline: none; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
-
-        .phone-input::placeholder {
-          color: rgba(255, 255, 255, 0.25);
-          font-weight: 400;
-          letter-spacing: 0;
-        }
-
-        .phone-input:focus {
-          border-color: var(--border-focus);
-          box-shadow: 0 0 24px rgba(225, 29, 72, 0.35);
-          background: rgba(18, 4, 9, 0.9);
-        }
-
+        .phone-input:focus { border-color: var(--border-focus); box-shadow: 0 0 24px rgba(225, 29, 72, 0.35); background: rgba(18, 4, 9, 0.9); }
         .btn-action {
-          width: 100%;
-          padding: 16px;
-          border-radius: 16px;
-          border: none;
+          width: 100%; padding: 16px; border-radius: 16px; border: none;
           background: linear-gradient(135deg, #be123c 0%, var(--accent-red) 100%);
-          color: #ffffff;
-          font-size: 14.5px;
-          font-weight: 700;
-          letter-spacing: 0.5px;
-          cursor: pointer;
-          transition: all 0.25s ease;
-          box-shadow: 0 8px 24px rgba(225, 29, 72, 0.3);
-          margin-bottom: 12px;
+          color: #ffffff; font-size: 14.5px; font-weight: 700; cursor: pointer; transition: all 0.25s ease;
+          box-shadow: 0 8px 24px rgba(225, 29, 72, 0.3); margin-bottom: 12px;
         }
-
-        .btn-action:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 12px 30px rgba(225, 29, 72, 0.45);
-        }
-
-        .btn-action:active {
-          transform: translateY(0);
-        }
-
+        .btn-action:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(225, 29, 72, 0.45); }
         .btn-reset {
-          width: 100%;
-          padding: 13px;
-          border-radius: 14px;
-          border: 1px solid rgba(225, 29, 72, 0.25);
-          background: rgba(225, 29, 72, 0.08);
-          color: var(--crimson-soft);
-          font-size: 12.5px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.25s ease;
+          width: 100%; padding: 13px; border-radius: 14px; border: 1px solid rgba(225, 29, 72, 0.25);
+          background: rgba(225, 29, 72, 0.08); color: var(--crimson-soft); font-size: 12.5px; font-weight: 600; cursor: pointer;
         }
-
-        .btn-reset:hover {
-          background: rgba(225, 29, 72, 0.18);
-          border-color: rgba(225, 29, 72, 0.45);
-        }
-
-        .code-container {
-          display: none;
-          margin-top: 24px;
-          animation: fadeIn 0.4s ease;
-        }
-
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
+        .code-container { display: none; margin-top: 24px; animation: fadeIn 0.4s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .code-box {
-          font-family: 'JetBrains Mono', monospace;
-          font-size: 32px;
-          font-weight: 800;
-          letter-spacing: 5px;
-          color: #ffe4e6;
-          background: rgba(225, 29, 72, 0.14);
-          border: 1.5px dashed rgba(251, 113, 133, 0.45);
-          padding: 18px;
-          border-radius: 16px;
-          cursor: pointer;
-          transition: all 0.25s ease;
+          font-family: 'JetBrains Mono', monospace; font-size: 32px; font-weight: 800; letter-spacing: 5px;
+          color: #ffe4e6; background: rgba(225, 29, 72, 0.14); border: 1.5px dashed rgba(251, 113, 133, 0.45);
+          padding: 18px; border-radius: 16px; cursor: pointer; transition: all 0.25s ease;
         }
-
-        .code-box:hover {
-          background: rgba(225, 29, 72, 0.22);
-          border-color: var(--crimson-soft);
-          transform: scale(1.02);
-        }
-
-        .copy-tag {
-          font-size: 11.5px;
-          color: var(--text-muted);
-          margin-top: 8px;
-          font-weight: 500;
-        }
-
-        .footer-note {
-          margin-top: 28px;
-          font-size: 11px;
-          letter-spacing: 1px;
-          color: rgba(255, 255, 255, 0.25);
-          text-transform: uppercase;
-        }
+        .code-box:hover { background: rgba(225, 29, 72, 0.22); border-color: var(--crimson-soft); transform: scale(1.02); }
+        .copy-tag { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; font-weight: 500; }
+        .footer-note { margin-top: 28px; font-size: 11px; letter-spacing: 1px; color: rgba(255, 255, 255, 0.25); text-transform: uppercase; }
       </style>
     </head>
     <body>
       <div class="portal-card">
-        <div class="badge-status">
-          <span class="badge-dot"></span> Online System
-        </div>
+        <div class="badge-status"><span class="badge-dot"></span> Online System</div>
         <h1 class="app-title">${botName}</h1>
         <p class="app-desc">Enter phone number with country code</p>
-
         <div class="input-wrap">
           <input type="text" id="phone" class="phone-input" placeholder="e.g. 9470xxxxxxx" />
         </div>
-
         <button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button>
         <button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button>
-
         <div class="code-container" id="codeWrapper">
           <div class="code-box" id="codeDisplay" onclick="copyCode()"></div>
           <div class="copy-tag">Click code to copy to clipboard</div>
         </div>
-
         <p class="footer-note">Powered by Heshan MD</p>
       </div>
-
       <script>
         async function fetchPairCode() {
           const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
           if (!phone || phone.length < 10) return alert('කරුණාකර නිවැරදි Country Code සහිත අංකය ඇතුළත් කරන්න!');
-
           const btn = document.getElementById('btn');
           const wrapper = document.getElementById('codeWrapper');
           const display = document.getElementById('codeDisplay');
-
           btn.innerText = 'GENERATING CODE...';
           btn.disabled = true;
           wrapper.style.display = 'none';
-
           try {
             const res = await fetch('/pair?num=' + phone);
             const data = await res.json();
@@ -480,7 +342,6 @@ function renderPortalHtml(botName) {
           btn.innerText = 'GET PAIRING CODE';
           btn.disabled = false;
         }
-
         async function cleanSessionSlot() {
           const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
           if (!phone) return alert('Clean කිරීමට Phone Number එක ඇතුළත් කරන්න!');
@@ -488,15 +349,12 @@ function renderPortalHtml(botName) {
             try {
               const res = await fetch('/reset-num?num=' + phone);
               const data = await res.json();
-              if (data.success) {
-                alert('✅ Session Cleared! දැන් Pair Code එක Generate කරන්න.');
-              }
+              if (data.success) alert('✅ Session Cleared!');
             } catch(e) {
               alert('Clean request failed!');
             }
           }
         }
-
         function copyCode() {
           const code = document.getElementById('codeDisplay').innerText;
           if (code) {
@@ -553,7 +411,7 @@ async function createBaileysSocket(phoneNumber) {
 
 async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData) {
   const statusCode = lastDisconnect?.error?.output?.statusCode;
-  console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
+  console.log(`⚠️ Connection closed (${phoneNumber}), Code:${statusCode}`);
 
   try {
     sock.ev.removeAllListeners();
@@ -574,7 +432,6 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
 
   if (statusCode === 440) {
     delayTime = Math.min(reconnectAttempts[phoneNumber] * 12000, 45000);
-    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting ${Math.round(delayTime / 1000)}s before retry...`);
   } else if (reconnectAttempts[phoneNumber] > 5) {
     delayTime = 25000;
   }
@@ -794,7 +651,6 @@ function buildSafeReply(sock, chatJid, msg) {
   };
 }
 
-// 🛡️ Options 1 සිට 12 දක්වා සියල්ල හඳුනා ගැනීම (10.x, 11.x reply support)
 function isSettingsMenuOption(cleanInput) {
   return (
     /^([1-9]|1[0-2])(\.[1-4])?$/.test(cleanInput) ||
@@ -864,6 +720,58 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   const args = text.slice(prefix.length).trim().split(/ +/);
   const commandName = args.shift().toLowerCase();
 
+  // 🛡️ ANTI-DELETE COMMAND DIRECT
+  if (['antidel', 'antidelete'].includes(commandName)) {
+    if (!isAuthorized) {
+      await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
+      return true;
+    }
+
+    const sub = args[0]?.toLowerCase();
+    const val = args[1]?.toLowerCase();
+
+    if (!sub) {
+      const current = await getBotSettings(myBotNum);
+      return safeReply(
+        `*🛡️ ANTI-DELETE SETTINGS*\n\n` +
+        `• Status: *${current.antiDeleteEnabled ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        `• Scope: *${(current.antiDeleteType || 'all').toUpperCase()}* (inbox | group | all)\n` +
+        `• Send To: *${(current.antiDeleteDest || 'me').toUpperCase()}* (me | from)\n\n` +
+        `*Commands:*\n` +
+        `• \`${prefix}antidel on/off\`\n` +
+        `• \`${prefix}antidel type inbox/group/all\`\n` +
+        `• \`${prefix}antidel to me/from\``
+      );
+    }
+
+    if (sub === 'on' || sub === 'off') {
+      const state = sub === 'on';
+      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteEnabled: state }, { upsert: true });
+      clearSettingsCache(myBotNum);
+      return safeReply(`✅ Anti-Delete status set to *${sub.toUpperCase()}*`);
+    }
+
+    if (sub === 'type') {
+      if (!['inbox', 'group', 'all'].includes(val)) {
+        return safeReply('❌ Invalid type! Choose: `inbox`, `group`, or `all`');
+      }
+      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteType: val }, { upsert: true });
+      clearSettingsCache(myBotNum);
+      return safeReply(`✅ Anti-Delete scope set to: *${val.toUpperCase()}*`);
+    }
+
+    if (sub === 'to' || sub === 'dest') {
+      if (!['me', 'from'].includes(val)) {
+        return safeReply('❌ Invalid destination! Choose: `me` or `from`');
+      }
+      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteDest: val }, { upsert: true });
+      clearSettingsCache(myBotNum);
+      return safeReply(`✅ Target chat set to: *${val.toUpperCase()}*`);
+    }
+
+    return safeReply('❌ Invalid argument. Type `' + prefix + 'antidel`');
+  }
+
   const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
 
   if (isSettingsCmd && !isAuthorized) {
@@ -892,6 +800,65 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
 }
 
 // ============================================================================
+// 🛡️ ANTI-DELETE DISPATCHER (TEXT & MEDIA FORWARD ENGINE)
+// ============================================================================
+
+async function triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber) {
+  try {
+    const myBotJid = sock.user?.id || '';
+    const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
+    const settings = await getBotSettings(myBotNum);
+
+    if (!settings.antiDeleteEnabled) return;
+
+    const chatJid = deletedKey.remoteJid;
+    const isGroup = chatJid.endsWith('@g.us');
+
+    if (settings.antiDeleteType === 'inbox' && isGroup) return;
+    if (settings.antiDeleteType === 'group' && !isGroup) return;
+
+    const sender = cachedMsg.key.participant || cachedMsg.key.remoteJid;
+    const senderClean = sender.split('@')[0].split(':')[0];
+
+    const targetJid = settings.antiDeleteDest === 'from'
+      ? chatJid
+      : myBotJid.split(':')[0] + '@s.whatsapp.net';
+
+    const alertText = 
+      `*🛡️ ANTI-DELETE DETECTED 🛡️*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `👤 *Sender:* @${senderClean}\n` +
+      `📍 *Chat:* ${isGroup ? 'Group Chat' : 'Inbox (Private)'}\n` +
+      `⏰ *Time:* ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo' })}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `> *Deleted Message Content:*`;
+
+    // 1. Alert info එක යැවීම
+    await sock.sendMessage(targetJid, {
+      text: alertText,
+      mentions: [sender],
+      ...global.channelContext
+    });
+
+    // 2. Original Deleted Message Content එක යැවීම
+    const rawContent = unwrapMessageContent(cachedMsg.message);
+    const textBody = rawContent?.conversation || rawContent?.extendedTextMessage?.text;
+
+    if (textBody) {
+      await sock.sendMessage(targetJid, { text: `💬 *Deleted Text:*\n\n${textBody}` });
+    } else {
+      try {
+        await sock.sendMessage(targetJid, { forward: cachedMsg, ...global.channelContext });
+      } catch (e) {
+        await sock.sendMessage(targetJid, rawContent);
+      }
+    }
+  } catch (err) {
+    console.error('Anti-delete trigger error:', err?.message);
+  }
+}
+
+// ============================================================================
 // 💬 SINGLE MESSAGE PROCESSOR
 // ============================================================================
 
@@ -899,6 +866,23 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   if (!msg || !msg.message) return;
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
+
+  // 🛡️ Always Cache Incoming Messages in Global Memory
+  if (chatJid !== 'status@broadcast' && msg.key?.id) {
+    // Protocol Message (Revoke) එකක් හරහා මැසේජ් එක ඩිලීට් කළාද බැලීම
+    const isProtocolRevoke = msg.message?.protocolMessage?.type === 0;
+    if (isProtocolRevoke && msg.message?.protocolMessage?.key?.id) {
+      const revKey = msg.message.protocolMessage.key;
+      const cachedRevMsg = globalMsgStore.get(revKey.id);
+      if (cachedRevMsg) {
+        await triggerAntiDelete(sock, revKey, cachedRevMsg, phoneNumber);
+        return;
+      }
+    }
+
+    // Normal message එක cache කරගැනීම
+    globalMsgStore.set(msg.key.id, JSON.parse(JSON.stringify(msg)));
+  }
 
   if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
     if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
@@ -993,10 +977,36 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 }
 
 function registerMessageUpsertHandler(sock, phoneNumber) {
-  sock.ev.on('messages.upsert', ({ messages, type }) => {
+  sock.ev.on('messages.upsert', ({ messages }) => {
     if (!messages || !messages.length) return;
     for (const msg of messages) {
       processSingleMessage(sock, msg, phoneNumber).catch(() => {});
+    }
+  });
+}
+
+// 🛡️ Baileys Revoke Event Listener
+function registerMessageUpdateHandler(sock, phoneNumber) {
+  sock.ev.on('messages.update', async (updates) => {
+    for (const update of updates) {
+      try {
+        const isRevoke =
+          update.update?.messageStubType === WAMessageStubType.REVOKE ||
+          update.update?.messageStubType === 68 ||
+          update.update?.message?.protocolMessage?.type === 0;
+
+        if (!isRevoke) continue;
+
+        const deletedKey = update.key;
+        if (!deletedKey || !deletedKey.id) continue;
+
+        const cachedMsg = globalMsgStore.get(deletedKey.id);
+        if (!cachedMsg || !cachedMsg.message) continue;
+
+        await triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber);
+      } catch (err) {
+        console.error('Anti-delete update handler error:', err?.message);
+      }
     }
   });
 }
@@ -1017,12 +1027,7 @@ async function initWhatsApp(phoneNumber) {
 
     registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData);
     registerMessageUpsertHandler(sock, phoneNumber);
-
-    // 🛡️ commands/antidelete.js මොඩියුලය Background Listener එකක් ලෙස Initialize කිරීම
-    const antiDelPlugin = findCommand('antidelete', 'antidel');
-    if (antiDelPlugin && typeof antiDelPlugin.init === 'function') {
-      antiDelPlugin.init(sock);
-    }
+    registerMessageUpdateHandler(sock, phoneNumber);
 
     return sock;
   } catch (err) {
@@ -1032,7 +1037,7 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE
+// 🌐 HTTP ROUTES
 // ============================================================================
 
 function stopAndRemoveSession(num) {
@@ -1128,13 +1133,7 @@ function registerPairRoute(app) {
           activeSessions[num] = pairSock;
           registerConnectionUpdateHandler(pairSock, num, clearSessionData);
           registerMessageUpsertHandler(pairSock, num);
-
-          // 🛡️ commands/antidelete.js initialize
-          const antiDelPlugin = findCommand('antidelete', 'antidel');
-          if (antiDelPlugin && typeof antiDelPlugin.init === 'function') {
-            antiDelPlugin.init(pairSock);
-          }
-
+          registerMessageUpdateHandler(pairSock, num);
           handleConnectionOpen(pairSock, num);
         } else if (connection === 'close') {
           const code = lastDisconnect?.error?.output?.statusCode;
@@ -1237,3 +1236,4 @@ async function main() {
 }
 
 main();
+
