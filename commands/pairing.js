@@ -24,7 +24,7 @@ module.exports = {
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const isOwnerCommand = rawText.startsWith('/code') || rawText.startsWith('.code');
 
-    // ⚡ Master Owner Verification
+    // ⚡ Sender identification (Group හෝ Private chat)
     const rawParticipant = msg.key?.participant || msg.participant || targetChat || '';
     const cleanSender = rawParticipant.replace(/[^0-9]/g, '');
 
@@ -41,16 +41,21 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // Number එක ලබාගැනීම
-    const inputNumber = (Array.isArray(args) ? args.join('') : String(args || '')).replace(/[^0-9]/g, '');
+    // Number එක extract කිරීම: Args වලින් නම්බර් එකක් දුන්නේ නැත්නම් sender ගේ නම්බර් එක auto ගන්නවා
+    let inputNumber = (Array.isArray(args) ? args.join('') : String(args || '')).replace(/[^0-9]/g, '');
 
     if (!inputNumber || inputNumber.length < 10) {
-      const exampleCmd = isMasterOwner ? '/code 9471xxxxxxx' : '.bot 9471xxxxxxx';
+      inputNumber = cleanSender;
+    }
+
+    // Sender එකෙනුත් valid නම්බර් එකක් හමු නොවුණහොත් පමණක් error පෙන්වයි
+    if (!inputNumber || inputNumber.length < 10) {
+      const exampleCmd = isMasterOwner ? '/code 9471xxxxxxx' : '.bot';
       return await sock.sendMessage(targetChat, {
         text: `╭───❮ ⚡ *HESHAN-MD PAIRING* ⚡ ❯───╮
 │
-│ ⚠️ *කරුණාකර නිවැරදි Country Code සහිත අංකය ලබාදෙන්න!*
-│ 💡 *උදාහරණ:* \`${exampleCmd}\`
+│ ⚠️ *ඔබගේ WhatsApp අංකය හඳුනාගත නොහැකි විය!*
+│ 💡 *භාවිතය:* \`${exampleCmd}\` හෝ \`.bot 9471xxxxxxx\`
 │
 ╰────────────────────────────────╯
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
