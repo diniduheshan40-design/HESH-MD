@@ -12,6 +12,7 @@ const {
   default: makeWASocket,
   DisconnectReason,
   delay,
+  Browsers,
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
@@ -37,7 +38,7 @@ const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
-// ⚡ Global Newsletter Forward Context Injection
+// ⚡ Global Newsletter Forward Context Injection (Header + "View channel" Badge)
 const channelContext = {
   contextInfo: {
     forwardingScore: 999,
@@ -507,21 +508,19 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION (Official Standard Signature)
+// 🔌 SOCKET CREATION
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
   const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(phoneNumber);
   const logger = pino({ level: 'silent' });
   const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60, maxKeys: 300 });
-  const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
   const sock = makeWASocket({
-    version,
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: ['Chrome (Linux)', '', ''], // Standard Client to avoid rejection
+    browser: Browsers.ubuntu('Chrome'),
     msgRetryCounterCache,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
@@ -529,7 +528,7 @@ async function createBaileysSocket(phoneNumber) {
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 10000,
+    keepAliveIntervalMs: 25000,
     markOnlineOnConnect: true,
     emitOwnEvents: false,
     shouldIgnoreJid: () => false
@@ -564,10 +563,9 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   reconnectAttempts[phoneNumber] = (reconnectAttempts[phoneNumber] || 0) + 1;
   let delayTime = 6000;
 
-  if (statusCode === DisconnectReason.restartRequired || statusCode === 515 || statusCode === 428) {
-    delayTime = 2000;
-  } else if (statusCode === 440) {
-    delayTime = Math.min(reconnectAttempts[phoneNumber] * 10000, 40000);
+  if (statusCode === 440) {
+    delayTime = Math.min(reconnectAttempts[phoneNumber] * 12000, 45000);
+    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting ${Math.round(delayTime / 1000)}s before retry...`);
   } else if (reconnectAttempts[phoneNumber] > 5) {
     delayTime = 25000;
   }
@@ -646,7 +644,7 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
 }
 
 function handleConnectionOpen(sock, phoneNumber) {
-  console.log(`✅ BOT CONNECTED & ACTIVE: ${phoneNumber}`);
+  console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
   reconnectAttempts[phoneNumber] = 0;
   autoFollowChannelAndJoinGroup(sock, phoneNumber);
   setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
@@ -899,6 +897,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
+  // Auto Chat Read
   if (settings.autoChatRead && !msg.key.fromMe) {
     sock.readMessages([msg.key]).catch(() => {});
   }
@@ -932,6 +931,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
   const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
 
+  // 🎯 1. MAIN MENU QUOTED REPLY HANDLER
   if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
     if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
       const menuCmd = findCommand('menu', 'help', 'list');
@@ -945,11 +945,13 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
+  // 🎯 2. SETTINGS MENU REPLY HANDLER
   if (settingsOption && isAuthorized && fromSettingsMenu && !fromMainMenu) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
   }
 
+  // 🎯 3. STATUS SAVE HANDLER
   const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
@@ -960,6 +962,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
+  // 🎯 4. PREFIX COMMANDS HANDLER
   await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
 }
 
@@ -997,7 +1000,7 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE (CRITICAL FIX)
+// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE
 // ============================================================================
 
 function stopAndRemoveSession(num) {
@@ -1039,6 +1042,7 @@ function registerResetSingleNumberRoute(app) {
 
     try {
       stopAndRemoveSession(num);
+      delete isStarting[num];
       await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
       return res.json({ success: true, message: `Session cleared for ${num}` });
     } catch (err) {
@@ -1047,88 +1051,85 @@ function registerResetSingleNumberRoute(app) {
   });
 }
 
-// ⚡ 100% PAIR LINKING ASSURED (HANDSHAKE DROP PREVENTED)
 function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
-    if (!num) return res.status(400).json({ error: 'Number required' });
+    if (!num) return res.status(400).json({ error: 'Phone number is required!' });
+    
     num = num.replace(/[^0-9]/g, '');
+    if (num.length < 10) {
+      return res.status(400).json({ error: 'Invalid phone number format!' });
+    }
 
     stopAndRemoveSession(num);
-    await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-    await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
-    clearSettingsCache(num);
+    delete isStarting[num];
+
+    try {
+      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+      await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
+      clearSettingsCache(num);
+    } catch (e) {
+      console.error('Session reset error:', e.message);
+    }
 
     let pairSock = null;
-    let codeSent = false;
 
     try {
       const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(num);
       const logger = pino({ level: 'silent' });
-      const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
       pairSock = makeWASocket({
-        version,
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: ['Chrome (Linux)', '', ''], // Standard web client: Fixes "Couldn't link device"
+        browser: Browsers.ubuntu('Chrome'),
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 10000,
-        markOnlineOnConnect: true,
-        emitOwnEvents: true,
-        syncFullHistory: false
+        keepAliveIntervalMs: 25000,
+        markOnlineOnConnect: false,
+        emitOwnEvents: false
       });
-
-      // Maintain in-memory socket instance during pairing handshake
-      activeSessions[num] = pairSock;
 
       pairSock.ev.on('creds.update', saveCreds);
 
       pairSock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
-
+        
         if (connection === 'open') {
-          console.log(`🎉 [LINK SUCCESS] Session paired for +${num}!`);
+          activeSessions[num] = pairSock;
           registerConnectionUpdateHandler(pairSock, num, clearSessionData);
           registerMessageUpsertHandler(pairSock, num);
           handleConnectionOpen(pairSock, num);
-        }
-
-        if (connection === 'close') {
-          const statusCode = lastDisconnect?.error?.output?.statusCode;
-          console.log(`Pairing socket event closed: ${statusCode}`);
-
-          if (statusCode === DisconnectReason.restartRequired || statusCode === 515 || statusCode === 428) {
-            console.log(`🔄 Session paired! Rebooting socket for +${num}...`);
-            setTimeout(() => initWhatsApp(num), 2000);
-          } else if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-            delete activeSessions[num];
-            await clearSessionData();
+        } else if (connection === 'close') {
+          const code = lastDisconnect?.error?.output?.statusCode;
+          if (code !== DisconnectReason.loggedOut && code !== 401) {
+            setTimeout(() => initWhatsApp(num), 6000);
           }
         }
       });
 
-      await delay(3000);
+      // WhatsApp server එක සහ credentials sync වීම සඳහා delay එක
+      await delay(3500);
 
       if (!pairSock.authState.creds.registered) {
         let code = await pairSock.requestPairingCode(num);
         code = code?.match(/.{1,4}/g)?.join('-') || code;
-        codeSent = true;
         return res.json({ code });
       } else {
-        return res.status(400).json({ error: 'Session already active. Click clean and try again.' });
+        await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+        return res.status(400).json({ error: 'Session conflict detected. Please click button again!' });
       }
-
     } catch (err) {
-      console.error(`❌ Pair code generation error for +${num}:`, err.message);
-      if (pairSock && !codeSent) {
-        stopAndRemoveSession(num);
+      console.error(`❌ Pairing Error for ${num}:`, err?.message || err);
+      if (pairSock) {
+        try {
+          pairSock.ev.removeAllListeners();
+          pairSock.ws?.close();
+        } catch (e) {}
       }
-      if (!res.headersSent) {
-        return res.status(500).json({ error: 'WhatsApp rate-limited. Please wait 15 seconds and retry.' });
-      }
+      return res.status(500).json({ 
+        error: 'Pairing code generation failed. WhatsApp server rate-limit or network delay. Wait 15 seconds and retry.' 
+      });
     }
   });
 }
@@ -1141,7 +1142,7 @@ function registerAllHttpRoutes(app) {
 }
 
 // ============================================================================
-// 🔁 KEEP-ALIVE
+// 🔁 KEEP-ALIVE (WAKE SERVER EVERY 2 MINUTES)
 // ============================================================================
 
 function startKeepAlivePing() {
