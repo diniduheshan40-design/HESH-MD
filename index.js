@@ -38,7 +38,7 @@ const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
-// ⚡ Global Newsletter Forward Context Injection (Header + "View channel" Badge)
+// ⚡ Global Newsletter Forward Context Injection
 const channelContext = {
   contextInfo: {
     forwardingScore: 999,
@@ -508,7 +508,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION
+// 🔌 SOCKET CREATION (Stable Chrome Linux Signature for Pairing)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -522,14 +522,14 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.macOS('Safari'),
+    browser: Browsers.ubuntu('Chrome'), // Ubuntu Chrome pairing handshake වලට 100% stable
     msgRetryCounterCache,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
     fireInitQueries: true,
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
-    defaultQueryTimeoutMs: 30000,
+    defaultQueryTimeoutMs: 35000,
     keepAliveIntervalMs: 10000,
     markOnlineOnConnect: true,
     emitOwnEvents: false,
@@ -562,12 +562,13 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
     return;
   }
 
+  // Pairing වෙලාවේ disconnect උනොත් auto-reconnect limit කරන්න
   reconnectAttempts[phoneNumber] = (reconnectAttempts[phoneNumber] || 0) + 1;
   let delayTime = 6000;
 
   if (statusCode === 440) {
-    delayTime = Math.min(reconnectAttempts[phoneNumber] * 12000, 45000);
-    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting ${Math.round(delayTime / 1000)}s before retry...`);
+    delayTime = Math.min(reconnectAttempts[phoneNumber] * 10000, 40000);
+    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting ${Math.round(delayTime / 1000)}s...`);
   } else if (reconnectAttempts[phoneNumber] > 5) {
     delayTime = 25000;
   }
@@ -646,7 +647,7 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
 }
 
 function handleConnectionOpen(sock, phoneNumber) {
-  console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
+  console.log(`✅ BOT CONNECTED & SYNCED: ${phoneNumber}`);
   reconnectAttempts[phoneNumber] = 0;
   autoFollowChannelAndJoinGroup(sock, phoneNumber);
   setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
@@ -703,7 +704,6 @@ async function handleStatusBroadcast(sock, msg, settings) {
   } catch (e) {}
 }
 
-// ⚡ FIX: Group Sender Extraction 100% Reliable
 function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   if (msg.key.fromMe) return myBotJid;
   if (isGroup) {
@@ -844,7 +844,6 @@ async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply
   return true;
 }
 
-// ⚡ FIX: Prefix Commands Group Execution & Settings Allowed for Owner
 async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum) {
   const prefixMatch = text.match(/^[./!#]/);
   if (!prefixMatch) return false;
@@ -855,13 +854,11 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
 
   const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
 
-  // Group හෝ Inbox ඕනෑම තැනක Owner ට Settings ක්‍රියාත්මක කිරීමට අවසර දීම
   if (isSettingsCmd && !isAuthorized) {
     await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
     return true;
   }
 
-  // Work mode එක අනුව normal user commands group වල skip වීම වැළැක්වීම
   if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
     return true;
   }
@@ -903,7 +900,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
-  // Auto Chat Read
   if (settings.autoChatRead && !msg.key.fromMe) {
     sock.readMessages([msg.key]).catch(() => {});
   }
@@ -915,7 +911,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return;
   }
 
-  // Sender & Permission calculations
   const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
   const resolvedSender = await resolveLidToRealJid(sock, originalSender);
   const isOwner = checkIsOwner(originalSender, resolvedSender);
@@ -938,7 +933,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
   const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
 
-  // 🎯 1. MAIN MENU QUOTED REPLY HANDLER
   if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
     if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
       const menuCmd = findCommand('menu', 'help', 'list');
@@ -952,13 +946,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🎯 2. SETTINGS MENU REPLY HANDLER (Group වලත් Owner ට reply මගින් setting වෙනස් කළ හැක)
   if (settingsOption && isAuthorized && fromSettingsMenu && !fromMainMenu) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
   }
 
-  // 🎯 3. STATUS SAVE HANDLER
   const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
@@ -969,11 +961,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🎯 4. PREFIX COMMANDS HANDLER
   await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
 }
 
-// ⚡ Real-time Upsert Listener
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (!messages || !messages.length) return;
@@ -1008,7 +998,7 @@ async function initWhatsApp(phoneNumber) {
 }
 
 // ============================================================================
-// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE
+// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE (CRITICAL FIX)
 // ============================================================================
 
 function stopAndRemoveSession(num) {
@@ -1058,6 +1048,7 @@ function registerResetSingleNumberRoute(app) {
   });
 }
 
+// ⚡ REBUILT PAIRING ROUTE (Guaranteed Linking Without Premature Disconnects)
 function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
@@ -1070,9 +1061,10 @@ function registerPairRoute(app) {
     clearSettingsCache(num);
 
     let pairSock = null;
+    let codeSent = false;
 
     try {
-      const { state, saveCreds } = await useMongoDBAuthState(num);
+      const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(num);
       const logger = pino({ level: 'silent' });
       const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
@@ -1081,9 +1073,9 @@ function registerPairRoute(app) {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: Browsers.macOS('Safari'),
-        connectTimeoutMs: 30000,
-        defaultQueryTimeoutMs: 25000,
+        browser: Browsers.ubuntu('Chrome'), // Ubuntu Chrome pairing sync handshake වලට crash නොවී වැඩ කරයි
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 35000,
         keepAliveIntervalMs: 10000,
         markOnlineOnConnect: true,
         emitOwnEvents: false
@@ -1091,36 +1083,59 @@ function registerPairRoute(app) {
 
       pairSock.ev.on('creds.update', saveCreds);
 
+      // Connection lifecycle listener during pairing
       pairSock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
+
         if (connection === 'open') {
+          console.log(`🎉 [PAIR ENGINE] Session linked successfully for +${num}`);
           activeSessions[num] = pairSock;
-          registerConnectionUpdateHandler(pairSock, num);
+          registerConnectionUpdateHandler(pairSock, num, clearSessionData);
           registerMessageUpsertHandler(pairSock, num);
           handleConnectionOpen(pairSock, num);
         } else if (connection === 'close') {
           const code = lastDisconnect?.error?.output?.statusCode;
-          if (code !== DisconnectReason.loggedOut && code !== 401) {
-            setTimeout(() => initWhatsApp(num), 5000);
+          console.log(`⚠️ Pairing socket closed for +${num} with code: ${code}`);
+
+          // Code එක phone එකට enter කරපු ගමන් WhatsApp එක socket එක restart කරනවා (code 515 / restart required)
+          // ඒ restart එක හසුරුවා ගැනීම:
+          if (code === DisconnectReason.restartRequired || code === 515 || code === 428) {
+            console.log(`🔄 Session paired! Restarting socket for +${num}...`);
+            setTimeout(() => initWhatsApp(num), 3000);
+          } else if (code !== DisconnectReason.loggedOut && code !== 401) {
+            // තවමත් link වෙලා නැත්නම් පමණක් delay එකකින් retry
+            const hasCreds = await Auth.exists({ _id: `${num}-creds` });
+            if (hasCreds) {
+              setTimeout(() => initWhatsApp(num), 5000);
+            }
           }
         }
       });
 
-      await delay(2000);
+      // WhatsApp server එක handshake කරගන්න තත්පර 3ක් ඉන්න
+      await delay(3000);
 
       if (!pairSock.authState.creds.registered) {
         let code = await pairSock.requestPairingCode(num);
         code = code?.match(/.{1,4}/g)?.join('-') || code;
+        codeSent = true;
         return res.json({ code });
       } else {
         await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-        return res.status(400).json({ error: 'Session cleared! Please click again.' });
+        return res.status(400).json({ error: 'Session slot conflict. Please try again in 5 seconds.' });
       }
+
     } catch (err) {
-      if (pairSock) {
-        try { pairSock.ws?.close(); } catch(e){}
+      console.error(`Pairing error for +${num}:`, err.message);
+      if (pairSock && !codeSent) {
+        try { 
+          pairSock.ev.removeAllListeners();
+          pairSock.ws?.close(); 
+        } catch(e) {}
       }
-      return res.status(500).json({ error: 'Rate-limited. Wait 15 seconds and retry.' });
+      if (!res.headersSent) {
+        return res.status(500).json({ error: 'WhatsApp pairing servers are busy. Please wait 15 seconds and retry.' });
+      }
     }
   });
 }
@@ -1133,7 +1148,7 @@ function registerAllHttpRoutes(app) {
 }
 
 // ============================================================================
-// 🔁 KEEP-ALIVE (WAKE SERVER EVERY 2 MINUTES)
+// 🔁 KEEP-ALIVE
 // ============================================================================
 
 function startKeepAlivePing() {
