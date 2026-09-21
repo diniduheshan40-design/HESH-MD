@@ -71,6 +71,7 @@ const DEFAULT_SETTINGS = {
   autoPresence: 'off',
   autoChatRead: false,
   securityPin: '1234',
+  buttonMode: false,
   isFirstConnectDone: false
 };
 
@@ -100,6 +101,7 @@ function createSettingsModel() {
     autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
     autoChatRead: { type: Boolean, default: DEFAULT_SETTINGS.autoChatRead },
     securityPin: { type: String, default: DEFAULT_SETTINGS.securityPin },
+    buttonMode: { type: Boolean, default: DEFAULT_SETTINGS.buttonMode },
     isFirstConnectDone: { type: Boolean, default: DEFAULT_SETTINGS.isFirstConnectDone }
   });
 
@@ -130,6 +132,7 @@ async function getBotSettings(botNum) {
     return { ...DEFAULT_SETTINGS };
   }
 }
+global.getBotSettings = getBotSettings;
 
 // ============================================================================
 // 📂 COMMAND LOADER
@@ -757,6 +760,14 @@ function unwrapMessageContent(message) {
 }
 
 function extractMessageText(rawMsg) {
+  let interactiveId = '';
+  if (rawMsg?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson) {
+    try {
+      const parsed = JSON.parse(rawMsg.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
+      interactiveId = parsed.id || '';
+    } catch (e) {}
+  }
+
   return (
     rawMsg?.conversation ||
     rawMsg?.extendedTextMessage?.text ||
@@ -764,6 +775,7 @@ function extractMessageText(rawMsg) {
     rawMsg?.videoMessage?.caption ||
     rawMsg?.buttonsResponseMessage?.selectedButtonId ||
     rawMsg?.templateButtonReplyMessage?.selectedId ||
+    interactiveId ||
     ''
   ).trim();
 }
@@ -787,10 +799,12 @@ function buildSafeReply(sock, chatJid, msg) {
 
 function isSettingsMenuOption(cleanInput) {
   return (
-    /^([1-7](\.[1-4])?)$/.test(cleanInput) ||
+    /^([1-8](\.[1-4])?)$/.test(cleanInput) ||
     cleanInput.startsWith('6 ') ||
     cleanInput.startsWith('pin ') ||
-    cleanInput.startsWith('set ')
+    cleanInput.startsWith('set ') ||
+    cleanInput.startsWith('btn ') ||
+    cleanInput.startsWith('button ')
   );
 }
 
@@ -1108,7 +1122,6 @@ function registerPairRoute(app) {
         }
       });
 
-      // WhatsApp server එක සහ credentials sync වීම සඳහා delay එක
       await delay(3500);
 
       if (!pairSock.authState.creds.registered) {
@@ -1202,3 +1215,4 @@ async function main() {
 }
 
 main();
+
