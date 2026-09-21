@@ -14,56 +14,99 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ V3 Multi-Stream Audio Extractor (Direct Thinuzz v3 Engine + Robust Fallbacks)
+// ⚡ Multi-Stream Direct Audio Downloader (SaveTube Engine + 4 Active Fallbacks)
 async function fetchSongAudio(videoUrl) {
   const videoId = extractYouTubeId(videoUrl);
   const cleanStandardUrl = videoId 
     ? `https://www.youtube.com/watch?v=${videoId}`
     : videoUrl;
 
-  const apiKey = 'key_525b5ceb068ac7f2';
-
-  // 1. Primary: Mr Thinuzz v3 All-in-One Engine
+  // 1. Primary: SaveTube High-Speed Engine
   try {
-    const v3Url = `https://mr-thinuzz-api-build.vercel.app/api/ytmp4v3/download-all?url=${encodeURIComponent(cleanStandardUrl)}&apiKey=${apiKey}`;
-    const res = await axios.get(v3Url, {
-      timeout: 30000,
+    const cdnRes = await axios.get('https://media.savetube.vip/api/random-cdn', { timeout: 8000 });
+    const cdn = cdnRes.data?.cdn || 'cdn51.savetube.su';
+
+    const infoRes = await axios.post(`https://${cdn}/v2/info`, {
+      url: cleanStandardUrl
+    }, {
+      timeout: 15000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Origin': 'https://yt-mp4.net',
+        'Referer': 'https://yt-mp4.net/'
       }
     });
 
-    const data = res.data?.data || res.data?.result || res.data;
-    
-    // Audio link detection from various v3 response formats
-    const audioDl = data?.links?.audio || 
-                    data?.audios?.[0]?.url || 
-                    data?.audios?.[0]?.download || 
-                    data?.audio || 
-                    data?.download_url || 
-                    data?.url;
+    const vData = infoRes.data?.data;
+    if (vData && vData.key) {
+      const dlRes = await axios.post(`https://${cdn}/download`, {
+        downloadType: 'audio',
+        quality: '128',
+        key: vData.key
+      }, {
+        timeout: 20000,
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Origin': 'https://yt-mp4.net',
+          'Referer': 'https://yt-mp4.net/'
+        }
+      });
 
-    if (audioDl && typeof audioDl === 'string' && audioDl.startsWith('http')) {
-      return {
-        audioUrl: audioDl,
-        title: data?.title || 'YouTube Song',
-        thumbnail: data?.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-        duration: data?.duration || 'N/A',
-        quality: data?.quality_found || '320kbps MP3'
-      };
+      const dlUrl = dlRes.data?.data?.downloadUrl || dlRes.data?.downloadUrl || dlRes.data?.data?.url;
+      if (dlUrl && typeof dlUrl === 'string' && dlUrl.startsWith('http')) {
+        return {
+          audioUrl: dlUrl,
+          title: vData.title || 'YouTube Song',
+          thumbnail: vData.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          duration: vData.durationLabel || 'N/A',
+          quality: '128kbps MP3'
+        };
+      }
     }
   } catch (e) {
-    console.error("Thinuzz v3 API error:", e.message);
+    console.error("SaveTube engine error:", e.message);
   }
 
-  // 2. High-Speed Direct Mirror: Siputzx
+  // 2. Fallback: BK9 Fun API
   try {
-    const res = await axios.get(`https://api.siputzx.my.id/api/d/ytmp3?url=${encodeURIComponent(cleanStandardUrl)}`, { timeout: 12000 });
-    const dl = res.data?.data?.dl || res.data?.data?.download_url || res.data?.download_url;
+    const res = await axios.get(`https://bk9.fun/download/ytmp3?url=${encodeURIComponent(cleanStandardUrl)}`, { timeout: 15000 });
+    const dl = res.data?.BK9?.downloadUrl || res.data?.BK9?.url || res.data?.result?.downloadUrl;
     if (dl && typeof dl === 'string' && dl.startsWith('http')) {
       return {
         audioUrl: dl,
-        title: res.data?.data?.title || 'YouTube Song',
+        title: res.data?.BK9?.title || 'YouTube Song',
+        thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        duration: 'N/A',
+        quality: '320kbps MP3'
+      };
+    }
+  } catch (e) {}
+
+  // 3. Fallback: Widipe YTDL API
+  try {
+    const res = await axios.get(`https://widipe.com/download/ytdl?url=${encodeURIComponent(cleanStandardUrl)}`, { timeout: 15000 });
+    const dl = res.data?.result?.mp3 || res.data?.result?.audio;
+    if (dl && typeof dl === 'string' && dl.startsWith('http')) {
+      return {
+        audioUrl: dl,
+        title: res.data?.result?.title || 'YouTube Song',
+        thumbnail: res.data?.result?.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        duration: 'N/A',
+        quality: '128kbps MP3'
+      };
+    }
+  } catch (e) {}
+
+  // 4. Fallback: Vreden API
+  try {
+    const res = await axios.get(`https://api.vreden.my.id/api/ytmp3?url=${encodeURIComponent(cleanStandardUrl)}`, { timeout: 15000 });
+    const dl = res.data?.result?.download?.url || res.data?.result?.url;
+    if (dl && typeof dl === 'string' && dl.startsWith('http')) {
+      return {
+        audioUrl: dl,
+        title: res.data?.result?.title || 'YouTube Song',
         thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
         duration: 'N/A',
         quality: '128kbps MP3'
@@ -71,32 +114,16 @@ async function fetchSongAudio(videoUrl) {
     }
   } catch (e) {}
 
-  // 3. High-Speed Direct Mirror: Ryzendesu
-  try {
-    const res = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(cleanStandardUrl)}`, { timeout: 12000 });
-    const dl = res.data?.url || res.data?.downloadUrl;
-    if (dl && typeof dl === 'string' && dl.startsWith('http')) {
-      return {
-        audioUrl: dl,
-        title: res.data?.title || 'YouTube Song',
-        thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-        duration: 'N/A',
-        quality: '128kbps MP3'
-      };
-    }
-  } catch (e) {}
-
-  throw new Error('Audio download link could not be retrieved. Please retry shortly.');
+  throw new Error('සින්දුව download කරගැනීමට නොහැකි විය. කරුණාකර තත්පර කිහිපයකින් නැවත උත්සාහ කරන්න.');
 }
 
-// ⚡ Buffer Stream Fetcher with Referer Support
+// ⚡ Safe Buffer Stream Fetcher
 async function getAudioBuffer(url) {
   const response = await axios.get(url, {
     responseType: 'arraybuffer',
-    timeout: 50000,
+    timeout: 60000,
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': 'https://savetube.vip/'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
   });
   return Buffer.from(response.data);
@@ -117,7 +144,7 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // ⚡ Channel Forward Badge Context (Card එකට පමණි)
+    // ⚡ Channel Forward Badge Context
     const channelContext = global.channelContext?.contextInfo || {
       forwardingScore: 999,
       isForwarded: true,
@@ -139,7 +166,7 @@ module.exports = {
 
     sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
 
-    // ⚡ Clean English Waiting Message (No Badge)
+    // ⚡ Clean Waiting Message
     let statusMsg = await sock.sendMessage(targetChat, {
       text: `⚡ *Searching & Downloading "${query}"...*\nPlease hold on while we fetch your requested audio. 🎵`
     }, { quoted: msg }).catch(() => null);
@@ -154,7 +181,7 @@ module.exports = {
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(query);
 
-      // Search if not direct URL
+      // Search via yt-search if not URL
       if (!isYtUrl) {
         if (!yts) throw new Error('yt-search library is missing.');
 
@@ -172,21 +199,21 @@ module.exports = {
         views = video.views ? Number(video.views).toLocaleString() : views;
       }
 
-      // Step 1: Fetch download metadata
+      // 1. Fetch metadata and stream URL
       const songResult = await fetchSongAudio(videoUrl);
       const finalTitle = (songResult.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
       const finalThumb = songResult.thumbnail || thumbnail;
       const finalDuration = songResult.duration !== 'N/A' ? songResult.duration : duration;
 
-      // Step 2: Download Audio Buffer
+      // 2. Download Audio Buffer
       const audioBuffer = await getAudioBuffer(songResult.audioUrl);
 
-      // Step 3: Delete waiting message
+      // 3. Delete searching message
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Step 4: Send Details Card (With Channel Badge)
+      // 4. Send Details Card
       const songCard = `╭──────❮ 🎵 *HESHAN-MD MUSIC* ❯──────╮
 │
 ├ 🏷️ *Title    :* ${finalTitle.slice(0, 36)}
@@ -201,13 +228,13 @@ module.exports = {
         await sock.sendMessage(targetChat, {
           image: { url: finalThumb },
           caption: songCard,
-          contextInfo: channelContext // Card එකට පමණි
+          contextInfo: channelContext
         }, { quoted: msg });
       } catch (e) {
         await sock.sendMessage(targetChat, { text: songCard, contextInfo: channelContext }, { quoted: msg }).catch(() => {});
       }
 
-      // Step 5: Send MP3 Audio to WhatsApp Player (No Badge)
+      // 5. Send Audio File to WhatsApp
       await sock.sendMessage(targetChat, {
         audio: audioBuffer,
         mimetype: 'audio/mpeg',
