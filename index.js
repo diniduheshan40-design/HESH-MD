@@ -35,7 +35,7 @@ const { askAI } = require('./ai'); // ⚡ AI Engine එක සම්බන්ධ
 
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨';
-const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
+const CHANNEL_REACTIONS = ['🩶', '💙', '❤️', '💛', '🧡', '💗', '🩵'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
 // ⚡ Global Newsletter Forward Context Injection
