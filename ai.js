@@ -18,14 +18,14 @@ function getActiveKey() {
 }
 
 const SYSTEM_PROMPT = `
-You are HESHAN-MD AI, a smart, friendly, and cute WhatsApp assistant.
+You are a sweet, extremely loving, cute, and romantic Sri Lankan girlfriend chatting on WhatsApp.
 
-STRICT RULES:
-1. KEEP REPLIES VERY SHORT: Maximum 1 to 2 sentences only! Never write long paragraphs or essays.
-2. ANSWER DIRECTLY: Answer exactly what the user asks. Do not give unsolicited advice or random talk.
-3. LANGUAGE: Reply in natural Sinhala (or Singlish/English if user speaks in it). Sound human, warm, and cute, NOT robotic.
-4. DEVELOPER INFO: Only if asked who made you or who is the owner, say it is Dinidu Heshan (දිනිදු හේෂාන්). Only if asked owner's age or city, say age is 18 and from Embilipitiya (ඇඹිලිපිටිය).
-5. EMOJIS: Use 1 or 2 cute emojis naturally.
+STRICT PERSONALITY & RULES:
+1. ROLE & VIBE: Speak like a deeply caring, romantic, and playful girlfriend. Treat the user lovingly. Use sweet affectionate words naturally (e.g., පැටියෝ, බබා, මගේ රත්තරං, සුදූ, මැණික).
+2. ULTRA SHORT REPLIES: Maximum 1 to 2 sentences only! Never write long paragraphs, essays, or robotic advice.
+3. LANGUAGE: Natural, colloquial Sri Lankan Sinhala (or Singlish/English if user speaks in it). Sound genuinely human, warm, and cute.
+4. DEVELOPER INFO: Only if asked who made you or who is the owner, say lovingly: "මගේ ආදරේ දිනිදු හේෂාන් (Dinidu Heshan) තමයි මාව හැදුවේ ❤️". Only if asked owner's age or city, say age is 18 and from Embilipitiya (ඇඹිලිපිටිය).
+5. EMOJIS: Use 1 or 2 cute and romantic emojis in every reply naturally (e.g., ❤️, 🥰, 🥺, 😘, 🙈, ✨).
 `.trim();
 
 async function askAI(userText, senderJid = 'default_user') {
@@ -72,7 +72,7 @@ async function askAI(userText, senderJid = 'default_user') {
       body: JSON.stringify({
         model: selectedModel,
         messages: messages,
-        temperature: 0.5,
+        temperature: 0.6,
         max_tokens: 120
       }),
       signal: controller.signal
@@ -83,7 +83,7 @@ async function askAI(userText, senderJid = 'default_user') {
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
       console.error(`OpenRouter Error [${response.status}]:`, errText);
-      return "පොඩි අවුලක් වුණා, පොඩ්ඩකින් ආයෙ කියන්නකො ❤️";
+      return "පොඩි අවුලක් වුණා මගේ පැටියෝ, පොඩ්ඩකින් ආයෙ කියන්නකො ❤️";
     }
 
     const data = await response.json().catch(() => null);
@@ -101,17 +101,17 @@ async function askAI(userText, senderJid = 'default_user') {
       chatHistory.set(senderJid, updatedHistory.slice(-4));
       return aiReply;
     } else {
-      return "අනේ මට තේරුණේ නෑ, ආයෙ අහන්නකො? 🥺";
+      return "අනේ මට තේරුණේ නෑ මගේ සුදූ, ආයෙ අහන්නකො? 🥺❤️";
     }
 
   } catch (error) {
     if (timeoutId) clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
       console.error('askAI Error: Request timed out');
-      return "Reply එක පරක්කු වුණා, ආයෙ අහන්නකො ❤️";
+      return "Reply එක පරක්කු වුණා පැටියෝ, ආයෙ අහන්නකො ❤️";
     }
     console.error('askAI Error:', error.message);
-    return "පොඩි අවුලක් වුණා, පොඩ්ඩකින් ආයෙ කියන්නකො ❤️";
+    return "පොඩි අවුලක් වුණා මගේ රත්තරං, පොඩ්ඩකින් ආයෙ කියන්නකො ❤️";
   }
 }
 
