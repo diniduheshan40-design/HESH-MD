@@ -798,9 +798,10 @@ function buildSafeReply(sock, chatJid, msg) {
   };
 }
 
+// 🛡️ FIX 1: Allow options up to 12.x so 9.x, 10.x, 11.x work properly
 function isSettingsMenuOption(cleanInput) {
   return (
-    /^([1-9](\.[1-4])?)$/.test(cleanInput) ||
+    /^([1-9]|1[0-2])(\.[1-4])?$/.test(cleanInput) ||
     cleanInput.startsWith('6 ') ||
     cleanInput.startsWith('pin ') ||
     cleanInput.startsWith('set ') ||
@@ -818,13 +819,16 @@ function extractQuotedCaption(quotedMsgObj) {
   );
 }
 
+// 🛡️ FIX 2: Added ANTI-DELETE matcher
 function isQuotedFromSettingsMenu(quotedCaption) {
+  const cap = quotedCaption.toUpperCase();
   return (
-    quotedCaption.includes('SYSTEM SETTINGS') ||
-    quotedCaption.includes('WORK MODE') ||
-    quotedCaption.includes('FAKE ACTION') ||
-    quotedCaption.includes('AI AUTO CHAT') ||
-    quotedCaption.includes('ANTI DELETE')
+    cap.includes('SYSTEM SETTINGS') ||
+    cap.includes('WORK MODE') ||
+    cap.includes('FAKE ACTION') ||
+    cap.includes('AI AUTO CHAT') ||
+    cap.includes('ANTI-DELETE') ||
+    cap.includes('ANTI DELETE')
   );
 }
 
@@ -880,8 +884,8 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
       return safeReply(
         `*🛡️ ANTI-DELETE SETTINGS*\n\n` +
         `• Status: *${current.antiDeleteEnabled ? 'ON' : 'OFF'}*\n` +
-        `• Type: *${current.antiDeleteType.toUpperCase()}* (inbox | group | all)\n` +
-        `• Send To: *${current.antiDeleteDest.toUpperCase()}* (me | from)\n\n` +
+        `• Type: *${(current.antiDeleteType || 'all').toUpperCase()}* (inbox | group | all)\n` +
+        `• Send To: *${(current.antiDeleteDest || 'me').toUpperCase()}* (me | from)\n\n` +
         `*Commands:*\n` +
         `• \`${prefix}antidel on/off\`\n` +
         `• \`${prefix}antidel type inbox/group/all\`\n` +
@@ -1067,7 +1071,6 @@ function registerMessageUpdateHandler(sock, phoneNumber) {
   sock.ev.on('messages.update', async (updates) => {
     for (const update of updates) {
       try {
-        // Baileys Revoke Check
         const isRevoke =
           update.update?.messageStubType === WAMessageStubType.REVOKE ||
           update.update?.messageStubType === 68 ||
@@ -1078,7 +1081,6 @@ function registerMessageUpdateHandler(sock, phoneNumber) {
         const deletedKey = update.key;
         if (!deletedKey || !deletedKey.id) continue;
 
-        // Message Cache එකෙන් ගන්නවා
         const cachedMsg = messageStoreCache.get(deletedKey.id);
         if (!cachedMsg || !cachedMsg.message) continue;
 
@@ -1086,26 +1088,21 @@ function registerMessageUpdateHandler(sock, phoneNumber) {
         const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
         const settings = await getBotSettings(myBotNum);
 
-        // Setting: Anti-delete ON ද කියා බැලීම
         if (!settings.antiDeleteEnabled) continue;
 
         const chatJid = deletedKey.remoteJid;
         const isGroup = chatJid.endsWith('@g.us');
 
-        // Setting: Scope Filtering (inbox | group | all)
         if (settings.antiDeleteType === 'inbox' && isGroup) continue;
         if (settings.antiDeleteType === 'group' && !isGroup) continue;
 
-        // Sender හඳුනාගැනීම
         const sender = cachedMsg.key.participant || cachedMsg.key.remoteJid;
         const senderClean = sender.split('@')[0].split(':')[0];
 
-        // Setting: Destination Filtering (me | from)
         let targetJid;
         if (settings.antiDeleteDest === 'from') {
-          targetJid = chatJid; // Delete කළ group/chat එකටම යැවීම
+          targetJid = chatJid;
         } else {
-          // 'me' -> Bot's private chat
           targetJid = myBotJid.split(':')[0] + '@s.whatsapp.net';
         }
 
@@ -1118,14 +1115,12 @@ function registerMessageUpdateHandler(sock, phoneNumber) {
           `━━━━━━━━━━━━━━━━━━━━━\n` +
           `> *Deleted Message Content Below:*`;
 
-        // 1. Alert info එක යැවීම
         await sock.sendMessage(targetJid, {
           text: alertText,
           mentions: [sender],
           ...global.channelContext
         });
 
-        // 2. Original deleted message එක copy කර forward කිරීම
         await sock.copyNForward(targetJid, cachedMsg, false);
 
       } catch (err) {
@@ -1151,7 +1146,7 @@ async function initWhatsApp(phoneNumber) {
 
     registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData);
     registerMessageUpsertHandler(sock, phoneNumber);
-    registerMessageUpdateHandler(sock, phoneNumber); // 🛡️ Anti-delete listener එක register කිරීම
+    registerMessageUpdateHandler(sock, phoneNumber);
 
     return sock;
   } catch (err) {
@@ -1257,7 +1252,7 @@ function registerPairRoute(app) {
           activeSessions[num] = pairSock;
           registerConnectionUpdateHandler(pairSock, num, clearSessionData);
           registerMessageUpsertHandler(pairSock, num);
-          registerMessageUpdateHandler(pairSock, num); // 🛡️ Anti-delete listener
+          registerMessageUpdateHandler(pairSock, num);
           handleConnectionOpen(pairSock, num);
         } else if (connection === 'close') {
           const code = lastDisconnect?.error?.output?.statusCode;
