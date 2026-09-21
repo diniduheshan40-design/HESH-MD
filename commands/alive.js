@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { sendInteractiveButton } = require('../lib/buttonHelper');
 
 // ⚡ Solid & Cached Logo Finder (Memory-safe)
 let cachedLogo = null;
@@ -141,7 +142,7 @@ module.exports = {
 └─────────────────────┘
 > 🔐 *heshan ofc • all rights reserved*`;
 
-        // ⚡ Channel Context Info (✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨ + View Channel button)
+        // ⚡ Channel Context Info
         const channelContext = global.channelContext?.contextInfo || {
             forwardingScore: 999,
             isForwarded: true,
@@ -152,6 +153,37 @@ module.exports = {
             }
         };
 
+        // 🔘 Settings වලින් Button Mode එක ON ද කියා බැලීම
+        const myBotNum = sock.user?.id?.split(':')[0]?.replace(/\D/g, '') || '';
+        let isButtonOn = false;
+
+        if (typeof global.getBotSettings === 'function' && myBotNum) {
+            try {
+                const settings = await global.getBotSettings(myBotNum);
+                isButtonOn = Boolean(settings?.buttonMode);
+            } catch (e) {}
+        }
+
+        // 🟢 1. BUTTON MODE ON නම් INTERACTIVE BUTTONS YAWANNA
+        if (isButtonOn) {
+            try {
+                await sendInteractiveButton(sock, targetChat, {
+                    title: '⚔️ 𝐇𝐄𝐒𝐇𝐀𝐍-𝐌𝐃 𝐀𝐋𝐈𝐕𝐄 ⚔️',
+                    text: aliveMsg,
+                    footer: '⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡',
+                    buttons: [
+                        { type: 'reply', displayText: '📜 MAIN MENU', id: '.menu' },
+                        { type: 'reply', displayText: '⚡ PING SPEED', id: '.ping' },
+                        { type: 'url', displayText: '📢 WHATSAPP CHANNEL', url: 'https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V' }
+                    ]
+                }, msg);
+                return;
+            } catch (btnErr) {
+                console.error("Alive Button Dispatch Error:", btnErr.message);
+            }
+        }
+
+        // 🔴 2. BUTTON MODE OFF නම් (හෝ Button Error වුවහොත්) පරණ විදියටම IMAGE CAPTION එක යැවීම
         try {
             const logo = await getBotLogo();
             if (logo) {
@@ -167,7 +199,7 @@ module.exports = {
             console.error("Alive Execution Error:", err.message);
         }
 
-        // Image upload fail වුවහොත් direct plain text message එකක් context එක සහිතව යැවීම
+        // Image upload fail වුවහොත් direct plain text fallback
         await sock.sendMessage(targetChat, { 
             text: aliveMsg,
             contextInfo: channelContext
