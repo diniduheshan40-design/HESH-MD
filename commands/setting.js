@@ -79,7 +79,8 @@ module.exports = {
 
     const isSettingsReply = quotedCaption.includes("SYSTEM SETTINGS") || 
                             quotedCaption.includes("WORK MODE") ||
-                            quotedCaption.includes("FAKE ACTION");
+                            quotedCaption.includes("FAKE ACTION") ||
+                            quotedCaption.includes("AI AUTO CHAT");
 
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
@@ -127,6 +128,7 @@ module.exports = {
       statusReactEmoji: '💐',
       autoPresence: 'off',
       autoChatRead: false,
+      aiChatEnabled: false, // Default AI Chat OFF
       securityPin: '1234'
     };
 
@@ -203,6 +205,10 @@ module.exports = {
     else if (input === '7.1') { settings.autoChatRead = true; isUpdated = true; }
     else if (input === '7.2') { settings.autoChatRead = false; isUpdated = true; }
 
+    // 8. AI AUTO CHAT ON/OFF
+    else if (input === '8.1' || input === 'aichat on') { settings.aiChatEnabled = true; isUpdated = true; }
+    else if (input === '8.2' || input === 'aichat off') { settings.aiChatEnabled = false; isUpdated = true; }
+
     // UPDATE EXECUTOR
     if (isUpdated) {
       memSettingsCache.set(botNumber, settings);
@@ -244,7 +250,8 @@ module.exports = {
         `• Auto Status    : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
         `• Status React   : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'} (${settings.statusReactEmoji || '💐'})*\n` +
         `• Fake Action    : *${presenceBadge}*\n` +
-        `• Auto Chat Seen : *${settings.autoChatRead ? 'ON 🟢 (Blue Tick)' : 'OFF 🔴 (No Blue Tick)'}*`
+        `• Auto Chat Seen : *${settings.autoChatRead ? 'ON 🟢 (Blue Tick)' : 'OFF 🔴 (No Blue Tick)'}*\n` +
+        `• AI Auto Chat   : *${settings.aiChatEnabled ? 'ON 🟢' : 'OFF 🔴'}*`
       );
     }
 
@@ -298,10 +305,14 @@ module.exports = {
 │  ├ 7.1 Auto Seen On (Blue Tick)
 │  └ 7.2 Auto Seen Off (Default)
 │
+├─◈ *8. AI AUTO CHAT* ⤿ [ ${stateBadge(settings.aiChatEnabled)} ]
+│  ├ 8.1 AI Chat On 🤖
+│  └ 8.2 AI Chat Off 🛑
+│
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option එක Type කරන්න (උදා: *.set 7.2* හෝ *.set 1.2*)
-• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *7.2*)
+• අදාළ Option එක Type කරන්න (උදා: *.set 8.1* හෝ *.set 8.2*)
+• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *8.1*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
