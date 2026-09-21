@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const NodeCache = require('node-cache');
 const fetch = require('node-fetch');
+const axios = require('axios'); // ⚡ Added for AI Chat OpenRouter Integration
 const {
   default: makeWASocket,
   DisconnectReason,
@@ -69,6 +70,7 @@ const DEFAULT_SETTINGS = {
   botLogo: DEFAULT_BACKUP_LOGO,
   autoPresence: 'off',
   autoChatRead: false,
+  aiChatEnabled: false, // ⚡ AI Auto Chat Toggle (Default OFF)
   securityPin: '1234',
   isFirstConnectDone: false
 };
@@ -98,6 +100,7 @@ function createSettingsModel() {
     botLogo: { type: String, default: DEFAULT_SETTINGS.botLogo },
     autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
     autoChatRead: { type: Boolean, default: DEFAULT_SETTINGS.autoChatRead },
+    aiChatEnabled: { type: Boolean, default: DEFAULT_SETTINGS.aiChatEnabled }, // ⚡ Stored in DB
     securityPin: { type: String, default: DEFAULT_SETTINGS.securityPin },
     isFirstConnectDone: { type: Boolean, default: DEFAULT_SETTINGS.isFirstConnectDone }
   });
@@ -130,6 +133,48 @@ async function getBotSettings(botNum) {
   }
 }
 global.getBotSettings = getBotSettings;
+
+// ============================================================================
+// 🤖 AI AUTO CHAT ENGINE (OPENROUTER)
+// ============================================================================
+
+async function fetchAIReply(userText) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'google/gemini-2.0-flash-001',
+        messages: [
+          {
+            role: 'system',
+            content: 'ඔබ මිත්‍රශීලී, බුද්ධිමත් ශ්‍රී ලාංකික AI සහායකයෙකි. පරිශීලකයා අසන ප්‍රශ්න වලට ස්වභාවික, ආචාරශීලී සහ නිරවුල් සිංහල භාෂාවෙන් (හෝ පරිශීලකයා අසන භාෂාවෙන්) කෙටි, පැහැදිලි පිළිතුරු සපයන්න.'
+          },
+          {
+            role: 'user',
+            content: userText
+          }
+        ]
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://github.com',
+          'X-Title': 'HESHAN-MD'
+        },
+        timeout: 25000
+      }
+    );
+
+    return response.data?.choices?.[0]?.message?.content?.trim() || null;
+  } catch (err) {
+    console.error('OpenRouter AI Request Error:', err?.response?.data || err.message);
+    return null;
+  }
+}
 
 // ============================================================================
 // 📂 COMMAND LOADER
@@ -787,7 +832,7 @@ function buildSafeReply(sock, chatJid, msg) {
 
 function isSettingsMenuOption(cleanInput) {
   return (
-    /^([1-7](\.[1-4])?)$/.test(cleanInput) ||
+    /^([1-8](\.[1-4])?)$/.test(cleanInput) ||
     cleanInput.startsWith('6 ') ||
     cleanInput.startsWith('pin ') ||
     cleanInput.startsWith('set ')
@@ -808,7 +853,8 @@ function isQuotedFromSettingsMenu(quotedCaption) {
   return (
     quotedCaption.includes('SYSTEM SETTINGS') ||
     quotedCaption.includes('WORK MODE') ||
-    quotedCaption.includes('FAKE ACTION')
+    quotedCaption.includes('FAKE ACTION') ||
+    quotedCaption.includes('AI AUTO CHAT')
   );
 }
 
@@ -962,7 +1008,19 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   }
 
   // 🎯 4. PREFIX COMMANDS HANDLER
-  await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
+  const isCmdHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
+  if (isCmdHandled) return;
+
+  // 🎯 5. AI AUTO CHAT HANDLER (SETTINGS හරහා පාලනය වන ස්වයංක්‍රීය පිළිතුරු)
+  if (settings.aiChatEnabled && !msg.key.fromMe) {
+    if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
+      await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
+      const aiReply = await fetchAIReply(text);
+      if (aiReply) {
+        await safeReply(aiReply);
+      }
+    }
+  }
 }
 
 function registerMessageUpsertHandler(sock, phoneNumber) {
