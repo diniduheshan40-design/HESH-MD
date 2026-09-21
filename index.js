@@ -13,8 +13,7 @@ const {
   DisconnectReason,
   delay,
   Browsers,
-  makeCacheableSignalKeyStore,
-  WAMessageStubType
+  makeCacheableSignalKeyStore
 } = require('@whiskeysockets/baileys');
 
 // 🟢 Global Process Crash Guards
@@ -71,10 +70,10 @@ const DEFAULT_SETTINGS = {
   botLogo: DEFAULT_BACKUP_LOGO,
   autoPresence: 'off',
   autoChatRead: false,
-  aiChatEnabled: false, // ⚡ AI Auto Chat Toggle (Default OFF)
-  antiDeleteEnabled: true, // 🛡️ Anti Delete Toggle (Default ON)
-  antiDeleteType: 'all', // 'inbox' | 'group' | 'all'
-  antiDeleteDest: 'me', // 'me' (Send to Bot Owner) | 'from' (Send to original chat)
+  aiChatEnabled: false,
+  antiDeleteEnabled: true,
+  antiDeleteType: 'all',
+  antiDeleteDest: 'me',
   securityPin: '1234',
   isFirstConnectDone: false
 };
@@ -84,9 +83,6 @@ const DEFAULT_SETTINGS = {
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 200 });
-// Anti-delete සඳහා එන හැම message එකක්ම තාවකාලිකව save කරන RAM Cache (TTL: පැය 2)
-const messageStoreCache = new NodeCache({ stdTTL: 7200, checkperiod: 300, maxKeys: 10000 });
-
 const activeSessions = {};
 global.activeSessions = activeSessions;
 const isStarting = {};
@@ -557,7 +553,7 @@ async function createBaileysSocket(phoneNumber) {
 
 async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData) {
   const statusCode = lastDisconnect?.error?.output?.statusCode;
-  console.log(`⚠️ Connection closed (${phoneNumber}), Code:${statusCode}`);
+  console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
 
   try {
     sock.ev.removeAllListeners();
@@ -578,7 +574,7 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
 
   if (statusCode === 440) {
     delayTime = Math.min(reconnectAttempts[phoneNumber] * 12000, 45000);
-    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting${Math.round(delayTime / 1000)}s before retry...`);
+    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting ${Math.round(delayTime / 1000)}s before retry...`);
   } else if (reconnectAttempts[phoneNumber] > 5) {
     delayTime = 25000;
   }
@@ -798,7 +794,7 @@ function buildSafeReply(sock, chatJid, msg) {
   };
 }
 
-// 🛡️ FIX 1: Allow options up to 12.x so 9.x, 10.x, 11.x work properly
+// 🛡️ Options 1 සිට 12 දක්වා සියල්ල හඳුනා ගැනීම (10.x, 11.x reply support)
 function isSettingsMenuOption(cleanInput) {
   return (
     /^([1-9]|1[0-2])(\.[1-4])?$/.test(cleanInput) ||
@@ -819,7 +815,6 @@ function extractQuotedCaption(quotedMsgObj) {
   );
 }
 
-// 🛡️ FIX 2: Added ANTI-DELETE matcher
 function isQuotedFromSettingsMenu(quotedCaption) {
   const cap = quotedCaption.toUpperCase();
   return (
@@ -869,58 +864,6 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   const args = text.slice(prefix.length).trim().split(/ +/);
   const commandName = args.shift().toLowerCase();
 
-  // 🛡️ Direct Anti-Delete Command Handler (.antidel)
-  if (['antidel', 'antidelete'].includes(commandName)) {
-    if (!isAuthorized) {
-      await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
-      return true;
-    }
-
-    const sub = args[0]?.toLowerCase();
-    const val = args[1]?.toLowerCase();
-
-    if (!sub) {
-      const current = await getBotSettings(myBotNum);
-      return safeReply(
-        `*🛡️ ANTI-DELETE SETTINGS*\n\n` +
-        `• Status: *${current.antiDeleteEnabled ? 'ON' : 'OFF'}*\n` +
-        `• Type: *${(current.antiDeleteType || 'all').toUpperCase()}* (inbox | group | all)\n` +
-        `• Send To: *${(current.antiDeleteDest || 'me').toUpperCase()}* (me | from)\n\n` +
-        `*Commands:*\n` +
-        `• \`${prefix}antidel on/off\`\n` +
-        `• \`${prefix}antidel type inbox/group/all\`\n` +
-        `• \`${prefix}antidel to me/from\``
-      );
-    }
-
-    if (sub === 'on' || sub === 'off') {
-      const state = sub === 'on';
-      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteEnabled: state }, { upsert: true });
-      clearSettingsCache(myBotNum);
-      return safeReply(`✅ Anti-Delete has been turned *${sub.toUpperCase()}*`);
-    }
-
-    if (sub === 'type') {
-      if (!['inbox', 'group', 'all'].includes(val)) {
-        return safeReply('❌ Invalid type! Choose: `inbox`, `group`, or `all`');
-      }
-      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteType: val }, { upsert: true });
-      clearSettingsCache(myBotNum);
-      return safeReply(`✅ Anti-Delete scope set to: *${val.toUpperCase()}*`);
-    }
-
-    if (sub === 'to' || sub === 'dest') {
-      if (!['me', 'from'].includes(val)) {
-        return safeReply('❌ Invalid destination! Choose: `me` (Bot/Owner chat) or `from` (Deleted chat)');
-      }
-      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteDest: val }, { upsert: true });
-      clearSettingsCache(myBotNum);
-      return safeReply(`✅ Deleted messages will now be forwarded to: *${val.toUpperCase()}*`);
-    }
-
-    return safeReply('❌ Invalid argument. Type `' + prefix + 'antidel` for help.');
-  }
-
   const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
 
   if (isSettingsCmd && !isAuthorized) {
@@ -956,11 +899,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   if (!msg || !msg.message) return;
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
-
-  // 🛡️ Caching Message for Anti-Delete (Skip status updates)
-  if (chatJid !== 'status@broadcast' && msg.key?.id) {
-    messageStoreCache.set(msg.key.id, msg);
-  }
 
   if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
     if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
@@ -1064,73 +1002,6 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
 }
 
 // ============================================================================
-// 🛡️ ANTI-DELETE ENGINE (MESSAGES.UPDATE LISTENER)
-// ============================================================================
-
-function registerMessageUpdateHandler(sock, phoneNumber) {
-  sock.ev.on('messages.update', async (updates) => {
-    for (const update of updates) {
-      try {
-        const isRevoke =
-          update.update?.messageStubType === WAMessageStubType.REVOKE ||
-          update.update?.messageStubType === 68 ||
-          update.update?.message?.protocolMessage?.type === 0;
-
-        if (!isRevoke) continue;
-
-        const deletedKey = update.key;
-        if (!deletedKey || !deletedKey.id) continue;
-
-        const cachedMsg = messageStoreCache.get(deletedKey.id);
-        if (!cachedMsg || !cachedMsg.message) continue;
-
-        const myBotJid = sock.user?.id || '';
-        const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
-        const settings = await getBotSettings(myBotNum);
-
-        if (!settings.antiDeleteEnabled) continue;
-
-        const chatJid = deletedKey.remoteJid;
-        const isGroup = chatJid.endsWith('@g.us');
-
-        if (settings.antiDeleteType === 'inbox' && isGroup) continue;
-        if (settings.antiDeleteType === 'group' && !isGroup) continue;
-
-        const sender = cachedMsg.key.participant || cachedMsg.key.remoteJid;
-        const senderClean = sender.split('@')[0].split(':')[0];
-
-        let targetJid;
-        if (settings.antiDeleteDest === 'from') {
-          targetJid = chatJid;
-        } else {
-          targetJid = myBotJid.split(':')[0] + '@s.whatsapp.net';
-        }
-
-        const alertText = 
-          `*🛡️ ANTI-DELETE DETECTED 🛡️*\n` +
-          `━━━━━━━━━━━━━━━━━━━━━\n` +
-          `👤 *Sender:* @${senderClean}\n` +
-          `📍 *Chat:* ${isGroup ? 'Group Chat' : 'Inbox (Private)'}\n` +
-          `⏰ *Time:* ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo' })}\n` +
-          `━━━━━━━━━━━━━━━━━━━━━\n` +
-          `> *Deleted Message Content Below:*`;
-
-        await sock.sendMessage(targetJid, {
-          text: alertText,
-          mentions: [sender],
-          ...global.channelContext
-        });
-
-        await sock.copyNForward(targetJid, cachedMsg, false);
-
-      } catch (err) {
-        console.error('Anti-delete processing error:', err?.message);
-      }
-    }
-  });
-}
-
-// ============================================================================
 // 🚀 MAIN WHATSAPP INITIALIZER
 // ============================================================================
 
@@ -1146,7 +1017,12 @@ async function initWhatsApp(phoneNumber) {
 
     registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData);
     registerMessageUpsertHandler(sock, phoneNumber);
-    registerMessageUpdateHandler(sock, phoneNumber);
+
+    // 🛡️ commands/antidelete.js මොඩියුලය Background Listener එකක් ලෙස Initialize කිරීම
+    const antiDelPlugin = findCommand('antidelete', 'antidel');
+    if (antiDelPlugin && typeof antiDelPlugin.init === 'function') {
+      antiDelPlugin.init(sock);
+    }
 
     return sock;
   } catch (err) {
@@ -1252,7 +1128,13 @@ function registerPairRoute(app) {
           activeSessions[num] = pairSock;
           registerConnectionUpdateHandler(pairSock, num, clearSessionData);
           registerMessageUpsertHandler(pairSock, num);
-          registerMessageUpdateHandler(pairSock, num);
+
+          // 🛡️ commands/antidelete.js initialize
+          const antiDelPlugin = findCommand('antidelete', 'antidel');
+          if (antiDelPlugin && typeof antiDelPlugin.init === 'function') {
+            antiDelPlugin.init(pairSock);
+          }
+
           handleConnectionOpen(pairSock, num);
         } else if (connection === 'close') {
           const code = lastDisconnect?.error?.output?.statusCode;
@@ -1355,4 +1237,3 @@ async function main() {
 }
 
 main();
-
