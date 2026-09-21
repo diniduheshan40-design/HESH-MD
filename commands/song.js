@@ -9,14 +9,12 @@ try {
 
 const CHAMINDU_API_KEY = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
 
-// Extract Video ID
 function extractYouTubeId(url) {
   const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/;
   const match = url.match(regExp);
   return match ? match[1] : null;
 }
 
-// Chamindu API Engine
 async function fetchAudioFromChamindu(videoUrl, quality = '320kbps') {
   const cleanQuality = quality.replace(/[^0-9]/g, '') + 'kbps';
   const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=${cleanQuality}&format=mp3&api_key=${CHAMINDU_API_KEY}`;
@@ -25,7 +23,7 @@ async function fetchAudioFromChamindu(videoUrl, quality = '320kbps') {
   const data = res.data?.data || res.data;
 
   const dlUrl = data?.direct_url || data?.download_url;
-  if (!dlUrl) throw new Error('Download URL generated failed from Chamindu API.');
+  if (!dlUrl) throw new Error('Download URL generation failed.');
 
   return {
     downloadUrl: dlUrl,
@@ -39,11 +37,9 @@ module.exports = {
   name: 'song',
   alias: ['play', 'sing', 'mp3', 'ytmp3'],
   category: 'download',
-  desc: 'Download YouTube audio with quality selection',
+  desc: 'Download YouTube audio in high quality',
 
   async execute(sock, msg, args, chatJid) {
-    const DEFAULT_FOOTER = '\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡';
-
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
       ? chatJid 
       : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
@@ -64,12 +60,14 @@ module.exports = {
 
     if (!rawInput) {
       return await sock.sendMessage(targetChat, { 
-        text: `╭───❮ 🎵 *HESHAN-MD MUSIC* ❯───╮\n│\n│ ⚠️ *කරුණාකර සින්දුවේ නම හෝ Link එකක් ලබාදෙන්න!*\n│ 💡 *භාවිතය:* \`.song Lelena\`\n│ 💡 *Quality සමඟ:* \`.song Lelena -320k\`\n│     *(128k, 192k, 320k)*\n│\n╰────────────────────────────────╯${DEFAULT_FOOTER}`,
+        text: `*🎵 HESHAN MUSIC PLAYER*\n\n` +
+              `> 💡 සින්දුවේ නම හෝ Link එකක් ලබාදෙන්න.\n` +
+              `> 📌 උදා: *.song Lelena*\n\n` +
+              `*⚡ ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
-    // Check custom quality (Default 320kbps)
     let selectedQuality = '320kbps';
     const qualityMatch = rawInput.match(/-(128k|192k|320k)/i);
     if (qualityMatch) {
@@ -80,14 +78,13 @@ module.exports = {
     sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
 
     let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Searching & Fetching Audio [${selectedQuality}]...*\nPlease hold on a moment. 🎵`
+      text: `⚡ *Fetching:* _${rawInput}_ [${selectedQuality}]...`
     }, { quoted: msg }).catch(() => null);
 
     try {
       let videoUrl = rawInput;
       let videoTitle = rawInput;
       let duration = 'N/A';
-      let views = 'N/A';
       let author = 'YouTube Music';
       let thumb = 'https://files.catbox.moe/a58add.jpeg';
 
@@ -97,7 +94,7 @@ module.exports = {
         if (!yts) throw new Error('yt-search library is missing.');
         const searchResults = await yts(rawInput);
         if (!searchResults?.videos?.length) {
-          throw new Error('Song not found! Please check the title and try again.');
+          throw new Error('Song not found!');
         }
 
         const video = searchResults.videos[0];
@@ -106,14 +103,11 @@ module.exports = {
         duration = video.timestamp || duration;
         author = video.author?.name || author;
         thumb = video.thumbnail || thumb;
-        views = video.views ? Number(video.views).toLocaleString() : views;
       }
 
-      // Step 1: Chamindu API එකෙන් Download URL ගැනීම
       const songData = await fetchAudioFromChamindu(videoUrl, selectedQuality);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Step 2: Audio Buffer එක බාගත කිරීම
       const audioRes = await axios.get(songData.downloadUrl, {
         responseType: 'arraybuffer',
         timeout: 60000,
@@ -127,18 +121,18 @@ module.exports = {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Step 3: Card එක යැවීම
-      const songCard = `╭──────❮ 🎵 *HESHAN-MD MUSIC* ❯──────╮
-│
-├ 🏷️ *Title    :* ${cleanTitle.slice(0, 36)}
-├ 👤 *Artist   :* ${author}
-├ ⏱️ *Duration :* ${duration}
-├ 👁️ *Views    :* ${views}
-├ ⚡ *Quality  :* ${songData.quality}
-├ 🚀 *Engine   :* 10Gbps Chamindu CDN
-│
-╰────────────────────────────────────╯${DEFAULT_FOOTER}`.trim();
+      // ⚡ Compact, Modern & Universal Clean Card
+      const songCard = 
+`*🎧 HESHAN-MD AUDIO PLAYER*
+━━━━━━━━━━━━━━━━━━━━━
+• *Track*    : ${cleanTitle.length > 28 ? cleanTitle.slice(0, 25) + '...' : cleanTitle}
+• *Artist*   : ${author.length > 24 ? author.slice(0, 21) + '...' : author}
+• *Length*   : ${duration}
+• *Quality*  : ${songData.quality}
+━━━━━━━━━━━━━━━━━━━━━
+> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
+      // Send Card with Image
       try {
         await sock.sendMessage(targetChat, {
           image: { url: songData.thumbnail || thumb },
@@ -149,7 +143,7 @@ module.exports = {
         await sock.sendMessage(targetChat, { text: songCard, contextInfo: channelContext }, { quoted: msg }).catch(() => {});
       }
 
-      // Step 4: Audio File එක යැවීම
+      // Send Audio
       await sock.sendMessage(targetChat, {
         audio: audioBuffer,
         mimetype: 'audio/mpeg',
@@ -168,7 +162,7 @@ module.exports = {
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
 
       await sock.sendMessage(targetChat, { 
-        text: `❌ *Error:* ${err.message}${DEFAULT_FOOTER}`
+        text: `❌ *Error:* ${err.message}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`
       }, { quoted: msg }).catch(() => {});
     }
   }
