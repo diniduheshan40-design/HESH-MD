@@ -77,7 +77,6 @@ module.exports = {
                           msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || 
                           msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text || '';
 
-    // Fix: Match more generic text so quoted replies never get missed
     const isSettingsReply = quotedCaption.includes("SYSTEM SETTINGS") || 
                             quotedCaption.includes("WORK MODE") ||
                             quotedCaption.includes("FAKE ACTION");
@@ -85,7 +84,6 @@ module.exports = {
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
 
-    // Fix: If args are passed from index.js (e.g. handleSettingsMenuReply), allow it to run
     const hasArgsPassed = Array.isArray(args) && args.length > 0;
     if (!isExplicitCommand && !isSettingsReply && !hasArgsPassed) {
       return;
@@ -95,7 +93,6 @@ module.exports = {
     const botNumber = rawBotId.split(':')[0].split('@')[0].replace(/\D/g, '') || 'default';
     const senderNumber = (msg.key.participant || targetChat || '').split(':')[0].split('@')[0].replace(/\D/g, '');
 
-    // Fix: Prioritize options.isOwner from index.js authorization check
     const isOwner = Boolean(
       options.isOwner || 
       msg.key.fromMe || 
@@ -130,7 +127,8 @@ module.exports = {
       statusReactEmoji: '💐',
       autoPresence: 'off',
       autoChatRead: false,
-      securityPin: '1234'
+      securityPin: '1234',
+      buttonMode: false
     };
 
     let settings = { ...defaultValues };
@@ -206,6 +204,10 @@ module.exports = {
     else if (input === '7.1') { settings.autoChatRead = true; isUpdated = true; }
     else if (input === '7.2') { settings.autoChatRead = false; isUpdated = true; }
 
+    // 8. BUTTON MODE ON/OFF
+    else if (input === '8.1' || input === 'button on' || input === 'btn on') { settings.buttonMode = true; isUpdated = true; }
+    else if (input === '8.2' || input === 'button off' || input === 'btn off') { settings.buttonMode = false; isUpdated = true; }
+
     // UPDATE EXECUTOR
     if (isUpdated) {
       memSettingsCache.set(botNumber, settings);
@@ -247,12 +249,13 @@ module.exports = {
         `• Auto Status    : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
         `• Status React   : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'} (${settings.statusReactEmoji || '💐'})*\n` +
         `• Fake Action    : *${presenceBadge}*\n` +
-        `• Auto Chat Seen : *${settings.autoChatRead ? 'ON 🟢 (Blue Tick)' : 'OFF 🔴 (No Blue Tick)'}*`
+        `• Auto Chat Seen : *${settings.autoChatRead ? 'ON 🟢 (Blue Tick)' : 'OFF 🔴 (No Blue Tick)'}*\n` +
+        `• Button Mode    : *${settings.buttonMode ? 'ON 🟢' : 'OFF 🔴'}*`
       );
     }
 
-    // DISPLAY SETTINGS MENU (If no valid sub-option was provided)
-    const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
+    // DISPLAY SETTINGS MENU
+    const stateBadge = (val) => (val ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
       private: 'PRIVATE 🔒',
@@ -297,14 +300,18 @@ module.exports = {
 ├─◈ *6. CHANGE PIN* ⤿ [ ${settings.securityPin || '1234'} ]
 │  └ ✦ Type: .set 6 <new_pin>  (හෝ .set pin <pin>)
 │
-├─◈ *7. AUTO mgs SEEN* ⤿ [ ${stateBadge(settings.autoChatRead)} ]
+├─◈ *7. AUTO MGS SEEN* ⤿ [ ${stateBadge(settings.autoChatRead)} ]
 │  ├ 7.1 Auto Seen On (Blue Tick)
 │  └ 7.2 Auto Seen Off (Default)
 │
+├─◈ *8. INTERACTIVE BUTTONS* ⤿ [ ${stateBadge(settings.buttonMode)} ]
+│  ├ 8.1 Buttons On
+│  └ 8.2 Buttons Off
+│
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option එක Type කරන්න (උදා: *.set 7.2* හෝ *.set 1.2*)
-• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *7.2*)
+• අදාළ Option එක Type කරන්න (උදා: *.set 8.1* හෝ *.set 8.2*)
+• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *8.1*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
