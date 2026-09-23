@@ -81,7 +81,8 @@ module.exports = {
                             quotedCaption.includes("WORK MODE") ||
                             quotedCaption.includes("FAKE ACTION") ||
                             quotedCaption.includes("AI AUTO CHAT") ||
-                            quotedCaption.includes("ANTI-DELETE");
+                            quotedCaption.includes("ANTI-DELETE") ||
+                            quotedCaption.includes("PRESENCE STATUS");
 
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
@@ -128,6 +129,7 @@ module.exports = {
       statusReact: true,
       statusReactEmoji: '💐',
       autoPresence: 'off',
+      alwaysOnline: 'off', // 'on', 'offline', 'off'
       autoChatRead: false,
       aiChatEnabled: false,
       antiDeleteEnabled: true,
@@ -226,6 +228,23 @@ module.exports = {
     else if (input === '11.1' || input === 'antidel to me') { settings.antiDeleteDest = 'me'; isUpdated = true; }
     else if (input === '11.2' || input === 'antidel to from') { settings.antiDeleteDest = 'from'; isUpdated = true; }
 
+    // ⚡ 12. ALWAYS ONLINE / ALWAYS OFFLINE
+    else if (input === '12.1' || input === 'online on') { 
+      settings.alwaysOnline = 'on'; 
+      isUpdated = true; 
+      sock.sendPresenceUpdate('available').catch(() => {});
+    }
+    else if (input === '12.2' || input === 'offline on') { 
+      settings.alwaysOnline = 'offline'; 
+      isUpdated = true; 
+      sock.sendPresenceUpdate('unavailable').catch(() => {});
+    }
+    else if (input === '12.3' || input === 'online off') { 
+      settings.alwaysOnline = 'off'; 
+      isUpdated = true; 
+      sock.sendPresenceUpdate('unavailable').catch(() => {});
+    }
+
     // UPDATE EXECUTOR
     if (isUpdated) {
       memSettingsCache.set(botNumber, settings);
@@ -261,6 +280,12 @@ module.exports = {
         off: 'OFF 🔴'
       }[settings.autoPresence] || 'OFF 🔴';
 
+      const alwaysOnlineBadge = {
+        on: 'ALWAYS ONLINE 🟢',
+        offline: 'ALWAYS OFFLINE ⚪',
+        off: 'NORMAL 🔴'
+      }[settings.alwaysOnline] || 'NORMAL 🔴';
+
       const antiDelDestBadge = settings.antiDeleteDest === 'from' ? 'SAME CHAT 💬' : 'BOT OWNER INBOX 👤';
 
       return await reply(
@@ -269,6 +294,7 @@ module.exports = {
         `• Auto Status     : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
         `• Status React    : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'} (${settings.statusReactEmoji || '💐'})*\n` +
         `• Fake Action     : *${presenceBadge}*\n` +
+        `• Presence Mode   : *${alwaysOnlineBadge}*\n` +
         `• Auto Chat Seen  : *${settings.autoChatRead ? 'ON 🟢 (Blue Tick)' : 'OFF 🔴 (No Blue Tick)'}*\n` +
         `• AI Auto Chat    : *${settings.aiChatEnabled ? 'ON 🟢' : 'OFF 🔴'}*\n` +
         `• Anti-Delete     : *${settings.antiDeleteEnabled ? 'ON 🟢' : 'OFF 🔴'}*\n` +
@@ -291,6 +317,12 @@ module.exports = {
       recording: 'RECORDING 🎙️',
       off: 'OFF 🔴'
     }[settings.autoPresence] || 'OFF 🔴';
+
+    const alwaysOnlineBadge = {
+      on: 'ALWAYS ONLINE 🟢',
+      offline: 'ALWAYS OFFLINE ⚪',
+      off: 'NORMAL 🔴'
+    }[settings.alwaysOnline] || 'NORMAL 🔴';
 
     const antiDelDestBadge = settings.antiDeleteDest === 'from' ? 'SAME CHAT' : 'BOT INBOX (ME)';
 
@@ -346,10 +378,15 @@ module.exports = {
 │  ├ 11.1 Send To Me (Owner Chat) 👤
 │  └ 11.2 Send To Chat (Where Deleted) 💬
 │
+├─◈ *12. PRESENCE STATUS* ⤿ [ ${alwaysOnlineBadge} ]
+│  ├ 12.1 Always Online 🟢
+│  ├ 12.2 Always Offline ⚪
+│  └ 12.3 Normal Presence 🔴
+│
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option එක Type කරන්න (උදා: *.set 9.1*, *.set 10.2*, *.set 11.1*)
-• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *9.1*)
+• අදාළ Option එක Type කරන්න (උදා: *.set 12.1*, *.set 12.2*, *.set 9.1*)
+• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *12.1*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
