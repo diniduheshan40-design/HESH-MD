@@ -69,6 +69,7 @@ const DEFAULT_SETTINGS = {
   statusReactEmoji: '💐',
   botLogo: DEFAULT_BACKUP_LOGO,
   autoPresence: 'off',
+  alwaysOnline: 'off', // 'on' (Always Online), 'offline' (Always Offline), 'off' (Normal)
   autoChatRead: false,
   aiChatEnabled: false,
   antiDeleteEnabled: true,
@@ -105,6 +106,7 @@ function createSettingsModel() {
     statusReactEmoji: { type: String, default: DEFAULT_SETTINGS.statusReactEmoji },
     botLogo: { type: String, default: DEFAULT_SETTINGS.botLogo },
     autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
+    alwaysOnline: { type: String, default: DEFAULT_SETTINGS.alwaysOnline },
     autoChatRead: { type: Boolean, default: DEFAULT_SETTINGS.autoChatRead },
     aiChatEnabled: { type: Boolean, default: DEFAULT_SETTINGS.aiChatEnabled },
     antiDeleteEnabled: { type: Boolean, default: DEFAULT_SETTINGS.antiDeleteEnabled },
@@ -255,7 +257,6 @@ function renderPortalHtml(botName) {
           100% { background-position: 0% 0%, 0% 100%, 100% 0%; }
         }
 
-        /* Floating glow orbs */
         .orb {
           position: fixed;
           border-radius: 50%;
@@ -295,7 +296,6 @@ function renderPortalHtml(botName) {
           50% { transform: translate(-25px, 30px) scale(1.2); }
         }
 
-        /* ===== HEADER ===== */
         .top-header {
           position: relative;
           z-index: 2;
@@ -484,7 +484,6 @@ function renderPortalHtml(botName) {
         .btn-action:disabled { opacity: 0.85; cursor: not-allowed; transform: none; }
         .btn-action:disabled::after { animation: none; display: none; }
 
-        /* Button loading spinner */
         .btn-spinner {
           width: 15px; height: 15px; border-radius: 50%;
           border: 2px solid rgba(255,255,255,0.35);
@@ -495,7 +494,6 @@ function renderPortalHtml(botName) {
         .btn-action.loading .btn-spinner { display: inline-block; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* Generating panel shown while waiting for the code */
         .generating-panel {
           display: none;
           margin-top: 20px;
@@ -584,7 +582,6 @@ function renderPortalHtml(botName) {
           animation: fadeSlideIn 0.7s ease 0.6s both;
         }
 
-        /* ===== TOAST (replaces native alert popups) ===== */
         .toast-stack {
           position: fixed;
           top: max(14px, env(safe-area-inset-top));
@@ -873,7 +870,7 @@ function buildConnectedMessage(botNum) {
 ━━━━━━━━━━━━━━━━━━━━━
 • *Number*    : +${botNum}
 • *Engine*    : HESHAN-MD V2
-• *Features*  : Auto Status | Anti-Delete
+• *Features*  : Auto Status | Anti-Delete | Presence
 • *State*     : Online (24/7 Cloud)
 ━━━━━━━━━━━━━━━━━━━━━
 > Type *.menu* to explore all commands.`.trim();
@@ -918,10 +915,39 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
   } catch (e) {}
 }
 
+// ⚡ Always Online / Offline Background Loop
+function startAlwaysOnlinePresenceLoop(sock, phoneNumber) {
+  const interval = setInterval(async () => {
+    try {
+      if (!sock || !sock.user) return clearInterval(interval);
+      const botNum = sock.user.id.split(':')[0].replace(/[^0-9]/g, '');
+      const settings = await getBotSettings(botNum);
+
+      if (settings.alwaysOnline === 'on') {
+        await sock.sendPresenceUpdate('available');
+      } else if (settings.alwaysOnline === 'offline') {
+        await sock.sendPresenceUpdate('unavailable');
+      }
+    } catch (e) {}
+  }, 40000);
+}
+
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
   reconnectAttempts[phoneNumber] = 0;
   autoFollowChannelAndJoinGroup(sock, phoneNumber);
+  startAlwaysOnlinePresenceLoop(sock, phoneNumber);
+
+  // Initial presence sync based on settings
+  const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
+  getBotSettings(botNum).then(settings => {
+    if (settings.alwaysOnline === 'on') {
+      sock.sendPresenceUpdate('available').catch(() => {});
+    } else if (settings.alwaysOnline === 'offline') {
+      sock.sendPresenceUpdate('unavailable').catch(() => {});
+    }
+  }).catch(() => {});
+
   setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
 }
 
@@ -1062,11 +1088,13 @@ function buildSafeReply(sock, chatJid, msg) {
 
 function isSettingsMenuOption(cleanInput) {
   return (
-    /^([1-9]|1[0-2])(\.[1-4])?$/.test(cleanInput) ||
+    /^([1-9]|1[0-5])(\.[1-4])?$/.test(cleanInput) ||
     cleanInput.startsWith('6 ') ||
     cleanInput.startsWith('pin ') ||
     cleanInput.startsWith('set ') ||
-    cleanInput.startsWith('antidel ')
+    cleanInput.startsWith('antidel ') ||
+    cleanInput.startsWith('online ') ||
+    cleanInput.startsWith('offline ')
   );
 }
 
@@ -1088,7 +1116,9 @@ function isQuotedFromSettingsMenu(quotedCaption) {
     cap.includes('FAKE ACTION') ||
     cap.includes('AI AUTO CHAT') ||
     cap.includes('ANTI-DELETE') ||
-    cap.includes('ANTI DELETE')
+    cap.includes('ANTI DELETE') ||
+    cap.includes('ALWAYS ONLINE') ||
+    cap.includes('PRESENCE')
   );
 }
 
@@ -1179,6 +1209,50 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
     }
 
     return safeReply('❌ Invalid argument. Type `' + prefix + 'antidel`');
+  }
+
+  // ⚡ ALWAYS ONLINE / OFFLINE TOGGLE DIRECT COMMAND
+  if (['alwaysonline', 'alwayson', 'online', 'offline'].includes(commandName)) {
+    if (!isAuthorized) {
+      await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
+      return true;
+    }
+
+    const sub = (args[0] || (commandName === 'offline' ? 'offline' : '')).toLowerCase();
+
+    if (!sub) {
+      const current = await getBotSettings(myBotNum);
+      return safeReply(
+        `*🌐 PRESENCE STATUS SETTINGS*\n\n` +
+        `• Current State: *${(current.alwaysOnline || 'off').toUpperCase()}*\n\n` +
+        `*Commands:*\n` +
+        `• \`${prefix}alwaysonline on\` (හැමවෙලේම Online)\n` +
+        `• \`${prefix}alwaysonline offline\` (හැමවෙලේම Offline)\n` +
+        `• \`${prefix}alwaysonline off\` (Normal WhatsApp Presence)`
+      );
+    }
+
+    let targetState = 'off';
+    if (['on', 'enable', 'true'].includes(sub)) targetState = 'on';
+    else if (['offline', 'invisible', 'hide'].includes(sub)) targetState = 'offline';
+    else if (['off', 'disable', 'false'].includes(sub)) targetState = 'off';
+    else {
+      return safeReply('❌ Invalid status! Use `on`, `offline`, or `off`.');
+    }
+
+    await SettingsModel.findByIdAndUpdate(myBotNum, { alwaysOnline: targetState }, { upsert: true });
+    clearSettingsCache(myBotNum);
+
+    if (targetState === 'on') {
+      await sock.sendPresenceUpdate('available').catch(() => {});
+      return safeReply('✅ *Always Online Status Activated!* බොට් දැන් හැමවෙලේම Online පෙන්වයි 🟢');
+    } else if (targetState === 'offline') {
+      await sock.sendPresenceUpdate('unavailable').catch(() => {});
+      return safeReply('✅ *Always Offline Status Activated!* බොට් දැන් හැමවෙලේම Offline පෙන්වයි ⚪');
+    } else {
+      await sock.sendPresenceUpdate('unavailable').catch(() => {});
+      return safeReply('✅ *Presence Reset to Normal Mode!*');
+    }
   }
 
   const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
@@ -1278,7 +1352,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 
   // 🛡️ Always Cache Incoming Messages in Global Memory
   if (chatJid !== 'status@broadcast' && msg.key?.id) {
-    // Protocol Message (Revoke) එකක් හරහා මැසේජ් එක ඩිලීට් කළාද බැලීම
     const isProtocolRevoke = msg.message?.protocolMessage?.type === 0;
     if (isProtocolRevoke && msg.message?.protocolMessage?.key?.id) {
       const revKey = msg.message.protocolMessage.key;
@@ -1289,7 +1362,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
       }
     }
 
-    // Normal message එක cache කරගැනීම
     globalMsgStore.set(msg.key.id, JSON.parse(JSON.stringify(msg)));
   }
 
@@ -1394,7 +1466,6 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
   });
 }
 
-// 🛡️ Baileys Revoke Event Listener
 function registerMessageUpdateHandler(sock, phoneNumber) {
   sock.ev.on('messages.update', async (updates) => {
     for (const update of updates) {
@@ -1645,3 +1716,4 @@ async function main() {
 }
 
 main();
+
