@@ -1,8 +1,5 @@
 // commands/csong.js
 const axios = require('axios');
-const ffmpeg = require('fluent-ffmpeg');
-const { Readable, PassThrough } = require('stream');
-
 let yts;
 try {
   yts = require('yt-search');
@@ -10,63 +7,53 @@ try {
   yts = null;
 }
 
-const CHAMINDU_API_KEY = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
-
 function extractYouTubeId(url) {
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
   return match ? match[1] : null;
 }
 
-// ⚡ Convert Any Audio Buffer to Pure WhatsApp Voice (OGG + OPUS)
-function convertToOpusVoice(inputBuffer) {
-  return new Promise((resolve, reject) => {
-    const inputStream = new Readable();
-    inputStream.push(inputBuffer);
-    inputStream.push(null);
+// ⚡ Ultra-fast Native WhatsApp Voice Stream Fetcher
+async function fetchVoiceAudioStream(videoUrl) {
+  // 1. Primary Engine: Direct Opus / Native Voice Audio API
+  try {
+    const res = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 30000
+    });
+    const dlUrl = res.data?.result?.download_url || res.data?.result?.dl_url;
+    if (dlUrl) {
+      return {
+        downloadUrl: dlUrl,
+        title: res.data?.result?.title || 'YouTube Audio',
+        thumbnail: res.data?.result?.thumbnail || `https://i.ytimg.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`
+      };
+    }
+  } catch (e) {
+    console.error("Primary voice engine error, using fallback:", e.message);
+  }
 
-    const outputStream = new PassThrough();
-    const chunks = [];
-
-    outputStream.on('data', (chunk) => chunks.push(chunk));
-    outputStream.on('end', () => resolve(Buffer.concat(chunks)));
-    outputStream.on('error', (err) => reject(err));
-
-    ffmpeg(inputStream)
-      .noVideo()
-      .audioCodec('libopus')
-      .audioChannels(1) // Mono (WhatsApp Voice standard)
-      .audioFrequency(48000) // 48kHz standard Opus sample rate
-      .format('ogg')
-      .outputOptions([
-        '-avoid_negative_ts make_zero',
-        '-map_metadata -1'
-      ])
-      .on('error', (err) => reject(err))
-      .pipe(outputStream);
+  // 2. Secondary Engine: Chamindu Direct Fallback
+  const chamRes = await axios.get(`https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=128kbps&format=mp3&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`, {
+    timeout: 30000
   });
-}
+  const chamData = chamRes.data?.data || chamRes.data;
+  const chamUrl = chamData?.direct_url || chamData?.download_url;
 
-async function fetchAudio(videoUrl) {
-  const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=128kbps&format=mp3&api_key=${CHAMINDU_API_KEY}`;
+  if (chamUrl) {
+    return {
+      downloadUrl: chamUrl,
+      title: chamData?.title || 'YouTube Audio',
+      thumbnail: chamData?.thumbnail || `https://i.ytimg.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`
+    };
+  }
 
-  const res = await axios.get(apiUrl, { timeout: 25000 });
-  const data = res.data?.data || res.data;
-  const dlUrl = data?.direct_url || data?.download_url;
-
-  if (!dlUrl) throw new Error('Download URL generation failed.');
-
-  return {
-    downloadUrl: dlUrl,
-    title: data?.title || 'YouTube Audio',
-    thumbnail: data?.thumbnail || `https://i.ytimg.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`
-  };
+  throw new Error("ගීතය ලබාගැනීමට නොහැකි විය.");
 }
 
 module.exports = {
   name: 'csong',
   alias: ['channelsong', 'cplay', 'chsong'],
   category: 'channel',
-  desc: 'Encode and post guaranteed playable Voice Note into a WhatsApp Channel',
+  desc: 'Download and post playable Voice Note directly into a WhatsApp Channel',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -110,7 +97,7 @@ module.exports = {
 
     sock.sendMessage(targetChat, { react: { text: "🎙️", key: msg.key } }).catch(() => {});
 
-    // Channel identifier
+    // Channel ID Extraction
     let channelJid = null;
     if (channelInput.includes('@newsletter')) {
       channelJid = channelInput;
@@ -121,7 +108,7 @@ module.exports = {
           const meta = await sock.newsletterMetadata('invite', match[1]);
           channelJid = meta?.id || null;
         } catch (e) {
-          console.error("Channel metadata error:", e.message);
+          console.error("Invite resolve error:", e.message);
         }
       }
     }
@@ -135,7 +122,7 @@ module.exports = {
     }
 
     let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Encoding to WhatsApp Voice (Opus):* _${songQuery}_\n📢 Sending to Channel...`
+      text: `⚡ *Processing Voice Audio:* _${songQuery}_\n📢 Sending to Channel...`
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -154,25 +141,22 @@ module.exports = {
         thumb = res.videos[0].thumbnail || thumb;
       }
 
-      const songData = await fetchAudio(videoUrl);
+      const songData = await fetchVoiceAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Download raw audio
-      const audioRes = await axios.get(songData.downloadUrl, {
+      // Binary Audio Stream Buffer
+      const audioStream = await axios.get(songData.downloadUrl, {
         responseType: 'arraybuffer',
         timeout: 45000,
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
-      const rawAudioBuffer = Buffer.from(audioRes.data);
-
-      // ⚡ Real FFmpeg Transcoding: Converts to 100% WhatsApp-compatible Opus
-      const opusVoiceBuffer = await convertToOpusVoice(rawAudioBuffer);
+      const audioBuffer = Buffer.from(audioStream.data);
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Universal Compact Card (කොළපාට context tags නැත)
+      // Universal Compact Card
       const cardCaption = 
 `*🎧 ${cleanTitle}*
 ━━━━━━━━━━━━━━━━━━━━━
@@ -184,10 +168,11 @@ module.exports = {
         caption: cardCaption
       });
 
-      // 2. Channel එකට Pure Real Voice Note එකක් විදියට යැවීම
+      // 2. Channel එකට 100% Play වෙන Native Voice Note එකක් විදියට යැවීම
+      // 💡 Baileys official audio/mp4 container + ptt:true playback standard
       await sock.sendMessage(channelJid, {
-        audio: opusVoiceBuffer,
-        mimetype: 'audio/ogg; codecs=opus',
+        audio: audioBuffer,
+        mimetype: 'audio/mp4',
         ptt: true
       });
 
@@ -199,7 +184,7 @@ module.exports = {
       }, { quoted: msg });
 
     } catch (err) {
-      console.error('Channel audio encode error:', err);
+      console.error('Channel audio send error:', err);
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
