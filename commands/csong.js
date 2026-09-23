@@ -1,10 +1,57 @@
 // commands/csong.js
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { exec } = require('child_process');
+
 let yts;
 try {
   yts = require('yt-search');
 } catch (e) {
   yts = null;
+}
+
+let ffmpegPath = 'ffmpeg';
+try {
+    ffmpegPath = require('ffmpeg-static');
+} catch (e) {}
+
+// 🟢 Beautiful Waveform Generator
+const generateWaveform = () => {
+    const waveform = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) {
+        waveform[i] = Math.floor(Math.random() * 80) + 20; 
+    }
+    return waveform;
+};
+
+// 🟢 100% Stable Audio Converter (RAM-backed TMP processing - OPUS FORMAT)
+// මෙයින් සහතික කරන්නේ Channel එකට යවන Voice Note එක WhatsApp හි Native PTT (Opus) එකක් ලෙසම Play වන බවයි.
+function convertToOpus(inputBuffer) {
+    return new Promise((resolve, reject) => {
+        const tmpIn = path.join(os.tmpdir(), `in_${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`);
+        const tmpOut = path.join(os.tmpdir(), `out_${Date.now()}_${Math.random().toString(36).substring(7)}.ogg`);
+        
+        fs.writeFileSync(tmpIn, inputBuffer);
+        try { fs.chmodSync(ffmpegPath, 0o777); } catch (e) {}
+
+        const cmd = `"${ffmpegPath}" -y -threads 4 -i "${tmpIn}" -vn -c:a libopus -b:a 48k -vbr on -compression_level 2 -frame_duration 20 -application voip -ac 1 -ar 16000 "${tmpOut}"`;
+        
+        exec(cmd, (err, stdout, stderr) => {
+            try { fs.unlinkSync(tmpIn); } catch (e) {}
+            if (err) return reject(new Error("FFmpeg Conversion Failed"));
+            
+            try {
+                const opusBuffer = fs.readFileSync(tmpOut);
+                fs.unlinkSync(tmpOut);
+                if (opusBuffer.length < 1024) return reject(new Error("Corrupted File"));
+                resolve(opusBuffer);
+            } catch (e) {
+                reject(e);
+            }
+        });
+    });
 }
 
 function extractYouTubeId(url) {
@@ -14,7 +61,7 @@ function extractYouTubeId(url) {
 
 // ⚡ Ultra-fast Native WhatsApp Voice Stream Fetcher
 async function fetchVoiceAudioStream(videoUrl) {
-  // 1. Primary Engine: Direct Opus / Native Voice Audio API
+  // 1. Primary Engine
   try {
     const res = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
       timeout: 30000
@@ -129,6 +176,7 @@ module.exports = {
       let videoUrl = songQuery;
       let videoTitle = songQuery;
       let thumb = 'https://files.catbox.moe/a58add.jpeg';
+      let timestampStr = "0:00"; // Duration fallback
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(songQuery);
 
@@ -139,6 +187,18 @@ module.exports = {
         videoUrl = res.videos[0].url;
         videoTitle = res.videos[0].title || songQuery;
         thumb = res.videos[0].thumbnail || thumb;
+        timestampStr = res.videos[0].timestamp || (res.videos[0].duration ? res.videos[0].duration.timestamp : "0:00");
+      } else if (yts) {
+        // YT Link එකක් දුන්නොත් Thumbnail එකයි Duration එකයි ගන්න
+        try {
+            const ytId = extractYouTubeId(videoUrl);
+            const searchResults = await yts({ videoId: ytId });
+            if (searchResults && searchResults.title) {
+                videoTitle = searchResults.title;
+                thumb = searchResults.thumbnail || thumb;
+                timestampStr = searchResults.timestamp || (searchResults.duration ? searchResults.duration.timestamp : "0:00");
+            }
+        } catch(e) {}
       }
 
       const songData = await fetchVoiceAudioStream(videoUrl);
@@ -147,33 +207,49 @@ module.exports = {
       // Binary Audio Stream Buffer
       const audioStream = await axios.get(songData.downloadUrl, {
         responseType: 'arraybuffer',
-        timeout: 45000,
+        timeout: 60000,
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
-      const audioBuffer = Buffer.from(audioStream.data);
+      const rawAudioBuffer = Buffer.from(audioStream.data);
+
+      if (!rawAudioBuffer || rawAudioBuffer.length < 10000) {
+          throw new Error("Downloaded audio is corrupted or too small.");
+      }
+
+      // 🟢 1. Convert to Native WhatsApp Voice Note (OPUS)
+      await sock.sendMessage(targetChat, { text: `⚡ *Processing Voice Audio:* _${cleanTitle}_\n⚙️ Converting to Native Voice Note...`, edit: statusMsg?.key }).catch(()=>{});
+      const finalAudioBuffer = await convertToOpus(rawAudioBuffer);
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Universal Compact Card
+      // 🟢 2. Universal Compact Card Design (ඔබේ බොට්ගේ විලාසය)
       const cardCaption = 
-`*🎧 ${cleanTitle}*
-━━━━━━━━━━━━━━━━━━━━━
+`🎶 ❝ ${cleanTitle} ❞
+
+0:00 ⊲⊲  ▐ ▌  ⊳⊳ ${timestampStr}
+━━━━━⬤───────
+
+\`\`\`Use Headphones For Best Experience.... 🎧🎵\`\`\`
+
 > ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`.trim();
 
-      // 1. Channel එකට Image Card එක යැවීම
+      // 3. Channel එකට Image Card එක යැවීම
       await sock.sendMessage(channelJid, {
         image: { url: songData.thumbnail || thumb },
         caption: cardCaption
       });
 
-      // 2. Channel එකට 100% Play වෙන Native Voice Note එකක් විදියට යැවීම
-      // 💡 Baileys official audio/mp4 container + ptt:true playback standard
+      // 🟢 4. Spam වැළැක්වීමට තත්පර 3 ක අනිවාර්ය Delay එක
+      await new Promise(r => setTimeout(r, 3000));
+
+      // 5. Channel එකට 100% Play වෙන Native Voice Note එකක් විදියට Waveform එකත් සමග යැවීම
       await sock.sendMessage(channelJid, {
-        audio: audioBuffer,
-        mimetype: 'audio/mp4',
-        ptt: true
+        audio: finalAudioBuffer,
+        mimetype: 'audio/ogg; codecs=opus',
+        ptt: true,
+        waveform: generateWaveform() 
       });
 
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
@@ -197,4 +273,3 @@ module.exports = {
     }
   }
 };
-
