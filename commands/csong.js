@@ -1,5 +1,8 @@
 // commands/csong.js
 const axios = require('axios');
+const ffmpeg = require('fluent-ffmpeg');
+const { Readable, PassThrough } = require('stream');
+
 let yts;
 try {
   yts = require('yt-search');
@@ -14,47 +17,56 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ Ultra-Stable Audio Fetcher (Guaranteed Playable Stream)
-async function fetchPlayableAudio(videoUrl) {
-  // 1. Primary: Chamindu API (Fast 128kbps Standard Stream)
-  try {
-    const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=128kbps&format=mp3&api_key=${CHAMINDU_API_KEY}`;
-    const res = await axios.get(apiUrl, { timeout: 25000 });
-    const data = res.data?.data || res.data;
-    const dlUrl = data?.direct_url || data?.download_url;
+// ⚡ Convert Any Audio Buffer to Pure WhatsApp Voice (OGG + OPUS)
+function convertToOpusVoice(inputBuffer) {
+  return new Promise((resolve, reject) => {
+    const inputStream = new Readable();
+    inputStream.push(inputBuffer);
+    inputStream.push(null);
 
-    if (dlUrl) {
-      return {
-        downloadUrl: dlUrl,
-        title: data?.title || 'YouTube Audio',
-        thumbnail: data?.thumbnail || `https://i.ytimg.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`,
-        isOpus: false
-      };
-    }
-  } catch (e) {
-    console.error("Chamindu audio error, switching fallback:", e.message);
-  }
+    const outputStream = new PassThrough();
+    const chunks = [];
 
-  // 2. Fallback: Direct Audio Source
-  const fallbackUrl = `https://api.dhammika.gov.lk/yt?query=${encodeURIComponent(videoUrl)}&type=audio`;
-  const fbRes = await axios.get(fallbackUrl, { timeout: 25000 });
-  if (fbRes.data?.download) {
-    return {
-      downloadUrl: fbRes.data.download,
-      title: fbRes.data.title || 'YouTube Audio',
-      thumbnail: `https://i.ytimg.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`,
-      isOpus: false
-    };
-  }
+    outputStream.on('data', (chunk) => chunks.push(chunk));
+    outputStream.on('end', () => resolve(Buffer.concat(chunks)));
+    outputStream.on('error', (err) => reject(err));
 
-  throw new Error("ගීතය Download කරගැනීමට සබැඳියක් සොයාගත නොහැකි විය.");
+    ffmpeg(inputStream)
+      .noVideo()
+      .audioCodec('libopus')
+      .audioChannels(1) // Mono (WhatsApp Voice standard)
+      .audioFrequency(48000) // 48kHz standard Opus sample rate
+      .format('ogg')
+      .outputOptions([
+        '-avoid_negative_ts make_zero',
+        '-map_metadata -1'
+      ])
+      .on('error', (err) => reject(err))
+      .pipe(outputStream);
+  });
+}
+
+async function fetchAudio(videoUrl) {
+  const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=128kbps&format=mp3&api_key=${CHAMINDU_API_KEY}`;
+
+  const res = await axios.get(apiUrl, { timeout: 25000 });
+  const data = res.data?.data || res.data;
+  const dlUrl = data?.direct_url || data?.download_url;
+
+  if (!dlUrl) throw new Error('Download URL generation failed.');
+
+  return {
+    downloadUrl: dlUrl,
+    title: data?.title || 'YouTube Audio',
+    thumbnail: data?.thumbnail || `https://i.ytimg.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`
+  };
 }
 
 module.exports = {
   name: 'csong',
   alias: ['channelsong', 'cplay', 'chsong'],
   category: 'channel',
-  desc: 'Post verified playable audio to WhatsApp Channel without codec corruption',
+  desc: 'Encode and post guaranteed playable Voice Note into a WhatsApp Channel',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -96,9 +108,9 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
+    sock.sendMessage(targetChat, { react: { text: "🎙️", key: msg.key } }).catch(() => {});
 
-    // Fast Channel JID Resolution
+    // Channel identifier
     let channelJid = null;
     if (channelInput.includes('@newsletter')) {
       channelJid = channelInput;
@@ -109,7 +121,7 @@ module.exports = {
           const meta = await sock.newsletterMetadata('invite', match[1]);
           channelJid = meta?.id || null;
         } catch (e) {
-          console.error("Invite resolve error:", e.message);
+          console.error("Channel metadata error:", e.message);
         }
       }
     }
@@ -123,7 +135,7 @@ module.exports = {
     }
 
     let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Downloading Clean Audio Stream:* _${songQuery}_...\n📢 Sending to Channel...`
+      text: `⚡ *Encoding to WhatsApp Voice (Opus):* _${songQuery}_\n📢 Sending to Channel...`
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -142,16 +154,19 @@ module.exports = {
         thumb = res.videos[0].thumbnail || thumb;
       }
 
-      const songData = await fetchPlayableAudio(videoUrl);
+      const songData = await fetchAudio(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Audio binary buffer
-      const audioStream = await axios.get(songData.downloadUrl, {
+      // Download raw audio
+      const audioRes = await axios.get(songData.downloadUrl, {
         responseType: 'arraybuffer',
         timeout: 45000,
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
-      const audioBuffer = Buffer.from(audioStream.data);
+      const rawAudioBuffer = Buffer.from(audioRes.data);
+
+      // ⚡ Real FFmpeg Transcoding: Converts to 100% WhatsApp-compatible Opus
+      const opusVoiceBuffer = await convertToOpusVoice(rawAudioBuffer);
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
@@ -169,25 +184,22 @@ module.exports = {
         caption: cardCaption
       });
 
-      // 2. Channel එකට 100% Playable Audio එක යැවීම
-      // ⚡ CRITICAL FIX: MP3 container එකට audio/mp4 mime type එක සහ ptt: true දැමීමෙන් 
-      // WhatsApp audio player එක crash නොවී instant play වෙන voice player එකක් ලෙස ක්‍රියාත්මක වේ.
+      // 2. Channel එකට Pure Real Voice Note එකක් විදියට යැවීම
       await sock.sendMessage(channelJid, {
-        audio: audioBuffer,
-        mimetype: 'audio/mp4',
-        ptt: true,
-        waveform: new Uint8Array([10, 30, 60, 90, 45, 80, 35, 75, 40, 20, 5])
+        audio: opusVoiceBuffer,
+        mimetype: 'audio/ogg; codecs=opus',
+        ptt: true
       });
 
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
       await sock.sendMessage(targetChat, {
-        text: `✅ *Audio Uploaded & Verified! Playback ready.*\n\n• *Track:* ${cleanTitle}\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
+        text: `✅ *Voice Note Uploaded & Ready to Play!*\n\n• *Track:* ${cleanTitle}\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg });
 
     } catch (err) {
-      console.error('Channel audio playback error:', err.message);
+      console.error('Channel audio encode error:', err);
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
