@@ -14,14 +14,16 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-async function fetchAudioFromChamindu(videoUrl) {
+// ⚡ Fetch directly in compatible format without server lag
+async function fetchAudio(videoUrl) {
+  // Chamindu API එකෙන් MP3 format එක ලබාගැනීම
   const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=128kbps&format=mp3&api_key=${CHAMINDU_API_KEY}`;
 
   const res = await axios.get(apiUrl, { timeout: 25000 });
   const data = res.data?.data || res.data;
   const dlUrl = data?.direct_url || data?.download_url;
 
-  if (!dlUrl) throw new Error('Download link generation failed.');
+  if (!dlUrl) throw new Error('Download URL ලබාගත නොහැකි විය.');
 
   return {
     downloadUrl: dlUrl,
@@ -34,7 +36,7 @@ module.exports = {
   name: 'csong',
   alias: ['channelsong', 'cplay', 'chsong'],
   category: 'channel',
-  desc: 'Fast download and post songs to channel without lagging the bot',
+  desc: 'Download and post songs directly into a WhatsApp Channel as real Voice Note',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -57,7 +59,7 @@ module.exports = {
 
     if (!fullText.includes(',')) {
       return await sock.sendMessage(targetChat, {
-        text: `*🎧 HESHAN-MD CHANNEL MUSIC*\n\n` +
+        text: `*🎧 HESHAN-MD CHANNEL VOICE PLAYER*\n\n` +
               `> 💡 *භාවිතය:* \`.csong <channel_link>, <song_name>\`\n` +
               `> 📌 *උදා:* \`.csong https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V, Lelena\`\n\n` +
               `*⚡ ʜᴇꜱʜᴀɴ ᴍᴅ*`,
@@ -71,14 +73,14 @@ module.exports = {
 
     if (!channelInput || !songQuery) {
       return await sock.sendMessage(targetChat, {
-        text: '⚠️ කරුණාකර Channel Link එක සහ සින්දුවේ නම (,) කොමාවකින් වෙන් කර එවන්න.',
+        text: '⚠️ කරුණාකර Channel Link එක සහ සින්දුවේ නම (,) කොමාවකින් වෙන් කර ලබාදෙන්න.',
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
-    sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
+    sock.sendMessage(targetChat, { react: { text: "🎙️", key: msg.key } }).catch(() => {});
 
-    // Fast Channel JID Resolution
+    // Channel identifier extraction
     let channelJid = null;
     if (channelInput.includes('@newsletter')) {
       channelJid = channelInput;
@@ -89,7 +91,7 @@ module.exports = {
           const meta = await sock.newsletterMetadata('invite', match[1]);
           channelJid = meta?.id || null;
         } catch (e) {
-          console.error("Channel invite resolve error:", e.message);
+          console.error("Channel metadata error:", e.message);
         }
       }
     }
@@ -103,7 +105,7 @@ module.exports = {
     }
 
     let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Processing:* _${songQuery}_...\n📢 Posting to Channel...`
+      text: `⚡ *Processing Voice Stream:* _${songQuery}_\n📢 Sending to Channel...`
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -114,7 +116,7 @@ module.exports = {
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(songQuery);
 
       if (!isYtUrl) {
-        if (!yts) throw new Error('yt-search library not found.');
+        if (!yts) throw new Error('yt-search library missing.');
         const res = await yts(songQuery);
         if (!res?.videos?.length) throw new Error('Song not found!');
         videoUrl = res.videos[0].url;
@@ -122,10 +124,10 @@ module.exports = {
         thumb = res.videos[0].thumbnail || thumb;
       }
 
-      // 128kbps lightweight fast audio (RAM crash / server lag වැළැක්වීමට)
-      const songData = await fetchAudioFromChamindu(videoUrl);
+      const songData = await fetchAudio(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
+      // Download buffer
       const audioStream = await axios.get(songData.downloadUrl, {
         responseType: 'arraybuffer',
         timeout: 45000,
@@ -137,35 +139,36 @@ module.exports = {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Universal Card (කොළ පාට context නැත)
+      // Universal Compact Card (කොළපාට channel context නැත)
       const cardCaption = 
 `*🎧 ${cleanTitle}*
 ━━━━━━━━━━━━━━━━━━━━━
 > ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`.trim();
 
-      // 1. Channel එකට Image Card එක යැවීම
+      // 1. Channel එකට Cover Photo Card එක යැවීම
       await sock.sendMessage(channelJid, {
         image: { url: songData.thumbnail || thumb },
         caption: cardCaption
       });
 
-      // 2. Channel එකට Audio එක යැවීම (Fast Native Stream)
+      // 2. Channel එකට නියම Voice Note (PTT) එකක් විදියට යැවීම
+      // WhatsApp Voice Note එකක් ලෙස පිළිගැනීමට waveform සහ audio/ogg header එක ලබාදීම:
       await sock.sendMessage(channelJid, {
         audio: audioBuffer,
-        mimetype: 'audio/mp4',
-        fileName: `${cleanTitle}.mp3`,
-        ptt: false
+        mimetype: 'audio/ogg; codecs=opus',
+        ptt: true,
+        waveform: [0, 20, 50, 80, 40, 90, 30, 70, 40, 20, 10] // Voice waveform bar එක activate කරයි
       });
 
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
       await sock.sendMessage(targetChat, {
-        text: `✅ *Uploaded to Channel successfully!*\n\n• *Track:* ${cleanTitle}\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
+        text: `✅ *Voice Note Posted Successfully!*\n\n• *Track:* ${cleanTitle}\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg });
 
     } catch (err) {
-      console.error('csong crash guard:', err.message);
+      console.error('Channel Voice Note Error:', err.message);
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
