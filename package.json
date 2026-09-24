@@ -7,7 +7,7 @@
     "start": "node --expose-gc --max-old-space-size=400 index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.8",
+    "@whiskeysockets/baileys": "^6.7.9",
     "axios": "^1.7.2",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
