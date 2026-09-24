@@ -14,7 +14,8 @@ const {
   delay,
   Browsers,
   makeCacheableSignalKeyStore,
-  WAMessageStubType
+  WAMessageStubType,
+  fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
 // 🟢 Global Process Crash Guards
@@ -28,6 +29,7 @@ process.on('unhandledRejection', (err) => {
 // 🟢 Config & DB Models
 const { MONGODB_URI, BOT_NAME, OWNER_NUMBER } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
+
 let askAI = null;
 try {
   askAI = require('./ai').askAI;
@@ -375,7 +377,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION (Ubuntu/Chrome Signature)
+// 🔌 SOCKET CREATION (Ubuntu/Chrome Profile)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -383,11 +385,14 @@ async function createBaileysSocket(phoneNumber) {
   const logger = pino({ level: 'silent' });
   const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60, maxKeys: 300 });
 
+  const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
+
   const sock = makeWASocket({
+    version,
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'), // Standard Browser for stability
+    browser: Browsers.ubuntu('Chrome'),
     msgRetryCounterCache,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
@@ -455,7 +460,7 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 }
 
 // ============================================================================
-// 💬 MESSAGE HANDLING
+// 💬 MESSAGE HANDLING HELPERS
 // ============================================================================
 
 function unwrapMessageContent(message) {
@@ -534,7 +539,7 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
 }
 
 // ============================================================================
-// 🚀 INITIALIZER
+// 🚀 BOT INITIALIZATION
 // ============================================================================
 
 async function initWhatsApp(phoneNumber) {
@@ -567,7 +572,7 @@ function stopAndRemoveSession(num) {
 }
 
 // ============================================================================
-// 🌐 PAIRING ROUTE (FULLY FIXED)
+// 🌐 PAIRING ROUTE (STABLE LINK DEVICE)
 // ============================================================================
 
 function registerPairRoute(app) {
@@ -595,15 +600,19 @@ function registerPairRoute(app) {
     try {
       const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(num);
       const logger = pino({ level: 'silent' });
+      const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
       pairSock = makeWASocket({
+        version,
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: Browsers.ubuntu('Chrome'), // Ubuntu signature for stable pairing
+        browser: Browsers.ubuntu('Chrome'),
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000
+        keepAliveIntervalMs: 25000,
+        markOnlineOnConnect: false,
+        emitOwnEvents: false
       });
 
       pairSock.ev.on('creds.update', saveCreds);
@@ -623,8 +632,8 @@ function registerPairRoute(app) {
         }
       });
 
-      // Pair code ඉල්ලීමට පෙර connection එක establish වීමට 4 තත්පරයක් ලබා දීම
-      await delay(4000);
+      // Render server websocket ready වීමට delay එක 8s තබා ඇත
+      await delay(8000);
 
       if (!pairSock.authState.creds.registered) {
         let code = await pairSock.requestPairingCode(num);
@@ -642,7 +651,7 @@ function registerPairRoute(app) {
         } catch (e) {}
       }
       return res.status(500).json({
-        error: 'Pairing failed. WhatsApp blocked or network delay. Try again in 10 seconds.'
+        error: 'Pairing failed: ' + (err?.message || 'Server timeout. Wait 10 seconds and retry.')
       });
     }
   });
@@ -651,7 +660,7 @@ function registerPairRoute(app) {
 function registerAllHttpRoutes(app) {
   registerPortalRoute(app);
   registerPairRoute(app);
-  
+
   app.get('/reset-num', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Number required' });
@@ -669,8 +678,19 @@ function registerAllHttpRoutes(app) {
 }
 
 // ============================================================================
-// 🔁 STARTUP
+// 🔁 STARTUP & KEEP ALIVE
 // ============================================================================
+
+function startKeepAlivePing() {
+  const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
+  if (!keepAliveUrl) return;
+
+  setInterval(async () => {
+    try {
+      await fetch(keepAliveUrl);
+    } catch (e) {}
+  }, 2 * 60 * 1000);
+}
 
 async function reconnectAllSavedSessions() {
   try {
@@ -697,6 +717,7 @@ async function startServer() {
 
   app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
+    startKeepAlivePing();
   });
 
   await reconnectAllSavedSessions();
