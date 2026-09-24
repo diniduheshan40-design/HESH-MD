@@ -1,13 +1,11 @@
-// commands/settings.js
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const mongoose = require('mongoose');
 
-// In-memory cache to prevent database hammering & freeze
 const memSettingsCache = new Map();
 
-// ⚡ Safe Logo Fetcher with Buffer Fallback
+// ⚡ Safe Logo Fetcher with Fallback
 let cachedLogo = null;
 async function getBotLogo() {
   if (cachedLogo) return cachedLogo;
@@ -24,9 +22,7 @@ async function getBotLogo() {
         return cachedLogo;
       }
     }
-  } catch (e) {
-    console.error("Local logo error:", e.message);
-  }
+  } catch (e) {}
 
   try {
     const fallbackUrl = 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg';
@@ -34,12 +30,10 @@ async function getBotLogo() {
     cachedLogo = Buffer.from(res.data, 'binary');
     return cachedLogo;
   } catch (e) {
-    console.error("Remote logo fetch failed:", e.message);
     return null;
   }
 }
 
-// Safe Mongo Model Lookup Helper
 function getModel() {
   try {
     if (mongoose.connection.readyState !== 1) return null;
@@ -62,7 +56,6 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // ⚡ Channel Context Info
     const channelContext = global.channelContext?.contextInfo || {
       forwardingScore: 999,
       isForwarded: true,
@@ -79,15 +72,12 @@ module.exports = {
 
     const isSettingsReply = quotedCaption.includes("SYSTEM SETTINGS") || 
                             quotedCaption.includes("WORK MODE") ||
-                            quotedCaption.includes("FAKE ACTION") ||
-                            quotedCaption.includes("AI AUTO CHAT") ||
-                            quotedCaption.includes("ANTI-DELETE") ||
                             quotedCaption.includes("PRESENCE STATUS");
 
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
-
     const hasArgsPassed = Array.isArray(args) && args.length > 0;
+
     if (!isExplicitCommand && !isSettingsReply && !hasArgsPassed) {
       return;
     }
@@ -107,14 +97,9 @@ module.exports = {
       try {
         if (typeof safeReply === 'function') return await safeReply(content);
         const payload = typeof content === 'string' ? { text: content } : { ...content };
-        payload.contextInfo = {
-          ...(payload.contextInfo || {}),
-          ...channelContext
-        };
+        payload.contextInfo = { ...(payload.contextInfo || {}), ...channelContext };
         return await sock.sendMessage(targetChat, payload, { quoted: msg });
-      } catch (err) {
-        console.error("Reply sending failed:", err.message);
-      }
+      } catch (err) {}
     };
 
     if (!isOwner) {
@@ -127,9 +112,9 @@ module.exports = {
       workMode: 'public',
       autoStatusSeen: true,
       statusReact: true,
-      statusReactEmoji: '💐',
+      statusReactEmoji: '💚',
       autoPresence: 'off',
-      alwaysOnline: 'off', // 'on', 'offline', 'off'
+      alwaysOnline: 'off',
       autoChatRead: false,
       aiChatEnabled: false,
       antiDeleteEnabled: true,
@@ -149,18 +134,15 @@ module.exports = {
           const doc = await SettingsModel.findById(botNumber).lean();
           if (doc) settings = Object.assign(settings, doc);
         }
-      } catch (e) {
-        console.error("Settings DB Fetch Error:", e.message);
-      }
+      } catch (e) {}
       memSettingsCache.set(botNumber, settings);
     }
 
-    // Input Extraction
     let input = "";
     if (Array.isArray(args) && args.length > 0) {
       input = args.join(' ').trim().toLowerCase();
     } else if (isSettingsReply) {
-      input = rawText.toLowerCase();
+      input = rawText.toLowerCase().trim();
     }
 
     let isUpdated = false;
@@ -175,18 +157,29 @@ module.exports = {
     else if (input === '2.1') { settings.autoStatusSeen = true; isUpdated = true; }
     else if (input === '2.2') { settings.autoStatusSeen = false; isUpdated = true; }
 
-    // 3. STATUS REACTION
+    // 3. STATUS REACTION ON/OFF
     else if (input === '3.1') { settings.statusReact = true; isUpdated = true; }
     else if (input === '3.2') { settings.statusReact = false; isUpdated = true; }
 
-    // 4. STATUS REACT EMOJI
-    else if (input.startsWith('4')) {
+    // 4. STATUS REACT EMOJI (💚 GREEN HEART / RANDOM / CUSTOM)
+    else if (input === '4.1' || input === 'react green') { 
+      settings.statusReact = true;
+      settings.statusReactEmoji = '💚'; 
+      isUpdated = true; 
+    }
+    else if (input === '4.2' || input === 'react random') { 
+      settings.statusReact = true;
+      settings.statusReactEmoji = 'random'; 
+      isUpdated = true; 
+    }
+    else if (input.startsWith('4.3 ') || input.startsWith('4 ')) {
       const parts = input.split(' ');
       if (parts[1]) {
+        settings.statusReact = true;
         settings.statusReactEmoji = parts[1].trim();
         isUpdated = true;
       } else {
-        return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 4 🌸`)');
+        return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 4.3 🔥` හෝ `.set 4 🌸`)');
       }
     }
 
@@ -203,43 +196,43 @@ module.exports = {
         settings.securityPin = newPin;
         isUpdated = true;
       } else {
-        return await reply('⚠️ අවම අංක 4ක PIN එකක් ලබාදෙන්න! (උදා: `.set pin 7788` හෝ `.set 6 7788`)');
+        return await reply('⚠️ අවම අංක 4ක PIN එකක් ලබාදෙන්න! (උදා: `.set 6 7788`)');
       }
     }
 
-    // 7. AUTO CHAT READ (BLUE TICK) ON/OFF
+    // 7. AUTO CHAT READ (BLUE TICK)
     else if (input === '7.1') { settings.autoChatRead = true; isUpdated = true; }
     else if (input === '7.2') { settings.autoChatRead = false; isUpdated = true; }
 
-    // 8. AI AUTO CHAT ON/OFF
-    else if (input === '8.1' || input === 'aichat on') { settings.aiChatEnabled = true; isUpdated = true; }
-    else if (input === '8.2' || input === 'aichat off') { settings.aiChatEnabled = false; isUpdated = true; }
+    // 8. AI AUTO CHAT
+    else if (input === '8.1') { settings.aiChatEnabled = true; isUpdated = true; }
+    else if (input === '8.2') { settings.aiChatEnabled = false; isUpdated = true; }
 
-    // 🛡️ 9. ANTI-DELETE STATUS (ON / OFF)
-    else if (input === '9.1' || input === 'antidel on') { settings.antiDeleteEnabled = true; isUpdated = true; }
-    else if (input === '9.2' || input === 'antidel off') { settings.antiDeleteEnabled = false; isUpdated = true; }
+    // 9. ANTI-DELETE ON/OFF
+    else if (input === '9.1') { settings.antiDeleteEnabled = true; isUpdated = true; }
+    else if (input === '9.2') { settings.antiDeleteEnabled = false; isUpdated = true; }
 
-    // 🛡️ 10. ANTI-DELETE SCOPE (INBOX / GROUP / ALL)
-    else if (input === '10.1' || input === 'antidel inbox') { settings.antiDeleteType = 'inbox'; isUpdated = true; }
-    else if (input === '10.2' || input === 'antidel group') { settings.antiDeleteType = 'group'; isUpdated = true; }
-    else if (input === '10.3' || input === 'antidel all') { settings.antiDeleteType = 'all'; isUpdated = true; }
+    // 10. ANTI-DELETE SCOPE
+    else if (input === '10.1') { settings.antiDeleteType = 'inbox'; isUpdated = true; }
+    else if (input === '10.2') { settings.antiDeleteType = 'group'; isUpdated = true; }
+    else if (input === '10.3') { settings.antiDeleteType = 'all'; isUpdated = true; }
 
-    // 🛡️ 11. ANTI-DELETE DESTINATION (ME / FROM)
-    else if (input === '11.1' || input === 'antidel to me') { settings.antiDeleteDest = 'me'; isUpdated = true; }
-    else if (input === '11.2' || input === 'antidel to from') { settings.antiDeleteDest = 'from'; isUpdated = true; }
+    // 11. ANTI-DELETE DESTINATION
+    else if (input === '11.1') { settings.antiDeleteDest = 'me'; isUpdated = true; }
+    else if (input === '11.2') { settings.antiDeleteDest = 'from'; isUpdated = true; }
 
-    // ⚡ 12. ALWAYS ONLINE / ALWAYS OFFLINE
-    else if (input === '12.1' || input === 'online on') { 
+    // 12. ALWAYS ONLINE / OFFLINE
+    else if (input === '12.1') { 
       settings.alwaysOnline = 'on'; 
       isUpdated = true; 
       sock.sendPresenceUpdate('available').catch(() => {});
     }
-    else if (input === '12.2' || input === 'offline on') { 
+    else if (input === '12.2') { 
       settings.alwaysOnline = 'offline'; 
       isUpdated = true; 
       sock.sendPresenceUpdate('unavailable').catch(() => {});
     }
-    else if (input === '12.3' || input === 'online off') { 
+    else if (input === '12.3') { 
       settings.alwaysOnline = 'off'; 
       isUpdated = true; 
       sock.sendPresenceUpdate('unavailable').catch(() => {});
@@ -258,48 +251,21 @@ module.exports = {
             { upsert: true, new: true }
           );
         }
-      } catch (e) {
-        console.error("Settings DB Save Error:", e.message);
-      }
+      } catch (e) {}
 
-      // Flush memory cache in index.js
       if (typeof global.clearSettingsCache === 'function') {
         global.clearSettingsCache(botNumber);
       }
 
-      const modeBadge = {
-        public: 'PUBLIC 🌐',
-        private: 'PRIVATE 🔒',
-        inbox: 'INBOX 📥',
-        groups: 'GROUPS 👥'
-      }[settings.workMode] || 'PUBLIC 🌐';
-
-      const presenceBadge = {
-        composing: 'TYPING ✍️',
-        recording: 'RECORDING 🎙️',
-        off: 'OFF 🔴'
-      }[settings.autoPresence] || 'OFF 🔴';
-
-      const alwaysOnlineBadge = {
-        on: 'ALWAYS ONLINE 🟢',
-        offline: 'ALWAYS OFFLINE ⚪',
-        off: 'NORMAL 🔴'
-      }[settings.alwaysOnline] || 'NORMAL 🔴';
-
-      const antiDelDestBadge = settings.antiDeleteDest === 'from' ? 'SAME CHAT 💬' : 'BOT OWNER INBOX 👤';
+      const reactEmojiDisplay = settings.statusReactEmoji === 'random' ? 'RANDOM EMOJIS 🔀' : settings.statusReactEmoji;
 
       return await reply(
         `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n\n` +
-        `• Work Mode       : *${modeBadge}*\n` +
-        `• Auto Status     : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-        `• Status React    : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'} (${settings.statusReactEmoji || '💐'})*\n` +
-        `• Fake Action     : *${presenceBadge}*\n` +
-        `• Presence Mode   : *${alwaysOnlineBadge}*\n` +
-        `• Auto Chat Seen  : *${settings.autoChatRead ? 'ON 🟢 (Blue Tick)' : 'OFF 🔴 (No Blue Tick)'}*\n` +
-        `• AI Auto Chat    : *${settings.aiChatEnabled ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-        `• Anti-Delete     : *${settings.antiDeleteEnabled ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-        `• Anti-Del Scope  : *${(settings.antiDeleteType || 'all').toUpperCase()}*\n` +
-        `• Anti-Del Target : *${antiDelDestBadge}*`
+        `• Status Seen     : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        `• Status React    : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        `• React Style     : *${reactEmojiDisplay}*\n` +
+        `• Always Online   : *${settings.alwaysOnline.toUpperCase()}*\n` +
+        `• Anti-Delete     : *${settings.antiDeleteEnabled ? 'ON 🟢' : 'OFF 🔴'}*`
       );
     }
 
@@ -312,25 +278,12 @@ module.exports = {
       groups: 'GROUPS 👥'
     }[settings.workMode] || 'PUBLIC 🌐';
 
-    const presenceBadge = {
-      composing: 'TYPING ✍️',
-      recording: 'RECORDING 🎙️',
-      off: 'OFF 🔴'
-    }[settings.autoPresence] || 'OFF 🔴';
-
-    const alwaysOnlineBadge = {
-      on: 'ALWAYS ONLINE 🟢',
-      offline: 'ALWAYS OFFLINE ⚪',
-      off: 'NORMAL 🔴'
-    }[settings.alwaysOnline] || 'NORMAL 🔴';
-
-    const antiDelDestBadge = settings.antiDeleteDest === 'from' ? 'SAME CHAT' : 'BOT INBOX (ME)';
+    const currentReactDisplay = settings.statusReactEmoji === 'random' ? 'RANDOM 🔀' : (settings.statusReactEmoji || '💚');
 
     const menu = `╭─── ⚡ *HESHAN-MD SYSTEM SETTINGS* ⚡ ───╮
 │
 ├ 🤖 *Target Session :* +${botNumber}
 ├ 🛡️ *Master Access  :* Verified
-├ 🔐 *Security PIN   :* ${settings.securityPin || '1234'}
 │
 ├─◈ *1. WORK MODE* ⤿ [ ${modeBadge} ]
 │  ├ 1.1 Private
@@ -343,50 +296,43 @@ module.exports = {
 │  └ 2.2 Status Seen Off
 │
 ├─◈ *3. STATUS REACTION* ⤿ [ ${stateBadge(settings.statusReact)} ]
-│  ├ 3.1 React On
-│  └ 3.2 React Off
+│  ├ 3.1 React On 🟢
+│  └ 3.2 React Off 🔴
 │
-├─◈ *4. STATUS EMOJI* ⤿ [ ${settings.statusReactEmoji || '💐'} ]
-│  └ ✦ Type: .set 4 <emoji>
+├─◈ *4. STATUS REACT EMOJI* ⤿ [ ${currentReactDisplay} ]
+│  ├ 4.1 💚 Green Heart Only
+│  ├ 4.2 🔀 Random Emojis Mode
+│  └ 4.3 <emoji> (උදා: .set 4.3 🔥)
 │
-├─◈ *5. FAKE ACTION* ⤿ [ ${presenceBadge} ]
+├─◈ *5. FAKE ACTION* ⤿ [ ${(settings.autoPresence || 'off').toUpperCase()} ]
 │  ├ 5.1 Fake Typing ✍️
 │  ├ 5.2 Fake Recording 🎙️
 │  └ 5.3 Turn Off 🔴
 │
 ├─◈ *6. CHANGE PIN* ⤿ [ ${settings.securityPin || '1234'} ]
-│  └ ✦ Type: .set 6 <new_pin>  (හෝ .set pin <pin>)
+│  └ ✦ Type: .set 6 <new_pin>
 │
-├─◈ *7. AUTO MGS SEEN* ⤿ [ ${stateBadge(settings.autoChatRead)} ]
+├─◈ *7. AUTO MSG SEEN* ⤿ [ ${stateBadge(settings.autoChatRead)} ]
 │  ├ 7.1 Auto Seen On (Blue Tick)
-│  └ 7.2 Auto Seen Off (Default)
+│  └ 7.2 Auto Seen Off
 │
 ├─◈ *8. AI AUTO CHAT* ⤿ [ ${stateBadge(settings.aiChatEnabled)} ]
 │  ├ 8.1 AI Chat On 🤖
 │  └ 8.2 AI Chat Off 🛑
 │
-├─◈ *9. ANTI-DELETE STATUS* ⤿ [ ${stateBadge(settings.antiDeleteEnabled)} ]
+├─◈ *9. ANTI-DELETE* ⤿ [ ${stateBadge(settings.antiDeleteEnabled)} ]
 │  ├ 9.1 Anti-Delete On 🛡️
 │  └ 9.2 Anti-Delete Off 🛑
 │
-├─◈ *10. ANTI-DELETE SCOPE* ⤿ [ ${(settings.antiDeleteType || 'all').toUpperCase()} ]
-│  ├ 10.1 Inbox Only 📥
-│  ├ 10.2 Group Only 👥
-│  └ 10.3 All Chats 🌐
-│
-├─◈ *11. ANTI-DELETE TARGET* ⤿ [ ${antiDelDestBadge} ]
-│  ├ 11.1 Send To Me (Owner Chat) 👤
-│  └ 11.2 Send To Chat (Where Deleted) 💬
-│
-├─◈ *12. PRESENCE STATUS* ⤿ [ ${alwaysOnlineBadge} ]
-│  ├ 12.1 Always Online 🟢
-│  ├ 12.2 Always Offline ⚪
-│  └ 12.3 Normal Presence 🔴
+├─◈ *10. ALWAYS ONLINE* ⤿ [ ${settings.alwaysOnline.toUpperCase()} ]
+│  ├ 10.1 Always Online 🟢
+│  ├ 10.2 Always Offline ⚪
+│  └ 10.3 Normal Mode 🔴
 │
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• අදාළ Option එක Type කරන්න (උදා: *.set 12.1*, *.set 12.2*, *.set 9.1*)
-• නැතහොත් මෙම පණිවිඩයට අංකය පමණක් Reply කරන්න (උදා: *12.1*)
+• Settings පණිවිඩයට අදාළ අංකය Reply කරන්න (උදා: *4.1* හෝ *4.2*)
+• නැතහොත් command එක run කරන්න (උදා: *.set 4.1*, *.statusreact random*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
@@ -401,9 +347,7 @@ module.exports = {
         }, { quoted: msg });
         return;
       }
-    } catch (err) {
-      console.error("Settings Menu Image dispatch failed:", err.message);
-    }
+    } catch (err) {}
 
     await sock.sendMessage(targetChat, { 
       text: menu,
