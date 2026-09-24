@@ -26,9 +26,14 @@ process.on('unhandledRejection', (err) => {
 });
 
 // 🟢 Config & DB Models
-const { MONGODB_URI, BOT_NAME } = require('./config');
+const { MONGODB_URI, BOT_NAME, OWNER_NUMBER } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
-const { askAI } = require('./ai');
+let askAI = null;
+try {
+  askAI = require('./ai').askAI;
+} catch (e) {
+  askAI = async () => null;
+}
 
 // ============================================================================
 // 🌍 GLOBAL CONSTANTS
@@ -52,9 +57,9 @@ const channelContext = {
 };
 global.channelContext = channelContext;
 
-const REAL_OWNER_NUMBER = '94719845166';
+const REAL_OWNER_NUMBER = OWNER_NUMBER || '94719845166';
 const OWNER_NUMBERS = [
-  '94719845166',
+  REAL_OWNER_NUMBER,
   '94720882316',
   '15947733680169',
   '15947733680169@lid',
@@ -196,7 +201,7 @@ function getCommandExecutor(cmd) {
 }
 
 // ============================================================================
-// 🌐 LUXURY RED-BLACK GLASSMORPHIC PORTAL
+// 🌐 UI PORTAL
 // ============================================================================
 
 function renderPortalHtml(botName) {
@@ -209,7 +214,7 @@ function renderPortalHtml(botName) {
       <title>${botName} • PAIRING STATION</title>
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
       <style>
         :root {
           --bg-core: #090305;
@@ -247,7 +252,6 @@ function renderPortalHtml(botName) {
           text-align: center;
           box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 45px var(--accent-glow);
           position: relative;
-          overflow: hidden;
         }
         .portal-card::before {
           content: '';
@@ -267,12 +271,12 @@ function renderPortalHtml(botName) {
           background: linear-gradient(135deg, #ffffff 40%, var(--crimson-soft) 80%, var(--accent-red) 100%);
           -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px;
         }
-        .app-desc { font-size: 13.5px; color: var(--text-muted); margin-bottom: 30px; font-weight: 400; }
+        .app-desc { font-size: 13.5px; color: var(--text-muted); margin-bottom: 30px; }
         .input-wrap { position: relative; margin-bottom: 16px; }
         .phone-input {
           width: 100%; padding: 16px 20px; border-radius: 16px; border: 1px solid var(--border-glass);
           background: rgba(12, 3, 6, 0.7); color: var(--text-main); font-size: 17px; font-weight: 600;
-          letter-spacing: 0.8px; text-align: center; outline: none; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          letter-spacing: 0.8px; text-align: center; outline: none; transition: all 0.3s ease;
         }
         .phone-input:focus { border-color: var(--border-focus); box-shadow: 0 0 24px rgba(225, 29, 72, 0.35); background: rgba(18, 4, 9, 0.9); }
         .btn-action {
@@ -286,31 +290,29 @@ function renderPortalHtml(botName) {
           width: 100%; padding: 13px; border-radius: 14px; border: 1px solid rgba(225, 29, 72, 0.25);
           background: rgba(225, 29, 72, 0.08); color: var(--crimson-soft); font-size: 12.5px; font-weight: 600; cursor: pointer;
         }
-        .code-container { display: none; margin-top: 24px; animation: fadeIn 0.4s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .code-container { display: none; margin-top: 24px; }
         .code-box {
-          font-family: 'JetBrains Mono', monospace; font-size: 32px; font-weight: 800; letter-spacing: 5px;
+          font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 800; letter-spacing: 4px;
           color: #ffe4e6; background: rgba(225, 29, 72, 0.14); border: 1.5px dashed rgba(251, 113, 133, 0.45);
-          padding: 18px; border-radius: 16px; cursor: pointer; transition: all 0.25s ease;
+          padding: 18px; border-radius: 16px; cursor: pointer;
         }
-        .code-box:hover { background: rgba(225, 29, 72, 0.22); border-color: var(--crimson-soft); transform: scale(1.02); }
-        .copy-tag { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; font-weight: 500; }
-        .footer-note { margin-top: 28px; font-size: 11px; letter-spacing: 1px; color: rgba(255, 255, 255, 0.25); text-transform: uppercase; }
+        .copy-tag { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; }
+        .footer-note { margin-top: 28px; font-size: 11px; color: rgba(255, 255, 255, 0.25); text-transform: uppercase; }
       </style>
     </head>
     <body>
       <div class="portal-card">
         <div class="badge-status"><span class="badge-dot"></span> Online System</div>
         <h1 class="app-title">${botName}</h1>
-        <p class="app-desc">Enter phone number with country code</p>
+        <p class="app-desc">Enter phone number with country code (e.g. 9471xxxxxxx)</p>
         <div class="input-wrap">
-          <input type="text" id="phone" class="phone-input" placeholder="e.g. 9470xxxxxxx" />
+          <input type="text" id="phone" class="phone-input" placeholder="947xxxxxxxx" />
         </div>
         <button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button>
         <button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button>
         <div class="code-container" id="codeWrapper">
           <div class="code-box" id="codeDisplay" onclick="copyCode()"></div>
-          <div class="copy-tag">Click code to copy to clipboard</div>
+          <div class="copy-tag">Click code to copy</div>
         </div>
         <p class="footer-note">Powered by Heshan MD</p>
       </div>
@@ -331,20 +333,19 @@ function renderPortalHtml(botName) {
               display.innerText = data.code;
               wrapper.style.display = 'block';
               navigator.clipboard.writeText(data.code).catch(()=>{});
-              alert('✅ Pairing Code: ' + data.code);
             } else {
               alert(data.error || 'Connection busy. Please wait 10 seconds and retry.');
             }
           } catch(e) {
-            alert('Server connection error. Refresh page and retry!');
+            alert('Server connection error. Please refresh and retry!');
           }
           btn.innerText = 'GET PAIRING CODE';
           btn.disabled = false;
         }
         async function cleanSessionSlot() {
           const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
-          if (!phone) return alert('Clean කිරීමට Phone Number එක ඇතුළත් කරන්න!');
-          if (confirm('+' + phone + ' සඳහා පැරණි session එක සම්පූර්ණයෙන්ම Clean කරන්නද?')) {
+          if (!phone) return alert('Phone Number එක ඇතුළත් කරන්න!');
+          if (confirm('+' + phone + ' Session එක Clean කරන්නද?')) {
             try {
               const res = await fetch('/reset-num?num=' + phone);
               const data = await res.json();
@@ -358,7 +359,7 @@ function renderPortalHtml(botName) {
           const code = document.getElementById('codeDisplay').innerText;
           if (code) {
             navigator.clipboard.writeText(code);
-            alert('✅ Copied to clipboard: ' + code);
+            alert('✅ Copied: ' + code);
           }
         }
       </script>
@@ -374,7 +375,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION
+// 🔌 SOCKET CREATION (Ubuntu/Chrome Signature)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -386,18 +387,15 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.macOS('Desktop'),
+    browser: Browsers.ubuntu('Chrome'), // Standard Browser for stability
     msgRetryCounterCache,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
-    fireInitQueries: true,
-    generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 25000,
     markOnlineOnConnect: true,
-    emitOwnEvents: false,
-    shouldIgnoreJid: () => false
+    emitOwnEvents: false
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -410,7 +408,7 @@ async function createBaileysSocket(phoneNumber) {
 
 async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData) {
   const statusCode = lastDisconnect?.error?.output?.statusCode;
-  console.log(`⚠️ Connection closed (${phoneNumber}), Code:${statusCode}`);
+  console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
 
   try {
     sock.ev.removeAllListeners();
@@ -430,7 +428,7 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   let delayTime = 6000;
 
   if (statusCode === 440) {
-    delayTime = Math.min(reconnectAttempts[phoneNumber] * 12000, 45000);
+    delayTime = Math.min(reconnectAttempts[phoneNumber] * 10000, 45000);
   } else if (reconnectAttempts[phoneNumber] > 5) {
     delayTime = 25000;
   }
@@ -440,79 +438,9 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   }, delayTime);
 }
 
-async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
-  await delay(2500);
-  try {
-    const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
-    if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
-      const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
-      if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
-    }
-  } catch (e) {}
-
-  try {
-    const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X';
-    if (typeof sock.groupAcceptInvite === 'function') {
-      await sock.groupAcceptInvite(groupInviteCode);
-    }
-  } catch (e) {}
-}
-
-function buildConnectedMessage(botNum) {
-  return `*✦ ${BOT_NAME} CONNECTED ✦*
-━━━━━━━━━━━━━━━━━━━━━
-• *Number*    : +${botNum}
-• *Engine*    : HESHAN-MD V2
-• *Features*  : Auto Status | Anti-Delete
-• *State*     : Online (24/7 Cloud)
-━━━━━━━━━━━━━━━━━━━━━
-> Type *.menu* to explore all commands.`.trim();
-}
-
-async function sendFirstConnectAlerts(sock, phoneNumber) {
-  try {
-    const botNum = sock.user?.id
-      ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '')
-      : phoneNumber.replace(/[^0-9]/g, '');
-
-    const botJid = `${botNum}@s.whatsapp.net`;
-    const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
-
-    const currentSettings = await getBotSettings(botNum);
-    if (currentSettings.isFirstConnectDone) return;
-
-    const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
-    const connectedMsg = buildConnectedMessage(botNum);
-
-    const connectPayload = {
-      image: { url: sessionLogo },
-      caption: connectedMsg,
-      ...global.channelContext
-    };
-
-    await sock.sendMessage(botJid, connectPayload).catch(() => {
-      sock.sendMessage(botJid, { text: connectedMsg, ...global.channelContext }).catch(() => {});
-    });
-
-    if (!botNum.includes(REAL_OWNER_NUMBER)) {
-      const alertMsg = `*🔔 ALERT : NEW SESSION CONNECTED*
-━━━━━━━━━━━━━━━━━━━━━
-• *Number* : +${botNum}
-• *System* : Initialized successfully
-━━━━━━━━━━━━━━━━━━━━━`;
-      await sock.sendMessage(creatorJid, { text: alertMsg, ...global.channelContext }).catch(() => {});
-    }
-
-    await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
-    clearSettingsCache(botNum);
-  } catch (e) {}
-}
-
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
   reconnectAttempts[phoneNumber] = 0;
-  autoFollowChannelAndJoinGroup(sock, phoneNumber);
-  setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
 }
 
 function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
@@ -527,89 +455,8 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 }
 
 // ============================================================================
-// 💬 MESSAGE HANDLING HELPERS
+// 💬 MESSAGE HANDLING
 // ============================================================================
-
-async function reactToChannelPost(sock, msg, chatJid) {
-  try {
-    const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-    await delay(Math.floor(Math.random() * 3000) + 1200);
-
-    const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
-    if (typeof sock.newsletterReactMessage === 'function' && serverId) {
-      await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
-    } else {
-      await sock.sendMessage(chatJid, { react: { text: randomEmoji, key: msg.key } });
-    }
-  } catch (err) {}
-}
-
-async function simulateAutoPresence(sock, chatJid, settings) {
-  if (!settings.autoPresence || settings.autoPresence === 'off') return;
-  try {
-    const type = settings.autoPresence === 'recording' ? 'recording' : 'composing';
-    await sock.sendPresenceUpdate(type, chatJid);
-  } catch (err) {}
-}
-
-async function handleStatusBroadcast(sock, msg, settings) {
-  if (!settings.autoStatusSeen) return;
-  try {
-    await sock.readMessages([msg.key]);
-    if (settings.statusReact && msg.key.participant) {
-      await sock.sendMessage(
-        'status@broadcast',
-        { react: { text: settings.statusReactEmoji || '💐', key: msg.key } },
-        { statusJidList: [msg.key.participant] }
-      );
-    }
-  } catch (e) {}
-}
-
-function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
-  if (msg.key.fromMe) return myBotJid;
-  if (isGroup) {
-    return msg.key?.participant || msg.participant || '';
-  }
-  return chatJid;
-}
-
-async function resolveLidToRealJid(sock, originalSender) {
-  if (!originalSender) return '';
-  if (!originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
-    return originalSender;
-  }
-  try {
-    const resolved = await sock.signalRepository.lidToJid(originalSender);
-    return resolved || originalSender;
-  } catch (e) {
-    return originalSender;
-  }
-}
-
-function isOwnerJid(jid) {
-  if (!jid) return false;
-  const str = String(jid).toLowerCase();
-  return OWNER_NUMBERS.some(owner => str.includes(owner.toLowerCase()));
-}
-
-function checkIsOwner(originalSender, resolvedSender) {
-  return isOwnerJid(originalSender) || isOwnerJid(resolvedSender);
-}
-
-function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
-  return isOwner || msg.key.fromMe || (Boolean(myBotNum) && cleanSenderNum === myBotNum);
-}
-
-function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
-  if (isAuthorized) return false;
-  const mode = String(workMode || 'public').toLowerCase().trim();
-  if (mode === 'public') return false;
-  if (mode === 'private' || mode === 'self') return true;
-  if ((mode === 'groups' || mode === 'group') && !isGroup) return true;
-  if (mode === 'inbox' && isGroup) return true;
-  return false;
-}
 
 function unwrapMessageContent(message) {
   return (
@@ -627,8 +474,6 @@ function extractMessageText(rawMsg) {
     rawMsg?.extendedTextMessage?.text ||
     rawMsg?.imageMessage?.caption ||
     rawMsg?.videoMessage?.caption ||
-    rawMsg?.buttonsResponseMessage?.selectedButtonId ||
-    rawMsg?.templateButtonReplyMessage?.selectedId ||
     ''
   ).trim();
 }
@@ -636,12 +481,10 @@ function extractMessageText(rawMsg) {
 function buildSafeReply(sock, chatJid, msg) {
   return async (content) => {
     let replyPayload = typeof content === 'string' ? { text: content } : { ...content };
-    
     replyPayload.contextInfo = {
       ...(replyPayload.contextInfo || {}),
       ...(global.channelContext?.contextInfo || {})
     };
-
     try {
       return await sock.sendMessage(chatJid, replyPayload, { quoted: msg });
     } catch (e) {
@@ -650,318 +493,34 @@ function buildSafeReply(sock, chatJid, msg) {
   };
 }
 
-function isSettingsMenuOption(cleanInput) {
-  return (
-    /^([1-9]|1[0-2])(\.[1-4])?$/.test(cleanInput) ||
-    cleanInput.startsWith('6 ') ||
-    cleanInput.startsWith('pin ') ||
-    cleanInput.startsWith('set ') ||
-    cleanInput.startsWith('antidel ')
-  );
-}
-
-function extractQuotedCaption(quotedMsgObj) {
-  return (
-    quotedMsgObj?.imageMessage?.caption ||
-    quotedMsgObj?.videoMessage?.caption ||
-    quotedMsgObj?.conversation ||
-    quotedMsgObj?.extendedTextMessage?.text ||
-    ''
-  );
-}
-
-function isQuotedFromSettingsMenu(quotedCaption) {
-  const cap = quotedCaption.toUpperCase();
-  return (
-    cap.includes('SYSTEM SETTINGS') ||
-    cap.includes('WORK MODE') ||
-    cap.includes('FAKE ACTION') ||
-    cap.includes('AI AUTO CHAT') ||
-    cap.includes('ANTI-DELETE') ||
-    cap.includes('ANTI DELETE')
-  );
-}
-
-function isQuotedFromMainMenu(quotedCaption) {
-  return (
-    quotedCaption.includes('COMMAND CATEGORIES') ||
-    quotedCaption.includes('DOWNLOAD MENU') ||
-    (quotedCaption.includes('USER PROFILE') && quotedCaption.includes('Prefix'))
-  );
-}
-
-async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum) {
-  const settingsCmd = findCommand('settings', 'setting', 'set');
-  if (!settingsCmd) return false;
-  const cmdFunc = getCommandExecutor(settingsCmd);
-  if (!cmdFunc) return false;
-
-  clearSettingsCache(myBotNum);
-  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-  return true;
-}
-
-async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized) {
-  const statusCmd = findCommand('save', 'status');
-  if (!statusCmd) return false;
-  const cmdFunc = getCommandExecutor(statusCmd);
-  if (!cmdFunc) return false;
-
-  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-  return true;
-}
-
-async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum) {
-  const prefixMatch = text.match(/^[./!#]/);
-  if (!prefixMatch) return false;
-
-  const prefix = prefixMatch[0];
-  const args = text.slice(prefix.length).trim().split(/ +/);
-  const commandName = args.shift().toLowerCase();
-
-  // 🛡️ ANTI-DELETE COMMAND DIRECT
-  if (['antidel', 'antidelete'].includes(commandName)) {
-    if (!isAuthorized) {
-      await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
-      return true;
-    }
-
-    const sub = args[0]?.toLowerCase();
-    const val = args[1]?.toLowerCase();
-
-    if (!sub) {
-      const current = await getBotSettings(myBotNum);
-      return safeReply(
-        `*🛡️ ANTI-DELETE SETTINGS*\n\n` +
-        `• Status: *${current.antiDeleteEnabled ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-        `• Scope: *${(current.antiDeleteType || 'all').toUpperCase()}* (inbox | group | all)\n` +
-        `• Send To: *${(current.antiDeleteDest || 'me').toUpperCase()}* (me | from)\n\n` +
-        `*Commands:*\n` +
-        `• \`${prefix}antidel on/off\`\n` +
-        `• \`${prefix}antidel type inbox/group/all\`\n` +
-        `• \`${prefix}antidel to me/from\``
-      );
-    }
-
-    if (sub === 'on' || sub === 'off') {
-      const state = sub === 'on';
-      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteEnabled: state }, { upsert: true });
-      clearSettingsCache(myBotNum);
-      return safeReply(`✅ Anti-Delete status set to *${sub.toUpperCase()}*`);
-    }
-
-    if (sub === 'type') {
-      if (!['inbox', 'group', 'all'].includes(val)) {
-        return safeReply('❌ Invalid type! Choose: `inbox`, `group`, or `all`');
-      }
-      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteType: val }, { upsert: true });
-      clearSettingsCache(myBotNum);
-      return safeReply(`✅ Anti-Delete scope set to: *${val.toUpperCase()}*`);
-    }
-
-    if (sub === 'to' || sub === 'dest') {
-      if (!['me', 'from'].includes(val)) {
-        return safeReply('❌ Invalid destination! Choose: `me` or `from`');
-      }
-      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteDest: val }, { upsert: true });
-      clearSettingsCache(myBotNum);
-      return safeReply(`✅ Target chat set to: *${val.toUpperCase()}*`);
-    }
-
-    return safeReply('❌ Invalid argument. Type `' + prefix + 'antidel`');
-  }
-
-  const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
-
-  if (isSettingsCmd && !isAuthorized) {
-    await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
-    return true;
-  }
-
-  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
-    return true;
-  }
-
-  let targetCmd = commands.get(commandName);
-  if (!targetCmd && isSettingsCmd) targetCmd = findCommand('settings', 'setting', 'set');
-  if (!targetCmd) return false;
-
-  try {
-    const cmdFunc = getCommandExecutor(targetCmd);
-    if (cmdFunc) {
-      if (isSettingsCmd) clearSettingsCache(myBotNum);
-      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized, isGroup });
-    }
-  } catch (err) {
-    console.error(`Command [${commandName}] execution error:`, err?.message);
-  }
-  return true;
-}
-
-// ============================================================================
-// 🛡️ ANTI-DELETE DISPATCHER (TEXT & MEDIA FORWARD ENGINE)
-// ============================================================================
-
-async function triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber) {
-  try {
-    const myBotJid = sock.user?.id || '';
-    const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
-    const settings = await getBotSettings(myBotNum);
-
-    if (!settings.antiDeleteEnabled) return;
-
-    const chatJid = deletedKey.remoteJid;
-    const isGroup = chatJid.endsWith('@g.us');
-
-    if (settings.antiDeleteType === 'inbox' && isGroup) return;
-    if (settings.antiDeleteType === 'group' && !isGroup) return;
-
-    const sender = cachedMsg.key.participant || cachedMsg.key.remoteJid;
-    const senderClean = sender.split('@')[0].split(':')[0];
-
-    const targetJid = settings.antiDeleteDest === 'from'
-      ? chatJid
-      : myBotJid.split(':')[0] + '@s.whatsapp.net';
-
-    const alertText = 
-      `*🛡️ ANTI-DELETE DETECTED 🛡️*\n` +
-      `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `👤 *Sender:* @${senderClean}\n` +
-      `📍 *Chat:* ${isGroup ? 'Group Chat' : 'Inbox (Private)'}\n` +
-      `⏰ *Time:* ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo' })}\n` +
-      `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `> *Deleted Message Content:*`;
-
-    await sock.sendMessage(targetJid, {
-      text: alertText,
-      mentions: [sender],
-      ...global.channelContext
-    });
-
-    const rawContent = unwrapMessageContent(cachedMsg.message);
-    const textBody = rawContent?.conversation || rawContent?.extendedTextMessage?.text;
-
-    if (textBody) {
-      await sock.sendMessage(targetJid, { text: `💬 *Deleted Text:*\n\n${textBody}` });
-    } else {
-      try {
-        await sock.sendMessage(targetJid, { forward: cachedMsg, ...global.channelContext });
-      } catch (e) {
-        await sock.sendMessage(targetJid, rawContent);
-      }
-    }
-  } catch (err) {
-    console.error('Anti-delete trigger error:', err?.message);
-  }
-}
-
-// ============================================================================
-// 💬 SINGLE MESSAGE PROCESSOR
-// ============================================================================
-
 async function processSingleMessage(sock, msg, phoneNumber) {
   if (!msg || !msg.message) return;
   const chatJid = msg.key?.remoteJid;
-  if (!chatJid) return;
-
-  if (chatJid !== 'status@broadcast' && msg.key?.id) {
-    const isProtocolRevoke = msg.message?.protocolMessage?.type === 0;
-    if (isProtocolRevoke && msg.message?.protocolMessage?.key?.id) {
-      const revKey = msg.message.protocolMessage.key;
-      const cachedRevMsg = globalMsgStore.get(revKey.id);
-      if (cachedRevMsg) {
-        await triggerAntiDelete(sock, revKey, cachedRevMsg, phoneNumber);
-        return;
-      }
-    }
-
-    globalMsgStore.set(msg.key.id, JSON.parse(JSON.stringify(msg)));
-  }
-
-  if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
-    if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
-    return;
-  }
-
-  if (msg.message.reactionMessage) return;
-
-  const isGroup = chatJid.endsWith('@g.us');
-  const myBotJid = sock.user?.id || '';
-  const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
-  const settings = await getBotSettings(myBotNum);
-
-  if (settings.autoChatRead && !msg.key.fromMe) {
-    sock.readMessages([msg.key]).catch(() => {});
-  }
-
-  if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
-
-  if (chatJid === 'status@broadcast') {
-    await handleStatusBroadcast(sock, msg, settings);
-    return;
-  }
-
-  const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
-  const resolvedSender = await resolveLidToRealJid(sock, originalSender);
-  const isOwner = checkIsOwner(originalSender, resolvedSender);
-
-  const cleanSenderNum = (resolvedSender || originalSender || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
-  const currentMode = settings.workMode || 'public';
+  if (!chatJid || chatJid === 'status@broadcast') return;
 
   const rawMsg = unwrapMessageContent(msg.message);
   const text = extractMessageText(rawMsg);
   if (!text) return;
 
-  const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
-  const quotedMsgObj = quotedContext?.quotedMessage;
   const safeReply = buildSafeReply(sock, chatJid, msg);
-  const cleanInput = text.toLowerCase().trim();
+  const prefixMatch = text.match(/^[./!#]/);
+  if (!prefixMatch) return;
 
-  const settingsOption = isSettingsMenuOption(cleanInput);
-  const quotedCaption = extractQuotedCaption(quotedMsgObj);
-  const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
-  const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
+  const prefix = prefixMatch[0];
+  const args = text.slice(prefix.length).trim().split(/ +/);
+  const commandName = args.shift().toLowerCase();
 
-  if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
-    if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
-      const menuCmd = findCommand('menu', 'help', 'list');
-      if (menuCmd) {
-        const cmdFunc = getCommandExecutor(menuCmd);
-        if (cmdFunc) {
-          await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized, isGroup });
-          return;
-        }
-      }
+  const targetCmd = commands.get(commandName);
+  if (!targetCmd) return;
+
+  try {
+    const cmdFunc = getCommandExecutor(targetCmd);
+    if (cmdFunc) {
+      const isOwner = msg.key.fromMe || OWNER_NUMBERS.some(o => (msg.key.participant || chatJid).includes(o));
+      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner, isGroup: chatJid.endsWith('@g.us') });
     }
-  }
-
-  if (settingsOption && isAuthorized && fromSettingsMenu && !fromMainMenu) {
-    const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
-    if (handled) return;
-  }
-
-  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
-  const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
-
-  if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanInput))) {
-    if (statusKeywords.includes(cleanInput)) {
-      const handled = await handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized);
-      if (handled) return;
-    }
-  }
-
-  const isCmdHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
-  if (isCmdHandled) return;
-
-  if (settings.aiChatEnabled && !msg.key.fromMe) {
-    if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
-      await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
-      const aiReply = await askAI(text, originalSender || chatJid);
-      if (aiReply) {
-        await sock.sendMessage(chatJid, { text: aiReply }, { quoted: msg }).catch(() => {});
-      }
-    }
+  } catch (err) {
+    console.error(`Command [${commandName}] execution error:`, err?.message);
   }
 }
 
@@ -974,33 +533,8 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
   });
 }
 
-function registerMessageUpdateHandler(sock, phoneNumber) {
-  sock.ev.on('messages.update', async (updates) => {
-    for (const update of updates) {
-      try {
-        const isRevoke =
-          update.update?.messageStubType === WAMessageStubType.REVOKE ||
-          update.update?.messageStubType === 68 ||
-          update.update?.message?.protocolMessage?.type === 0;
-
-        if (!isRevoke) continue;
-
-        const deletedKey = update.key;
-        if (!deletedKey || !deletedKey.id) continue;
-
-        const cachedMsg = globalMsgStore.get(deletedKey.id);
-        if (!cachedMsg || !cachedMsg.message) continue;
-
-        await triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber);
-      } catch (err) {
-        console.error('Anti-delete update handler error:', err?.message);
-      }
-    }
-  });
-}
-
 // ============================================================================
-// 🚀 MAIN WHATSAPP INITIALIZER
+// 🚀 INITIALIZER
 // ============================================================================
 
 async function initWhatsApp(phoneNumber) {
@@ -1015,7 +549,6 @@ async function initWhatsApp(phoneNumber) {
 
     registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData);
     registerMessageUpsertHandler(sock, phoneNumber);
-    registerMessageUpdateHandler(sock, phoneNumber);
 
     return sock;
   } catch (err) {
@@ -1023,10 +556,6 @@ async function initWhatsApp(phoneNumber) {
     console.error(`initWhatsApp Error (${phoneNumber}):`, err.message);
   }
 }
-
-// ============================================================================
-// 🌐 HTTP ROUTES
-// ============================================================================
 
 function stopAndRemoveSession(num) {
   if (!activeSessions[num]) return;
@@ -1037,47 +566,15 @@ function stopAndRemoveSession(num) {
   delete activeSessions[num];
 }
 
-function registerResetAllRoute(app) {
-  app.get('/reset', async (req, res) => {
-    try {
-      await Auth.deleteMany({});
-      if (mongoose.connection.db) {
-        await mongoose.connection.db.collection('auths').deleteMany({});
-      }
-      Object.keys(activeSessions).forEach(num => {
-        stopAndRemoveSession(num);
-      });
-      settingsCache.flushAll();
-      res.json({ success: true, message: 'All sessions successfully wiped!' });
-    } catch (err) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-}
-
-function registerResetSingleNumberRoute(app) {
-  app.get('/reset-num', async (req, res) => {
-    let num = req.query.num;
-    if (!num) return res.status(400).json({ error: 'Number required' });
-    num = num.replace(/[^0-9]/g, '');
-
-    try {
-      stopAndRemoveSession(num);
-      delete isStarting[num];
-      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-      clearSettingsCache(num);
-      return res.json({ success: true, message: `Session cleared for ${num}` });
-    } catch (err) {
-      return res.status(500).json({ error: err.message });
-    }
-  });
-}
+// ============================================================================
+// 🌐 PAIRING ROUTE (FULLY FIXED)
+// ============================================================================
 
 function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Phone number is required!' });
-    
+
     num = num.replace(/[^0-9]/g, '');
     if (num.length < 10) {
       return res.status(400).json({ error: 'Invalid phone number format!' });
@@ -1087,11 +584,10 @@ function registerPairRoute(app) {
     delete isStarting[num];
 
     try {
-      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-      await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
+      await Auth.deleteMany({ _id: { $regex: `^${num}-` } });
       clearSettingsCache(num);
     } catch (e) {
-      console.error('Session reset error:', e.message);
+      console.error('Session clean error:', e.message);
     }
 
     let pairSock = null;
@@ -1104,24 +600,20 @@ function registerPairRoute(app) {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: Browsers.macOS('Desktop'),
+        browser: Browsers.ubuntu('Chrome'), // Ubuntu signature for stable pairing
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000,
-        markOnlineOnConnect: false,
-        emitOwnEvents: false
+        keepAliveIntervalMs: 25000
       });
 
       pairSock.ev.on('creds.update', saveCreds);
 
       pairSock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
-        
         if (connection === 'open') {
           activeSessions[num] = pairSock;
           registerConnectionUpdateHandler(pairSock, num, clearSessionData);
           registerMessageUpsertHandler(pairSock, num);
-          registerMessageUpdateHandler(pairSock, num);
           handleConnectionOpen(pairSock, num);
         } else if (connection === 'close') {
           const code = lastDisconnect?.error?.output?.statusCode;
@@ -1131,16 +623,15 @@ function registerPairRoute(app) {
         }
       });
 
-      // Render servers වල WebSocket ready වීමට delay එක 6s දක්වා වැඩි කරන ලදී
-      await delay(6000);
+      // Pair code ඉල්ලීමට පෙර connection එක establish වීමට 4 තත්පරයක් ලබා දීම
+      await delay(4000);
 
       if (!pairSock.authState.creds.registered) {
         let code = await pairSock.requestPairingCode(num);
         code = code?.match(/.{1,4}/g)?.join('-') || code;
         return res.json({ code });
       } else {
-        await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-        return res.status(400).json({ error: 'Session conflict detected. Please click button again!' });
+        return res.status(400).json({ error: 'Already registered session! Clean session first.' });
       }
     } catch (err) {
       console.error(`❌ Pairing Error for ${num}:`, err?.message || err);
@@ -1150,8 +641,8 @@ function registerPairRoute(app) {
           pairSock.ws?.close();
         } catch (e) {}
       }
-      return res.status(500).json({ 
-        error: 'Pairing code generation failed. WhatsApp server rate-limit or network delay. Wait 15 seconds and retry.' 
+      return res.status(500).json({
+        error: 'Pairing failed. WhatsApp blocked or network delay. Try again in 10 seconds.'
       });
     }
   });
@@ -1159,39 +650,37 @@ function registerPairRoute(app) {
 
 function registerAllHttpRoutes(app) {
   registerPortalRoute(app);
-  registerResetAllRoute(app);
-  registerResetSingleNumberRoute(app);
   registerPairRoute(app);
-}
+  
+  app.get('/reset-num', async (req, res) => {
+    let num = req.query.num;
+    if (!num) return res.status(400).json({ error: 'Number required' });
+    num = num.replace(/[^0-9]/g, '');
 
-// ============================================================================
-// 🔁 KEEP-ALIVE (WAKE SERVER EVERY 2 MINUTES)
-// ============================================================================
-
-function startKeepAlivePing() {
-  const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
-  if (!keepAliveUrl) return;
-
-  setInterval(async () => {
     try {
-      await fetch(keepAliveUrl);
-    } catch (e) {}
-  }, 2 * 60 * 1000);
+      stopAndRemoveSession(num);
+      await Auth.deleteMany({ _id: { $regex: `^${num}-` } });
+      clearSettingsCache(num);
+      return res.json({ success: true, message: `Session cleared for ${num}` });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
 }
 
 // ============================================================================
-// 🍃 STARTUP
+// 🔁 STARTUP
 // ============================================================================
 
 async function reconnectAllSavedSessions() {
   try {
-    const sessions = await Auth.find({ _id: /-creds$/ }).lean();
+    const sessions = await Auth.find({ _id: { $regex: /-creds$/ } }).lean();
     console.log(`🔍 Found ${sessions.length} saved sessions in Database.`);
 
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(10000);
+      await delay(8000);
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
@@ -1208,7 +697,6 @@ async function startServer() {
 
   app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
-    startKeepAlivePing();
   });
 
   await reconnectAllSavedSessions();
