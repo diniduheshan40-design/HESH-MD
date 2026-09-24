@@ -12,7 +12,7 @@ const AuthSchema = new mongoose.Schema(
 
 const Auth = mongoose.models.Auth || mongoose.model('Auth', AuthSchema);
 
-// ⚡ High-Performance RAM Cache (Memory Leak වැළැක්වීමට maxKeys සීමා කර ඇත)
+// Memory cache
 const keyCache = new NodeCache({ stdTTL: 1800, checkperiod: 300, maxKeys: 4000 });
 
 async function useMongoDBAuthState(sessionId) {
@@ -24,13 +24,13 @@ async function useMongoDBAuthState(sessionId) {
       const cacheKey = `${cleanSessionId}-${id}`;
       keyCache.set(cacheKey, serialized);
       
-      Auth.updateOne(
+      await Auth.updateOne(
         { _id: cacheKey },
         { $set: { data: serialized } },
         { upsert: true }
-      ).catch(err => console.error(`❌ DB Write Error (${id}):`, err.message));
+      );
     } catch (err) {
-      console.error(`❌ Serialization Error (${id}):`, err.message);
+      console.error(`❌ DB Write Error (${id}):`, err.message);
     }
   };
 
@@ -141,9 +141,11 @@ async function useMongoDBAuthState(sessionId) {
           }
 
           if (bulkOps.length > 0) {
-            Auth.bulkWrite(bulkOps, { ordered: false }).catch(err => {
+            try {
+              await Auth.bulkWrite(bulkOps, { ordered: false });
+            } catch (err) {
               console.error('❌ BulkWrite DB Error:', err.message);
-            });
+            }
           }
         }
       }
@@ -159,7 +161,7 @@ async function useMongoDBAuthState(sessionId) {
           }
         }
         await Auth.deleteMany({
-          _id: new RegExp('^' + cleanSessionId + '-')
+          _id: { $regex: `^${cleanSessionId}-` }
         });
       } catch (e) {
         console.error('❌ Session delete error:', e.message);
