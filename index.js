@@ -80,12 +80,12 @@ const DEFAULT_SETTINGS = {
 };
 
 // ============================================================================
-// 🧠 RUNTIME STATE & OPTIMIZED MESSAGE STORE
+// 🧠 RUNTIME STATE & LIGHTWEIGHT MEMORY STORE
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 100 });
-// Memory leak නැති කිරීමට maxKeys 3000 දක්වා සීමා කර ඇත (Render RAM safe)
-const globalMsgStore = new NodeCache({ stdTTL: 7200, checkperiod: 120, maxKeys: 3000 });
+// Anti-delete සඳහා message 1000 ක් පමණක් සීමා කර RAM overflow වීම සම්පූර්ණයෙන්ම වළක්වා ඇත
+const globalMsgStore = new NodeCache({ stdTTL: 3600, checkperiod: 120, maxKeys: 1000 });
 
 const activeSessions = {};
 global.activeSessions = activeSessions;
@@ -222,7 +222,6 @@ function renderPortalHtml(botName) {
           --accent-glow: rgba(225, 29, 72, 0.35);
           --crimson-soft: #fb7185;
           --border-glass: rgba(244, 63, 94, 0.22);
-          --border-focus: rgba(244, 63, 94, 0.65);
           --text-main: #fcfcfd;
           --text-muted: #9f8e93;
         }
@@ -318,13 +317,13 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION
+// 🔌 SOCKET CREATION (LEAK SAFE)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
   const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(phoneNumber);
   const logger = pino({ level: 'silent' });
-  const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60, maxKeys: 300 });
+  const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60, maxKeys: 100 });
 
   const sock = makeWASocket({
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
@@ -338,8 +337,8 @@ async function createBaileysSocket(phoneNumber) {
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 30000,
-    markOnlineOnConnect: false,
+    keepAliveIntervalMs: 25000,
+    markOnlineOnConnect: true, // Connection alive තබා ගැනීමට true කිරීම
     emitOwnEvents: false,
     shouldIgnoreJid: () => false
   });
@@ -367,6 +366,7 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   } catch (e) {}
 
   delete activeSessions[phoneNumber];
+  delete isStarting[phoneNumber];
 
   if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
     console.log(`❌ Permanent session logout: ${phoneNumber}`);
@@ -376,11 +376,7 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   }
 
   reconnectAttempts[phoneNumber] = (reconnectAttempts[phoneNumber] || 0) + 1;
-  let delayTime = 5000;
-
-  if (statusCode === 440 || statusCode === 428) {
-    delayTime = Math.min(reconnectAttempts[phoneNumber] * 10000, 30000);
-  }
+  const delayTime = Math.min(reconnectAttempts[phoneNumber] * 5000, 30000);
 
   setTimeout(() => {
     initWhatsApp(phoneNumber);
@@ -392,7 +388,7 @@ function startAlwaysOnlinePresenceLoop(sock, phoneNumber) {
 
   presenceIntervals[phoneNumber] = setInterval(async () => {
     try {
-      if (!sock || !sock.user) {
+      if (!sock || !sock.user || sock.ws?.readyState !== 1) {
         clearInterval(presenceIntervals[phoneNumber]);
         return;
       }
@@ -403,12 +399,13 @@ function startAlwaysOnlinePresenceLoop(sock, phoneNumber) {
         await sock.sendPresenceUpdate('available');
       }
     } catch (e) {}
-  }, 120000); // විනාඩි 2 කට වරක් පමණක් update කර socket spam වීම වළකයි
+  }, 120000);
 }
 
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
   reconnectAttempts[phoneNumber] = 0;
+  delete isStarting[phoneNumber];
   startAlwaysOnlinePresenceLoop(sock, phoneNumber);
 
   const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
@@ -433,16 +430,6 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 // ============================================================================
 // 💬 MESSAGE HANDLING HELPERS
 // ============================================================================
-
-async function reactToChannelPost(sock, msg, chatJid) {
-  try {
-    const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-    const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
-    if (typeof sock.newsletterReactMessage === 'function' && serverId) {
-      await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
-    }
-  } catch (err) {}
-}
 
 function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   if (msg.key.fromMe) return myBotJid;
@@ -513,10 +500,10 @@ function buildSafeReply(sock, chatJid, msg) {
 }
 
 // ============================================================================
-// 🛡️ ANTI-DELETE DISPATCHER
+// 🛡️ ANTI-DELETE DISPATCHER (LIGHTWEIGHT)
 // ============================================================================
 
-async function triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber) {
+async function triggerAntiDelete(sock, deletedKey, cachedData, phoneNumber) {
   try {
     const myBotJid = sock.user?.id || '';
     const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
@@ -530,12 +517,9 @@ async function triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber) {
     if (settings.antiDeleteType === 'inbox' && isGroup) return;
     if (settings.antiDeleteType === 'group' && !isGroup) return;
 
-    const sender = cachedMsg.key.participant || cachedMsg.key.remoteJid;
+    const sender = cachedData.sender;
     const senderClean = sender.split('@')[0].split(':')[0];
-
-    const targetJid = settings.antiDeleteDest === 'from'
-      ? chatJid
-      : myBotJid.split(':')[0] + '@s.whatsapp.net';
+    const targetJid = settings.antiDeleteDest === 'from' ? chatJid : myBotJid.split(':')[0] + '@s.whatsapp.net';
 
     const alertText = 
       `*🛡️ ANTI-DELETE DETECTED 🛡️*\n` +
@@ -543,18 +527,10 @@ async function triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber) {
       `👤 *Sender:* @${senderClean}\n` +
       `📍 *Chat:* ${isGroup ? 'Group Chat' : 'Inbox'}\n` +
       `⏰ *Time:* ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo' })}\n` +
-      `━━━━━━━━━━━━━━━━━━━━━`;
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `💬 *Text:* ${cachedData.text || '[Media Content]'}`;
 
     await sock.sendMessage(targetJid, { text: alertText, mentions: [sender], ...global.channelContext });
-
-    const rawContent = unwrapMessageContent(cachedMsg.message);
-    const textBody = rawContent?.conversation || rawContent?.extendedTextMessage?.text;
-
-    if (textBody) {
-      await sock.sendMessage(targetJid, { text: `💬 *Deleted Text:*\n\n${textBody}` });
-    } else {
-      await sock.sendMessage(targetJid, { forward: cachedMsg, ...global.channelContext }).catch(() => {});
-    }
   } catch (err) {
     console.error('Anti-delete trigger error:', err?.message);
   }
@@ -568,38 +544,37 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   try {
     if (!msg || !msg.message) return;
     const chatJid = msg.key?.remoteJid;
-    if (!chatJid) return;
+    if (!chatJid || chatJid === 'status@broadcast') return;
 
-    // RAM overflow නොවීමට Text/Essential කොටස් පමණක් cache කිරීම
-    if (chatJid !== 'status@broadcast' && msg.key?.id) {
+    const rawMsg = unwrapMessageContent(msg.message);
+    const text = extractMessageText(rawMsg);
+
+    // RAM Leak Fix: Full message object එක වෙනුවට අත්‍යවශ්‍ය text data පමණක් cache කිරීම
+    if (msg.key?.id) {
       const isProtocolRevoke = msg.message?.protocolMessage?.type === 0;
       if (isProtocolRevoke && msg.message?.protocolMessage?.key?.id) {
         const revKey = msg.message.protocolMessage.key;
-        const cachedRevMsg = globalMsgStore.get(revKey.id);
-        if (cachedRevMsg) {
-          await triggerAntiDelete(sock, revKey, cachedRevMsg, phoneNumber);
+        const cachedData = globalMsgStore.get(revKey.id);
+        if (cachedData) {
+          await triggerAntiDelete(sock, revKey, cachedData, phoneNumber);
           return;
         }
       }
-      globalMsgStore.set(msg.key.id, msg);
+
+      globalMsgStore.set(msg.key.id, {
+        text: text,
+        sender: msg.key.participant || msg.participant || chatJid
+      });
     }
 
-    if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
-      if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
+    if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter') || msg.message.reactionMessage) {
       return;
     }
-
-    if (msg.message.reactionMessage) return;
 
     const isGroup = chatJid.endsWith('@g.us');
     const myBotJid = sock.user?.id || '';
     const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
     const settings = await getBotSettings(myBotNum);
-
-    if (chatJid === 'status@broadcast') {
-      if (settings.autoStatusSeen) await sock.readMessages([msg.key]).catch(() => {});
-      return;
-    }
 
     const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
     const isOwner = isOwnerJid(originalSender);
@@ -607,13 +582,10 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
     const currentMode = settings.workMode || 'public';
 
-    const rawMsg = unwrapMessageContent(msg.message);
-    const text = extractMessageText(rawMsg);
     if (!text) return;
-
     const safeReply = buildSafeReply(sock, chatJid, msg);
 
-    // 🎯 PREFIX COMMANDS RUNNER (WITH COMPLETE TRY-CATCH GUARD)
+    // 🎯 PREFIX COMMANDS RUNNER
     const prefixMatch = text.match(/^[./!#]/);
     if (prefixMatch) {
       const prefix = prefixMatch[0];
@@ -630,8 +602,8 @@ async function processSingleMessage(sock, msg, phoneNumber) {
             await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized, isGroup });
           }
         } catch (cmdErr) {
-          console.error(`❌ Crash avoided in command [${commandName}]:`, cmdErr?.message || cmdErr);
-          await safeReply(`⚠️ Command එක execute කිරීමේදී දෝෂයක් ආවා: ${cmdErr?.message || 'Unknown error'}`);
+          console.error(`❌ Error in command [${commandName}]:`, cmdErr?.message || cmdErr);
+          await safeReply(`⚠️ Command error: ${cmdErr?.message || 'Execution error'}`);
         }
         return;
       }
@@ -653,9 +625,7 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', ({ messages }) => {
     if (!messages || !messages.length) return;
     for (const msg of messages) {
-      processSingleMessage(sock, msg, phoneNumber).catch(err => {
-        console.error('Upsert single message caught error:', err?.message);
-      });
+      processSingleMessage(sock, msg, phoneNumber).catch(() => {});
     }
   });
 }
@@ -673,10 +643,10 @@ function registerMessageUpdateHandler(sock, phoneNumber) {
         const deletedKey = update.key;
         if (!deletedKey || !deletedKey.id) continue;
 
-        const cachedMsg = globalMsgStore.get(deletedKey.id);
-        if (!cachedMsg || !cachedMsg.message) continue;
+        const cachedData = globalMsgStore.get(deletedKey.id);
+        if (!cachedData) continue;
 
-        await triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber);
+        await triggerAntiDelete(sock, deletedKey, cachedData, phoneNumber);
       } catch (err) {}
     }
   });
@@ -694,7 +664,6 @@ async function initWhatsApp(phoneNumber) {
   try {
     const { sock, clearSessionData } = await createBaileysSocket(phoneNumber);
     activeSessions[phoneNumber] = sock;
-    delete isStarting[phoneNumber];
 
     registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData);
     registerMessageUpsertHandler(sock, phoneNumber);
@@ -811,19 +780,21 @@ function registerAllHttpRoutes(app) {
 }
 
 // ============================================================================
-// 🔁 AUTO KEEP-ALIVE SYSTEM (FIXED FOR RENDER / SELF PING)
+// 🔁 AUTO KEEP-ALIVE SYSTEM (RENDER AWAKE FIX)
 // ============================================================================
 
-function startKeepAlivePing(port) {
-  // Render එකේ Host URL එක නැතිනම් Localhost එකට ping කරයි
-  const targetUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}/ping`;
+function startKeepAlivePing() {
+  const targetUrl = process.env.RENDER_EXTERNAL_URL;
+  if (!targetUrl) {
+    console.log('⚠️ [Keep-Alive]: Set RENDER_EXTERNAL_URL in Render Dashboard to prevent sleep.');
+    return;
+  }
 
   setInterval(async () => {
     try {
-      await fetch(targetUrl);
-      // console.log('Keep-alive ping sent successfully');
+      await fetch(`${targetUrl}/ping`);
     } catch (e) {}
-  }, 90000); // තත්පර 90 කට වරක් ping කර සර්වර් එක awake තබයි
+  }, 1000 * 60 * 2); // මිනිත්තු 2කට වරක් public traffic එවා නිදාගැනීම නවත්වයි
 }
 
 // ============================================================================
@@ -833,10 +804,11 @@ function startKeepAlivePing(port) {
 async function reconnectAllSavedSessions() {
   try {
     const sessions = await Auth.find({ _id: /-creds$/ }).lean();
+    console.log(`🔍 Found ${sessions.length} saved sessions in Database.`);
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(5000);
+      await delay(6000); // Connection spike වැළැක්වීමට
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
@@ -853,7 +825,7 @@ async function startServer() {
 
   app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
-    startKeepAlivePing(port);
+    startKeepAlivePing();
   });
 
   await reconnectAllSavedSessions();
