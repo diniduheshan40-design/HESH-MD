@@ -4,7 +4,7 @@
   "description": "WhatsApp Multi-Device Bot",
   "main": "index.js",
   "scripts": {
-    "start": "node --max-old-space-size=450 index.js"
+    "start": "node --expose-gc --max-old-space-size=400 index.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.8",
