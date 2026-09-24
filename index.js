@@ -37,6 +37,7 @@ const { askAI } = require('./ai');
 const UPDATE_CHANNEL_JID = '120363421906774107@newsletter';
 const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨';
 const CHANNEL_REACTIONS = ['😼', '🥰', '❤️', '😚', '👑', '💯', '👍'];
+const RANDOM_STATUS_EMOJIS = ['💚', '🥰', '🔥', '🌸', '✨', '❤️', '💐', '🤍', '💫', '⚡', '👑', '💯'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
 const channelContext = {
@@ -66,7 +67,7 @@ const DEFAULT_SETTINGS = {
   workMode: 'public',
   autoStatusSeen: true,
   statusReact: true,
-  statusReactEmoji: '💐',
+  statusReactEmoji: '💚', // Default ලෙස කොළ පාට හාට් එක
   botLogo: DEFAULT_BACKUP_LOGO,
   autoPresence: 'off',
   alwaysOnline: 'off',
@@ -84,7 +85,6 @@ const DEFAULT_SETTINGS = {
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 100 });
-// Anti-delete සඳහා message 1000 ක් පමණක් සීමා කර RAM overflow වීම සම්පූර්ණයෙන්ම වළක්වා ඇත
 const globalMsgStore = new NodeCache({ stdTTL: 3600, checkperiod: 120, maxKeys: 1000 });
 
 const activeSessions = {};
@@ -219,7 +219,6 @@ function renderPortalHtml(botName) {
           --bg-core: #090305;
           --panel-bg: rgba(20, 6, 10, 0.72);
           --accent-red: #e11d48;
-          --accent-glow: rgba(225, 29, 72, 0.35);
           --crimson-soft: #fb7185;
           --border-glass: rgba(244, 63, 94, 0.22);
           --text-main: #fcfcfd;
@@ -338,7 +337,7 @@ async function createBaileysSocket(phoneNumber) {
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 25000,
-    markOnlineOnConnect: true, // Connection alive තබා ගැනීමට true කිරීම
+    markOnlineOnConnect: true,
     emitOwnEvents: false,
     shouldIgnoreJid: () => false
   });
@@ -353,7 +352,7 @@ async function createBaileysSocket(phoneNumber) {
 
 async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData) {
   const statusCode = lastDisconnect?.error?.output?.statusCode;
-  console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
+  console.log(`⚠️ Connection closed (${phoneNumber}), Code:${statusCode}`);
 
   if (presenceIntervals[phoneNumber]) {
     clearInterval(presenceIntervals[phoneNumber]);
@@ -428,8 +427,47 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 }
 
 // ============================================================================
-// 💬 MESSAGE HANDLING HELPERS
+// 💬 MESSAGE & STATUS HANDLING
 // ============================================================================
+
+async function handleStatusBroadcast(sock, msg, settings) {
+  if (!settings.autoStatusSeen) return;
+
+  try {
+    // 1. Status එක Read කිරීම
+    await sock.readMessages([msg.key]);
+
+    // 2. Status React කිරීම
+    if (settings.statusReact) {
+      const senderJid = msg.key.participant || msg.participant;
+      if (!senderJid) return;
+
+      let chosenEmoji = settings.statusReactEmoji || '💚';
+
+      // 'random' ලෙස සකසා ඇත්නම් array එකෙන් emoji එකක් තෝරා ගනී
+      if (chosenEmoji.toLowerCase() === 'random') {
+        chosenEmoji = RANDOM_STATUS_EMOJIS[Math.floor(Math.random() * RANDOM_STATUS_EMOJIS.length)];
+      }
+
+      await delay(1200);
+
+      await sock.sendMessage(
+        'status@broadcast',
+        {
+          react: {
+            text: chosenEmoji,
+            key: msg.key
+          }
+        },
+        {
+          statusJidList: [senderJid]
+        }
+      );
+    }
+  } catch (err) {
+    console.error('Status Broadcast Error:', err?.message);
+  }
+}
 
 function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   if (msg.key.fromMe) return myBotJid;
@@ -500,7 +538,7 @@ function buildSafeReply(sock, chatJid, msg) {
 }
 
 // ============================================================================
-// 🛡️ ANTI-DELETE DISPATCHER (LIGHTWEIGHT)
+// 🛡️ ANTI-DELETE DISPATCHER
 // ============================================================================
 
 async function triggerAntiDelete(sock, deletedKey, cachedData, phoneNumber) {
@@ -544,12 +582,22 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   try {
     if (!msg || !msg.message) return;
     const chatJid = msg.key?.remoteJid;
-    if (!chatJid || chatJid === 'status@broadcast') return;
+    if (!chatJid) return;
+
+    const myBotJid = sock.user?.id || '';
+    const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
+    const settings = await getBotSettings(myBotNum);
+
+    // 🟢 1. STATUS BROADCAST PROCESSOR
+    if (chatJid === 'status@broadcast') {
+      await handleStatusBroadcast(sock, msg, settings);
+      return;
+    }
 
     const rawMsg = unwrapMessageContent(msg.message);
     const text = extractMessageText(rawMsg);
 
-    // RAM Leak Fix: Full message object එක වෙනුවට අත්‍යවශ්‍ය text data පමණක් cache කිරීම
+    // Anti-delete Cache Storage
     if (msg.key?.id) {
       const isProtocolRevoke = msg.message?.protocolMessage?.type === 0;
       if (isProtocolRevoke && msg.message?.protocolMessage?.key?.id) {
@@ -572,10 +620,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
 
     const isGroup = chatJid.endsWith('@g.us');
-    const myBotJid = sock.user?.id || '';
-    const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
-    const settings = await getBotSettings(myBotNum);
-
     const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
     const isOwner = isOwnerJid(originalSender);
     const cleanSenderNum = (originalSender || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
@@ -585,12 +629,71 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     if (!text) return;
     const safeReply = buildSafeReply(sock, chatJid, msg);
 
-    // 🎯 PREFIX COMMANDS RUNNER
+    // 🎯 2. SETTINGS MENU REPLY HANDLER (Reply කර Option එක තේරීම)
+    const quotedCaption = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage?.caption || 
+                          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || 
+                          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text || '';
+
+    const isSettingsReply = quotedCaption.includes("SYSTEM SETTINGS") || 
+                            quotedCaption.includes("WORK MODE") ||
+                            quotedCaption.includes("PRESENCE STATUS");
+
+    if (isSettingsReply && isAuthorized) {
+      const settingsCmd = findCommand('settings', 'setting', 'set');
+      if (settingsCmd) {
+        const cmdFunc = getCommandExecutor(settingsCmd);
+        if (cmdFunc) {
+          await cmdFunc(sock, msg, [text], chatJid, safeReply, { isOwner: isAuthorized, isGroup });
+          return;
+        }
+      }
+    }
+
+    // 🎯 3. PREFIX COMMANDS RUNNER
     const prefixMatch = text.match(/^[./!#]/);
     if (prefixMatch) {
       const prefix = prefixMatch[0];
       const args = text.slice(prefix.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
+
+      // 💚 DIRECT STATUS REACT COMMAND (.statusreact)
+      if (['statusreact', 'setreact', 'sreact'].includes(commandName)) {
+        if (!isAuthorized) {
+          await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
+          return;
+        }
+
+        const sub = args[0]?.trim();
+        if (!sub) {
+          return safeReply(
+            `*💚 STATUS REACTION SETTINGS*\n\n` +
+            `• React Status: *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+            `• Current Emoji: *${settings.statusReactEmoji || '💚'}*\n\n` +
+            `*Commands:*\n` +
+            `• \`${prefix}statusreact on\` (React On කරන්න)\n` +
+            `• \`${prefix}statusreact off\` (React Off කරන්න)\n` +
+            `• \`${prefix}statusreact 💚\` (කොළ හාට් එක පමණක්)\n` +
+            `• \`${prefix}statusreact random\` (Emoji මාරුවෙන් මාරුවට වැටෙන්න 🔀)\n` +
+            `• \`${prefix}statusreact <කැමති emoji එකක්>\``
+          );
+        }
+
+        if (sub.toLowerCase() === 'on' || sub.toLowerCase() === 'off') {
+          const state = sub.toLowerCase() === 'on';
+          await SettingsModel.findByIdAndUpdate(myBotNum, { statusReact: state }, { upsert: true });
+          clearSettingsCache(myBotNum);
+          return safeReply(`✅ Status React තත්ත්වය *${sub.toUpperCase()}* කරන ලදි!`);
+        }
+
+        await SettingsModel.findByIdAndUpdate(myBotNum, { statusReact: true, statusReactEmoji: sub }, { upsert: true });
+        clearSettingsCache(myBotNum);
+
+        if (sub.toLowerCase() === 'random') {
+          return safeReply('✅ *Status Reaction Mode:* මාරුවෙන් මාරුවට Random Emojis වැටේ! 🔀');
+        } else {
+          return safeReply(`✅ *Status Reaction Mode:* දැන් Status වලට *${sub}* රිඇක්ට් වේ!`);
+        }
+      }
 
       if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) return;
 
@@ -609,7 +712,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
       }
     }
 
-    // 🎯 AI AUTO CHAT
+    // 🎯 4. AI AUTO CHAT
     if (settings.aiChatEnabled && !msg.key.fromMe) {
       if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
         const aiReply = await askAI(text, originalSender || chatJid);
@@ -780,21 +883,18 @@ function registerAllHttpRoutes(app) {
 }
 
 // ============================================================================
-// 🔁 AUTO KEEP-ALIVE SYSTEM (RENDER AWAKE FIX)
+// 🔁 AUTO KEEP-ALIVE SYSTEM
 // ============================================================================
 
 function startKeepAlivePing() {
   const targetUrl = process.env.RENDER_EXTERNAL_URL;
-  if (!targetUrl) {
-    console.log('⚠️ [Keep-Alive]: Set RENDER_EXTERNAL_URL in Render Dashboard to prevent sleep.');
-    return;
-  }
+  if (!targetUrl) return;
 
   setInterval(async () => {
     try {
       await fetch(`${targetUrl}/ping`);
     } catch (e) {}
-  }, 1000 * 60 * 2); // මිනිත්තු 2කට වරක් public traffic එවා නිදාගැනීම නවත්වයි
+  }, 1000 * 60 * 2);
 }
 
 // ============================================================================
@@ -808,7 +908,7 @@ async function reconnectAllSavedSessions() {
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(6000); // Connection spike වැළැක්වීමට
+      await delay(6000);
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
