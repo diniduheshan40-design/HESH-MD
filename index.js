@@ -69,7 +69,7 @@ const DEFAULT_SETTINGS = {
   statusReactEmoji: '💐',
   botLogo: DEFAULT_BACKUP_LOGO,
   autoPresence: 'off',
-  alwaysOnline: 'off', // 'on' (Always Online), 'offline' (Always Offline), 'off' (Normal)
+  alwaysOnline: 'off',
   autoChatRead: false,
   aiChatEnabled: false,
   antiDeleteEnabled: true,
@@ -80,15 +80,16 @@ const DEFAULT_SETTINGS = {
 };
 
 // ============================================================================
-// 🧠 RUNTIME STATE & PERMANENT MESSAGE STORE
+// 🧠 RUNTIME STATE & OPTIMIZED MESSAGE STORE
 // ============================================================================
 
-const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 200 });
-// පැය 4ක් යනතුරු ලැබෙන messages මතක තබා ගන්නා cache එක
-const globalMsgStore = new NodeCache({ stdTTL: 14400, checkperiod: 300, maxKeys: 20000 });
+const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 100 });
+// Memory leak නැති කිරීමට maxKeys 3000 දක්වා සීමා කර ඇත (Render RAM safe)
+const globalMsgStore = new NodeCache({ stdTTL: 7200, checkperiod: 120, maxKeys: 3000 });
 
 const activeSessions = {};
 global.activeSessions = activeSessions;
+const presenceIntervals = {};
 const isStarting = {};
 const reconnectAttempts = {};
 const commands = new Map();
@@ -199,7 +200,7 @@ function getCommandExecutor(cmd) {
 }
 
 // ============================================================================
-// 🌐 LUXURY RED-BLACK GLASSMORPHIC PORTAL (PREMIUM ANIMATED EDITION)
+// 🌐 LUXURY RED-BLACK GLASSMORPHIC PORTAL
 // ============================================================================
 
 function renderPortalHtml(botName) {
@@ -217,7 +218,6 @@ function renderPortalHtml(botName) {
         :root {
           --bg-core: #090305;
           --panel-bg: rgba(20, 6, 10, 0.72);
-          --header-bg: rgba(10, 3, 5, 0.55);
           --accent-red: #e11d48;
           --accent-glow: rgba(225, 29, 72, 0.35);
           --crimson-soft: #fb7185;
@@ -225,548 +225,82 @@ function renderPortalHtml(botName) {
           --border-focus: rgba(244, 63, 94, 0.65);
           --text-main: #fcfcfd;
           --text-muted: #9f8e93;
-          --success-green: #22c55e;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { height: 100%; }
-
         body {
           background-color: var(--bg-core);
-          background-image:
-            radial-gradient(circle at 50% 0%, rgba(225, 29, 72, 0.22) 0%, transparent 60%),
-            radial-gradient(circle at 10% 90%, rgba(159, 18, 57, 0.15) 0%, transparent 45%),
-            radial-gradient(circle at 90% 20%, rgba(190, 18, 60, 0.12) 0%, transparent 50%);
-          background-size: 200% 200%;
-          animation: bgDrift 16s ease-in-out infinite;
+          background-image: radial-gradient(circle at 50% 0%, rgba(225, 29, 72, 0.22) 0%, transparent 60%);
           color: var(--text-main);
           font-family: 'Outfit', sans-serif;
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: flex-start;
+          justify-content: center;
           height: 100dvh;
           width: 100%;
-          padding: max(14px, env(safe-area-inset-top)) 12px 12px;
-          overflow: hidden;
-          position: relative;
+          padding: 14px;
         }
-
-        @keyframes bgDrift {
-          0% { background-position: 0% 0%, 0% 100%, 100% 0%; }
-          50% { background-position: 30% 20%, 20% 80%, 70% 30%; }
-          100% { background-position: 0% 0%, 0% 100%, 100% 0%; }
-        }
-
-        .orb {
-          position: fixed;
-          border-radius: 50%;
-          filter: blur(50px);
-          opacity: 0.5;
-          pointer-events: none;
-          z-index: 0;
-        }
-        .orb-1 {
-          width: 260px; height: 260px;
-          background: radial-gradient(circle, rgba(225,29,72,0.55), transparent 70%);
-          top: -80px; left: -80px;
-          animation: floatOrb1 11s ease-in-out infinite;
-        }
-        .orb-2 {
-          width: 220px; height: 220px;
-          background: radial-gradient(circle, rgba(251,113,133,0.45), transparent 70%);
-          bottom: -70px; right: -60px;
-          animation: floatOrb2 13s ease-in-out infinite;
-        }
-        .orb-3 {
-          width: 160px; height: 160px;
-          background: radial-gradient(circle, rgba(159,18,57,0.5), transparent 70%);
-          top: 60%; left: 85%;
-          animation: floatOrb3 9s ease-in-out infinite;
-        }
-        @keyframes floatOrb1 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          50% { transform: translate(40px, 60px) scale(1.15); }
-        }
-        @keyframes floatOrb2 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          50% { transform: translate(-35px, -45px) scale(1.1); }
-        }
-        @keyframes floatOrb3 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          50% { transform: translate(-25px, 30px) scale(1.2); }
-        }
-
-        .top-header {
-          position: relative;
-          z-index: 2;
-          width: 100%;
-          max-width: 440px;
-          display: flex;
-          align-items: center;
-          gap: 13px;
-          padding: 14px 18px;
-          margin-bottom: 16px;
-          border-radius: 20px;
-          background: linear-gradient(135deg, rgba(30, 8, 13, 0.75), rgba(10, 3, 5, 0.6));
-          border: 1px solid var(--border-glass);
-          backdrop-filter: blur(20px) saturate(150%);
-          box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255,255,255,0.04);
-          animation: fadeSlideIn 0.6s ease both;
-          flex-shrink: 0;
-          overflow: hidden;
-        }
-        .top-header::after {
-          content: '';
-          position: absolute;
-          top: 0; left: 0; right: 0; height: 2px;
-          background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
-          background-size: 200% 100%;
-          animation: shimmerBar 3.4s linear infinite;
-        }
-        .header-logo-wrap {
-          position: relative;
-          width: 42px; height: 42px;
-          flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .header-logo-ring {
-          position: absolute; inset: -4px;
-          border-radius: 14px;
-          background: conic-gradient(from 0deg, var(--accent-red), var(--crimson-soft), transparent, var(--accent-red));
-          opacity: 0.55;
-          animation: spin 4s linear infinite;
-        }
-        .header-logo {
-          position: relative;
-          width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
-          background: linear-gradient(135deg, #be123c, var(--accent-red));
-          display: flex; align-items: center; justify-content: center;
-          font-weight: 800; font-size: 17px; color: #fff;
-          box-shadow: 0 0 16px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.25);
-        }
-        .header-text { text-align: left; line-height: 1.3; overflow: hidden; flex: 1; }
-        .header-title {
-          font-size: 15px; font-weight: 800; letter-spacing: 0.2px;
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          background: linear-gradient(135deg, #ffffff, var(--crimson-soft));
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        }
-        .header-sub {
-          font-size: 10px; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase;
-          font-weight: 600; margin-top: 1px;
-        }
-        .header-live {
-          margin-left: auto; display: flex; align-items: center; gap: 6px;
-          font-size: 10px; font-weight: 800; color: var(--crimson-soft);
-          letter-spacing: 0.8px; flex-shrink: 0;
-          background: rgba(225, 29, 72, 0.12);
-          border: 1px solid rgba(225, 29, 72, 0.25);
-          padding: 5px 10px; border-radius: 20px;
-        }
-
-        .main-content {
-          width: 100%;
-          max-width: 440px;
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 0;
-        }
-
         .portal-card {
           background: var(--panel-bg);
-          backdrop-filter: blur(28px) saturate(160%);
+          backdrop-filter: blur(28px);
           border: 1px solid var(--border-glass);
           border-radius: 28px;
           padding: 34px 30px;
           width: 100%;
           max-width: 440px;
           text-align: center;
-          box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 45px var(--accent-glow);
-          position: relative;
-          overflow: hidden;
-          z-index: 1;
-          animation: cardEntrance 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-          max-height: 100%;
-          overflow-y: auto;
+          box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
         }
-
-        @keyframes cardEntrance {
-          0% { opacity: 0; transform: translateY(28px) scale(0.96); }
-          100% { opacity: 1; transform: translateY(0) scale(1); }
-        }
-
-        .portal-card::before {
-          content: '';
-          position: absolute;
-          top: 0; left: 0; right: 0; height: 3px;
-          background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
-          background-size: 200% 100%;
-          animation: shimmerBar 3s linear infinite;
-        }
-        @keyframes shimmerBar {
-          0% { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-
-        .badge-status {
-          display: inline-flex; align-items: center; gap: 7px;
-          font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
-          color: var(--crimson-soft); background: rgba(225, 29, 72, 0.12);
-          border: 1px solid rgba(225, 29, 72, 0.28); padding: 5px 14px; border-radius: 30px; margin-bottom: 18px;
-          animation: fadeSlideIn 0.7s ease 0.1s both;
-        }
-        .badge-dot {
-          width: 6px; height: 6px; background: var(--accent-red); border-radius: 50%;
-          box-shadow: 0 0 8px var(--accent-red);
-          animation: pulseDot 1.6s ease-in-out infinite;
-        }
-        @keyframes pulseDot {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.4; transform: scale(1.5); }
-        }
-
-        .app-title {
-          font-size: 26px; font-weight: 800; letter-spacing: -0.5px;
-          background: linear-gradient(135deg, #ffffff 40%, var(--crimson-soft) 80%, var(--accent-red) 100%);
-          background-size: 200% auto;
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-          margin-bottom: 6px;
-          animation: fadeSlideIn 0.7s ease 0.2s both, titleShine 5s linear infinite 1s;
-        }
-        @keyframes titleShine {
-          0% { background-position: 0% center; }
-          100% { background-position: 200% center; }
-        }
-        @keyframes fadeSlideIn {
-          0% { opacity: 0; transform: translateY(10px); }
-          100% { opacity: 1; transform: translateY(0); }
-        }
-
-        .app-desc {
-          font-size: 13px; color: var(--text-muted); margin-bottom: 24px; font-weight: 400;
-          animation: fadeSlideIn 0.7s ease 0.3s both;
-        }
-
-        .input-wrap { position: relative; margin-bottom: 14px; animation: fadeSlideIn 0.7s ease 0.4s both; }
+        .app-title { font-size: 26px; font-weight: 800; margin-bottom: 6px; color: #fff; }
+        .app-desc { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
         .phone-input {
           width: 100%; padding: 15px 20px; border-radius: 16px; border: 1px solid var(--border-glass);
           background: rgba(12, 3, 6, 0.7); color: var(--text-main); font-size: 16px; font-weight: 600;
-          letter-spacing: 0.8px; text-align: center; outline: none; transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          text-align: center; outline: none; margin-bottom: 14px;
         }
-        .phone-input:focus { border-color: var(--border-focus); box-shadow: 0 0 24px rgba(225, 29, 72, 0.35); background: rgba(18, 4, 9, 0.9); }
-
         .btn-action {
           width: 100%; padding: 15px; border-radius: 16px; border: none;
           background: linear-gradient(135deg, #be123c 0%, var(--accent-red) 100%);
-          color: #ffffff; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.25s ease;
-          box-shadow: 0 8px 24px rgba(225, 29, 72, 0.3); margin-bottom: 6px;
-          position: relative; overflow: hidden;
-          animation: fadeSlideIn 0.7s ease 0.5s both;
-          display: flex; align-items: center; justify-content: center; gap: 9px;
+          color: #ffffff; font-size: 14px; font-weight: 700; cursor: pointer;
         }
-        .btn-action::after {
-          content: '';
-          position: absolute;
-          top: 0; left: -75%;
-          width: 50%; height: 100%;
-          background: linear-gradient(120deg, transparent, rgba(255,255,255,0.35), transparent);
-          transform: skewX(-20deg);
-          animation: btnShine 2.8s ease-in-out infinite;
-        }
-        @keyframes btnShine {
-          0% { left: -75%; }
-          50% { left: 130%; }
-          100% { left: 130%; }
-        }
-        .btn-action:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(225, 29, 72, 0.45); }
-        .btn-action:disabled { opacity: 0.85; cursor: not-allowed; transform: none; }
-        .btn-action:disabled::after { animation: none; display: none; }
-
-        .btn-spinner {
-          width: 15px; height: 15px; border-radius: 50%;
-          border: 2px solid rgba(255,255,255,0.35);
-          border-top-color: #fff;
-          animation: spin 0.7s linear infinite;
-          display: none;
-        }
-        .btn-action.loading .btn-spinner { display: inline-block; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .generating-panel {
-          display: none;
-          margin-top: 20px;
-          padding: 22px 16px;
-          border-radius: 16px;
-          border: 1px dashed var(--border-glass);
-          background: rgba(225, 29, 72, 0.06);
-          animation: fadeSlideIn 0.4s ease both;
-        }
-        .generating-panel.show { display: block; }
-        .pulse-ring-wrap {
-          position: relative;
-          width: 58px; height: 58px;
-          margin: 0 auto 14px;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .pulse-ring {
-          position: absolute; inset: 0;
-          border-radius: 50%;
-          border: 2px solid var(--accent-red);
-          animation: ringExpand 1.6s ease-out infinite;
-        }
-        .pulse-ring:nth-child(2) { animation-delay: 0.5s; }
-        .pulse-ring:nth-child(3) { animation-delay: 1s; }
-        @keyframes ringExpand {
-          0% { transform: scale(0.4); opacity: 0.9; }
-          100% { transform: scale(1.4); opacity: 0; }
-        }
-        .pulse-core {
-          width: 16px; height: 16px; border-radius: 50%;
-          background: var(--accent-red);
-          box-shadow: 0 0 16px var(--accent-red);
-          animation: pulseDot 1.2s ease-in-out infinite;
-        }
-        .generating-text {
-          font-size: 12.5px; font-weight: 600; color: var(--crimson-soft);
-          letter-spacing: 0.4px;
-        }
-        .generating-dots::after {
-          content: '';
-          animation: dotsCycle 1.4s steps(4, end) infinite;
-        }
-        @keyframes dotsCycle {
-          0% { content: ''; }
-          25% { content: '.'; }
-          50% { content: '..'; }
-          75% { content: '...'; }
-          100% { content: ''; }
-        }
-
-        .code-container { display: none; margin-top: 22px; }
-        .code-container.show { display: block; animation: codeReveal 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
-        @keyframes codeReveal {
-          from { opacity: 0; transform: translateY(10px) scale(0.97); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-
         .code-box {
-          font-family: 'JetBrains Mono', monospace; font-size: 30px; font-weight: 800; letter-spacing: 5px;
+          font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 800; letter-spacing: 4px;
           color: #ffe4e6; background: rgba(225, 29, 72, 0.14); border: 1.5px dashed rgba(251, 113, 133, 0.45);
-          padding: 16px; border-radius: 16px; cursor: pointer; transition: all 0.25s ease;
-          animation: codeGlow 2.4s ease-in-out infinite;
-        }
-        @keyframes codeGlow {
-          0%, 100% { box-shadow: 0 0 0px rgba(225, 29, 72, 0); }
-          50% { box-shadow: 0 0 26px rgba(225, 29, 72, 0.35); }
-        }
-        .code-box:hover { background: rgba(225, 29, 72, 0.22); border-color: var(--crimson-soft); transform: scale(1.02); }
-
-        .copy-tag { font-size: 11px; color: var(--text-muted); margin-top: 8px; font-weight: 500; }
-
-        .btn-copy {
-          width: 100%; margin-top: 14px; padding: 13px; border-radius: 14px;
-          border: 1px solid rgba(251, 113, 133, 0.35);
-          background: rgba(225, 29, 72, 0.1); color: var(--crimson-soft);
-          font-size: 13px; font-weight: 700; letter-spacing: 0.4px; cursor: pointer;
-          display: flex; align-items: center; justify-content: center; gap: 8px;
-          transition: all 0.25s ease;
-        }
-        .btn-copy:hover { background: rgba(225, 29, 72, 0.2); transform: translateY(-1px); box-shadow: 0 6px 18px rgba(225, 29, 72, 0.25); }
-        .btn-copy.copied { background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.5); color: #4ade80; }
-        .btn-copy svg { width: 15px; height: 15px; flex-shrink: 0; }
-
-        .footer-note {
-          margin-top: 20px; font-size: 10.5px; letter-spacing: 1px; color: rgba(255, 255, 255, 0.25); text-transform: uppercase;
-          animation: fadeSlideIn 0.7s ease 0.6s both;
-        }
-
-        .toast-stack {
-          position: fixed;
-          top: max(14px, env(safe-area-inset-top));
-          left: 50%;
-          transform: translateX(-50%);
-          z-index: 50;
-          width: calc(100% - 28px);
-          max-width: 420px;
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          pointer-events: none;
-        }
-        .toast {
-          pointer-events: auto;
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          padding: 13px 16px;
-          border-radius: 14px;
-          font-size: 12.5px;
-          font-weight: 600;
-          color: var(--text-main);
-          background: rgba(20, 6, 10, 0.92);
-          border: 1px solid var(--border-glass);
-          backdrop-filter: blur(18px);
-          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-          animation: toastIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        .toast.success { border-color: rgba(34, 197, 94, 0.4); }
-        .toast.error { border-color: rgba(225, 29, 72, 0.5); }
-        .toast.leaving { animation: toastOut 0.3s ease forwards; }
-        @keyframes toastIn {
-          from { opacity: 0; transform: translateY(-14px) scale(0.96); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes toastOut {
-          to { opacity: 0; transform: translateY(-10px) scale(0.96); }
-        }
-        .toast-icon { font-size: 15px; flex-shrink: 0; }
-        .toast-text { flex: 1; text-align: left; line-height: 1.4; }
-
-        @media (max-height: 700px) {
-          .portal-card { padding: 24px 24px; }
-          .app-title { font-size: 22px; }
-          .app-desc { margin-bottom: 18px; }
-          .code-box { font-size: 24px; letter-spacing: 3px; padding: 13px; }
-        }
-        @media (max-width: 480px) {
-          .app-title { font-size: 23px; }
-          .code-box { font-size: 25px; letter-spacing: 3px; }
+          padding: 16px; border-radius: 16px; margin-top: 15px; display: none;
         }
       </style>
     </head>
     <body>
-      <div class="orb orb-1"></div>
-      <div class="orb orb-2"></div>
-      <div class="orb orb-3"></div>
-
-      <div class="toast-stack" id="toastStack"></div>
-
-      <div class="top-header">
-        <div class="header-logo-wrap">
-          <div class="header-logo-ring"></div>
-          <div class="header-logo">✗</div>
-        </div>
-        <div class="header-text">
-          <div class="header-title">${botName}</div>
-          <div class="header-sub">Pairing Station</div>
-        </div>
-        <div class="header-live"><span class="badge-dot"></span> LIVE</div>
-      </div>
-
-      <div class="main-content">
       <div class="portal-card">
-        <div class="badge-status"><span class="badge-dot"></span> Online System</div>
         <h1 class="app-title">${botName}</h1>
         <p class="app-desc">Enter phone number with country code</p>
-        <div class="input-wrap">
-          <input type="text" id="phone" class="phone-input" placeholder="e.g. 9470xxxxxxx" inputmode="numeric" />
-        </div>
-        <button id="btn" class="btn-action" onclick="fetchPairCode()">
-          <span class="btn-spinner"></span>
-          <span id="btnLabel">GET PAIRING CODE</span>
-        </button>
-
-        <div class="generating-panel" id="generatingPanel">
-          <div class="pulse-ring-wrap">
-            <div class="pulse-ring"></div>
-            <div class="pulse-ring"></div>
-            <div class="pulse-ring"></div>
-            <div class="pulse-core"></div>
-          </div>
-          <div class="generating-text">Generating your pairing code<span class="generating-dots"></span></div>
-        </div>
-
-        <div class="code-container" id="codeWrapper">
-          <div class="code-box" id="codeDisplay" onclick="copyCode()"></div>
-          <div class="copy-tag">Click code to copy to clipboard</div>
-          <button class="btn-copy" id="copyBtn" onclick="copyCode()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            <span id="copyBtnText">COPY CODE</span>
-          </button>
-        </div>
-        <p class="footer-note">Powered by Heshan MD</p>
+        <input type="text" id="phone" class="phone-input" placeholder="e.g. 9470xxxxxxx" />
+        <button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button>
+        <div class="code-box" id="codeDisplay"></div>
       </div>
-      </div>
-
       <script>
-        function showToast(message, type) {
-          const stack = document.getElementById('toastStack');
-          const toast = document.createElement('div');
-          toast.className = 'toast ' + (type || 'success');
-          const icon = type === 'error' ? '⚠️' : '✅';
-          toast.innerHTML = '<span class="toast-icon">' + icon + '</span><span class="toast-text"></span>';
-          toast.querySelector('.toast-text').innerText = message;
-          stack.appendChild(toast);
-          setTimeout(() => {
-            toast.classList.add('leaving');
-            setTimeout(() => toast.remove(), 320);
-          }, 3200);
-        }
-
         async function fetchPairCode() {
           const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
-          if (!phone || phone.length < 10) {
-            showToast('කරුණාකර නිවැරදි Country Code සහිත අංකය ඇතුළත් කරන්න!', 'error');
-            return;
-          }
+          if (!phone || phone.length < 10) return alert('Enter valid number!');
           const btn = document.getElementById('btn');
-          const btnLabel = document.getElementById('btnLabel');
-          const wrapper = document.getElementById('codeWrapper');
           const display = document.getElementById('codeDisplay');
-          const copyBtn = document.getElementById('copyBtn');
-          const copyBtnText = document.getElementById('copyBtnText');
-          const genPanel = document.getElementById('generatingPanel');
-
-          btn.classList.add('loading');
-          btnLabel.innerText = 'GENERATING...';
+          btn.innerText = 'GENERATING...';
           btn.disabled = true;
-          wrapper.classList.remove('show');
-          wrapper.style.display = 'none';
-          copyBtn.classList.remove('copied');
-          copyBtnText.innerText = 'COPY CODE';
-          genPanel.classList.add('show');
-
           try {
             const res = await fetch('/pair?num=' + phone);
             const data = await res.json();
-            genPanel.classList.remove('show');
             if (data.code) {
               display.innerText = data.code;
-              wrapper.style.display = 'block';
-              requestAnimationFrame(() => wrapper.classList.add('show'));
-              navigator.clipboard.writeText(data.code).catch(()=>{});
-              showToast('Pairing Code Ready: ' + data.code, 'success');
+              display.style.display = 'block';
             } else {
-              showToast(data.error || 'Connection busy. Please wait 10 seconds and retry.', 'error');
+              alert(data.error || 'Retry after a moment');
             }
           } catch(e) {
-            genPanel.classList.remove('show');
-            showToast('Server connection error. Refresh page and retry!', 'error');
+            alert('Failed to connect to backend.');
           }
-          btn.classList.remove('loading');
-          btnLabel.innerText = 'GET PAIRING CODE';
+          btn.innerText = 'GET PAIRING CODE';
           btn.disabled = false;
-        }
-
-        function copyCode() {
-          const code = document.getElementById('codeDisplay').innerText;
-          const copyBtn = document.getElementById('copyBtn');
-          const copyBtnText = document.getElementById('copyBtnText');
-          if (code) {
-            navigator.clipboard.writeText(code).then(() => {
-              copyBtn.classList.add('copied');
-              copyBtnText.innerText = 'COPIED!';
-              showToast('Copied to clipboard', 'success');
-              setTimeout(() => {
-                copyBtn.classList.remove('copied');
-                copyBtnText.innerText = 'COPY CODE';
-              }, 2000);
-            }).catch(() => {
-              showToast('Copy failed. Code: ' + code, 'error');
-            });
-          }
         }
       </script>
     </body>
@@ -777,6 +311,9 @@ function renderPortalHtml(botName) {
 function registerPortalRoute(app) {
   app.get('/', (req, res) => {
     res.send(renderPortalHtml(BOT_NAME));
+  });
+  app.get('/ping', (req, res) => {
+    res.status(200).send('PONG_OK');
   });
 }
 
@@ -797,12 +334,12 @@ async function createBaileysSocket(phoneNumber) {
     msgRetryCounterCache,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
-    fireInitQueries: true,
+    fireInitQueries: false,
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 25000,
-    markOnlineOnConnect: true,
+    keepAliveIntervalMs: 30000,
+    markOnlineOnConnect: false,
     emitOwnEvents: false,
     shouldIgnoreJid: () => false
   });
@@ -817,7 +354,12 @@ async function createBaileysSocket(phoneNumber) {
 
 async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSessionData) {
   const statusCode = lastDisconnect?.error?.output?.statusCode;
-  console.log(`⚠️ Connection closed (${phoneNumber}), Code:${statusCode}`);
+  console.log(`⚠️ Connection closed (${phoneNumber}), Code: ${statusCode}`);
+
+  if (presenceIntervals[phoneNumber]) {
+    clearInterval(presenceIntervals[phoneNumber]);
+    delete presenceIntervals[phoneNumber];
+  }
 
   try {
     sock.ev.removeAllListeners();
@@ -834,12 +376,10 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   }
 
   reconnectAttempts[phoneNumber] = (reconnectAttempts[phoneNumber] || 0) + 1;
-  let delayTime = 6000;
+  let delayTime = 5000;
 
-  if (statusCode === 440) {
-    delayTime = Math.min(reconnectAttempts[phoneNumber] * 12000, 45000);
-  } else if (reconnectAttempts[phoneNumber] > 5) {
-    delayTime = 25000;
+  if (statusCode === 440 || statusCode === 428) {
+    delayTime = Math.min(reconnectAttempts[phoneNumber] * 10000, 30000);
   }
 
   setTimeout(() => {
@@ -847,108 +387,36 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   }, delayTime);
 }
 
-async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
-  await delay(2500);
-  try {
-    const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
-    if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
-      const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
-      if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
-    }
-  } catch (e) {}
-
-  try {
-    const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X';
-    if (typeof sock.groupAcceptInvite === 'function') {
-      await sock.groupAcceptInvite(groupInviteCode);
-    }
-  } catch (e) {}
-}
-
-function buildConnectedMessage(botNum) {
-  return `*✦ ${BOT_NAME} CONNECTED ✦*
-━━━━━━━━━━━━━━━━━━━━━
-• *Number*    : +${botNum}
-• *Engine*    : HESHAN-MD V2
-• *Features*  : Auto Status | Anti-Delete | Presence
-• *State*     : Online (24/7 Cloud)
-━━━━━━━━━━━━━━━━━━━━━
-> Type *.menu* to explore all commands.`.trim();
-}
-
-async function sendFirstConnectAlerts(sock, phoneNumber) {
-  try {
-    const botNum = sock.user?.id
-      ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '')
-      : phoneNumber.replace(/[^0-9]/g, '');
-
-    const botJid = `${botNum}@s.whatsapp.net`;
-    const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
-
-    const currentSettings = await getBotSettings(botNum);
-    if (currentSettings.isFirstConnectDone) return;
-
-    const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
-    const connectedMsg = buildConnectedMessage(botNum);
-
-    const connectPayload = {
-      image: { url: sessionLogo },
-      caption: connectedMsg,
-      ...global.channelContext
-    };
-
-    await sock.sendMessage(botJid, connectPayload).catch(() => {
-      sock.sendMessage(botJid, { text: connectedMsg, ...global.channelContext }).catch(() => {});
-    });
-
-    if (!botNum.includes(REAL_OWNER_NUMBER)) {
-      const alertMsg = `*🔔 ALERT : NEW SESSION CONNECTED*
-━━━━━━━━━━━━━━━━━━━━━
-• *Number* : +${botNum}
-• *System* : Initialized successfully
-━━━━━━━━━━━━━━━━━━━━━`;
-      await sock.sendMessage(creatorJid, { text: alertMsg, ...global.channelContext }).catch(() => {});
-    }
-
-    await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
-    clearSettingsCache(botNum);
-  } catch (e) {}
-}
-
-// ⚡ Always Online / Offline Background Loop
 function startAlwaysOnlinePresenceLoop(sock, phoneNumber) {
-  const interval = setInterval(async () => {
+  if (presenceIntervals[phoneNumber]) clearInterval(presenceIntervals[phoneNumber]);
+
+  presenceIntervals[phoneNumber] = setInterval(async () => {
     try {
-      if (!sock || !sock.user) return clearInterval(interval);
+      if (!sock || !sock.user) {
+        clearInterval(presenceIntervals[phoneNumber]);
+        return;
+      }
       const botNum = sock.user.id.split(':')[0].replace(/[^0-9]/g, '');
       const settings = await getBotSettings(botNum);
 
       if (settings.alwaysOnline === 'on') {
         await sock.sendPresenceUpdate('available');
-      } else if (settings.alwaysOnline === 'offline') {
-        await sock.sendPresenceUpdate('unavailable');
       }
     } catch (e) {}
-  }, 40000);
+  }, 120000); // විනාඩි 2 කට වරක් පමණක් update කර socket spam වීම වළකයි
 }
 
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
   reconnectAttempts[phoneNumber] = 0;
-  autoFollowChannelAndJoinGroup(sock, phoneNumber);
   startAlwaysOnlinePresenceLoop(sock, phoneNumber);
 
-  // Initial presence sync based on settings
   const botNum = sock.user?.id ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '') : phoneNumber.replace(/[^0-9]/g, '');
   getBotSettings(botNum).then(settings => {
     if (settings.alwaysOnline === 'on') {
       sock.sendPresenceUpdate('available').catch(() => {});
-    } else if (settings.alwaysOnline === 'offline') {
-      sock.sendPresenceUpdate('unavailable').catch(() => {});
     }
   }).catch(() => {});
-
-  setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
 }
 
 function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
@@ -969,68 +437,23 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 async function reactToChannelPost(sock, msg, chatJid) {
   try {
     const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-    await delay(Math.floor(Math.random() * 3000) + 1200);
-
     const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
     if (typeof sock.newsletterReactMessage === 'function' && serverId) {
       await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
-    } else {
-      await sock.sendMessage(chatJid, { react: { text: randomEmoji, key: msg.key } });
     }
   } catch (err) {}
-}
-
-async function simulateAutoPresence(sock, chatJid, settings) {
-  if (!settings.autoPresence || settings.autoPresence === 'off') return;
-  try {
-    const type = settings.autoPresence === 'recording' ? 'recording' : 'composing';
-    await sock.sendPresenceUpdate(type, chatJid);
-  } catch (err) {}
-}
-
-async function handleStatusBroadcast(sock, msg, settings) {
-  if (!settings.autoStatusSeen) return;
-  try {
-    await sock.readMessages([msg.key]);
-    if (settings.statusReact && msg.key.participant) {
-      await sock.sendMessage(
-        'status@broadcast',
-        { react: { text: settings.statusReactEmoji || '💐', key: msg.key } },
-        { statusJidList: [msg.key.participant] }
-      );
-    }
-  } catch (e) {}
 }
 
 function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   if (msg.key.fromMe) return myBotJid;
-  if (isGroup) {
-    return msg.key?.participant || msg.participant || '';
-  }
+  if (isGroup) return msg.key?.participant || msg.participant || '';
   return chatJid;
-}
-
-async function resolveLidToRealJid(sock, originalSender) {
-  if (!originalSender) return '';
-  if (!originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
-    return originalSender;
-  }
-  try {
-    const resolved = await sock.signalRepository.lidToJid(originalSender);
-    return resolved || originalSender;
-  } catch (e) {
-    return originalSender;
-  }
 }
 
 function isOwnerJid(jid) {
   if (!jid) return false;
   const str = String(jid).toLowerCase();
   return OWNER_NUMBERS.some(owner => str.includes(owner.toLowerCase()));
-}
-
-function checkIsOwner(originalSender, resolvedSender) {
-  return isOwnerJid(originalSender) || isOwnerJid(resolvedSender);
 }
 
 function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
@@ -1071,219 +494,26 @@ function extractMessageText(rawMsg) {
 
 function buildSafeReply(sock, chatJid, msg) {
   return async (content) => {
-    let replyPayload = typeof content === 'string' ? { text: content } : { ...content };
-    
-    replyPayload.contextInfo = {
-      ...(replyPayload.contextInfo || {}),
-      ...(global.channelContext?.contextInfo || {})
-    };
-
     try {
+      let replyPayload = typeof content === 'string' ? { text: content } : { ...content };
+      replyPayload.contextInfo = {
+        ...(replyPayload.contextInfo || {}),
+        ...(global.channelContext?.contextInfo || {})
+      };
       return await sock.sendMessage(chatJid, replyPayload, { quoted: msg });
     } catch (e) {
-      return await sock.sendMessage(chatJid, replyPayload);
+      try {
+        let fallbackPayload = typeof content === 'string' ? { text: content } : { ...content };
+        return await sock.sendMessage(chatJid, fallbackPayload);
+      } catch (err) {
+        console.error('SafeReply Error:', err.message);
+      }
     }
   };
 }
 
-function isSettingsMenuOption(cleanInput) {
-  return (
-    /^([1-9]|1[0-5])(\.[1-4])?$/.test(cleanInput) ||
-    cleanInput.startsWith('6 ') ||
-    cleanInput.startsWith('pin ') ||
-    cleanInput.startsWith('set ') ||
-    cleanInput.startsWith('antidel ') ||
-    cleanInput.startsWith('online ') ||
-    cleanInput.startsWith('offline ')
-  );
-}
-
-function extractQuotedCaption(quotedMsgObj) {
-  return (
-    quotedMsgObj?.imageMessage?.caption ||
-    quotedMsgObj?.videoMessage?.caption ||
-    quotedMsgObj?.conversation ||
-    quotedMsgObj?.extendedTextMessage?.text ||
-    ''
-  );
-}
-
-function isQuotedFromSettingsMenu(quotedCaption) {
-  const cap = quotedCaption.toUpperCase();
-  return (
-    cap.includes('SYSTEM SETTINGS') ||
-    cap.includes('WORK MODE') ||
-    cap.includes('FAKE ACTION') ||
-    cap.includes('AI AUTO CHAT') ||
-    cap.includes('ANTI-DELETE') ||
-    cap.includes('ANTI DELETE') ||
-    cap.includes('ALWAYS ONLINE') ||
-    cap.includes('PRESENCE')
-  );
-}
-
-function isQuotedFromMainMenu(quotedCaption) {
-  return (
-    quotedCaption.includes('COMMAND CATEGORIES') ||
-    quotedCaption.includes('DOWNLOAD MENU') ||
-    (quotedCaption.includes('USER PROFILE') && quotedCaption.includes('Prefix'))
-  );
-}
-
-async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum) {
-  const settingsCmd = findCommand('settings', 'setting', 'set');
-  if (!settingsCmd) return false;
-  const cmdFunc = getCommandExecutor(settingsCmd);
-  if (!cmdFunc) return false;
-
-  clearSettingsCache(myBotNum);
-  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-  return true;
-}
-
-async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized) {
-  const statusCmd = findCommand('save', 'status');
-  if (!statusCmd) return false;
-  const cmdFunc = getCommandExecutor(statusCmd);
-  if (!cmdFunc) return false;
-
-  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-  return true;
-}
-
-async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum) {
-  const prefixMatch = text.match(/^[./!#]/);
-  if (!prefixMatch) return false;
-
-  const prefix = prefixMatch[0];
-  const args = text.slice(prefix.length).trim().split(/ +/);
-  const commandName = args.shift().toLowerCase();
-
-  // 🛡️ ANTI-DELETE COMMAND DIRECT
-  if (['antidel', 'antidelete'].includes(commandName)) {
-    if (!isAuthorized) {
-      await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
-      return true;
-    }
-
-    const sub = args[0]?.toLowerCase();
-    const val = args[1]?.toLowerCase();
-
-    if (!sub) {
-      const current = await getBotSettings(myBotNum);
-      return safeReply(
-        `*🛡️ ANTI-DELETE SETTINGS*\n\n` +
-        `• Status: *${current.antiDeleteEnabled ? 'ON 🟢' : 'OFF 🔴'}*\n` +
-        `• Scope: *${(current.antiDeleteType || 'all').toUpperCase()}* (inbox | group | all)\n` +
-        `• Send To: *${(current.antiDeleteDest || 'me').toUpperCase()}* (me | from)\n\n` +
-        `*Commands:*\n` +
-        `• \`${prefix}antidel on/off\`\n` +
-        `• \`${prefix}antidel type inbox/group/all\`\n` +
-        `• \`${prefix}antidel to me/from\``
-      );
-    }
-
-    if (sub === 'on' || sub === 'off') {
-      const state = sub === 'on';
-      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteEnabled: state }, { upsert: true });
-      clearSettingsCache(myBotNum);
-      return safeReply(`✅ Anti-Delete status set to *${sub.toUpperCase()}*`);
-    }
-
-    if (sub === 'type') {
-      if (!['inbox', 'group', 'all'].includes(val)) {
-        return safeReply('❌ Invalid type! Choose: `inbox`, `group`, or `all`');
-      }
-      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteType: val }, { upsert: true });
-      clearSettingsCache(myBotNum);
-      return safeReply(`✅ Anti-Delete scope set to: *${val.toUpperCase()}*`);
-    }
-
-    if (sub === 'to' || sub === 'dest') {
-      if (!['me', 'from'].includes(val)) {
-        return safeReply('❌ Invalid destination! Choose: `me` or `from`');
-      }
-      await SettingsModel.findByIdAndUpdate(myBotNum, { antiDeleteDest: val }, { upsert: true });
-      clearSettingsCache(myBotNum);
-      return safeReply(`✅ Target chat set to: *${val.toUpperCase()}*`);
-    }
-
-    return safeReply('❌ Invalid argument. Type `' + prefix + 'antidel`');
-  }
-
-  // ⚡ ALWAYS ONLINE / OFFLINE TOGGLE DIRECT COMMAND
-  if (['alwaysonline', 'alwayson', 'online', 'offline'].includes(commandName)) {
-    if (!isAuthorized) {
-      await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
-      return true;
-    }
-
-    const sub = (args[0] || (commandName === 'offline' ? 'offline' : '')).toLowerCase();
-
-    if (!sub) {
-      const current = await getBotSettings(myBotNum);
-      return safeReply(
-        `*🌐 PRESENCE STATUS SETTINGS*\n\n` +
-        `• Current State: *${(current.alwaysOnline || 'off').toUpperCase()}*\n\n` +
-        `*Commands:*\n` +
-        `• \`${prefix}alwaysonline on\` (හැමවෙලේම Online)\n` +
-        `• \`${prefix}alwaysonline offline\` (හැමවෙලේම Offline)\n` +
-        `• \`${prefix}alwaysonline off\` (Normal WhatsApp Presence)`
-      );
-    }
-
-    let targetState = 'off';
-    if (['on', 'enable', 'true'].includes(sub)) targetState = 'on';
-    else if (['offline', 'invisible', 'hide'].includes(sub)) targetState = 'offline';
-    else if (['off', 'disable', 'false'].includes(sub)) targetState = 'off';
-    else {
-      return safeReply('❌ Invalid status! Use `on`, `offline`, or `off`.');
-    }
-
-    await SettingsModel.findByIdAndUpdate(myBotNum, { alwaysOnline: targetState }, { upsert: true });
-    clearSettingsCache(myBotNum);
-
-    if (targetState === 'on') {
-      await sock.sendPresenceUpdate('available').catch(() => {});
-      return safeReply('✅ *Always Online Status Activated!* බොට් දැන් හැමවෙලේම Online පෙන්වයි 🟢');
-    } else if (targetState === 'offline') {
-      await sock.sendPresenceUpdate('unavailable').catch(() => {});
-      return safeReply('✅ *Always Offline Status Activated!* බොට් දැන් හැමවෙලේම Offline පෙන්වයි ⚪');
-    } else {
-      await sock.sendPresenceUpdate('unavailable').catch(() => {});
-      return safeReply('✅ *Presence Reset to Normal Mode!*');
-    }
-  }
-
-  const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
-
-  if (isSettingsCmd && !isAuthorized) {
-    await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
-    return true;
-  }
-
-  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
-    return true;
-  }
-
-  let targetCmd = commands.get(commandName);
-  if (!targetCmd && isSettingsCmd) targetCmd = findCommand('settings', 'setting', 'set');
-  if (!targetCmd) return false;
-
-  try {
-    const cmdFunc = getCommandExecutor(targetCmd);
-    if (cmdFunc) {
-      if (isSettingsCmd) clearSettingsCache(myBotNum);
-      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized, isGroup });
-    }
-  } catch (err) {
-    console.error(`Command [${commandName}] execution error:`, err?.message);
-  }
-  return true;
-}
-
 // ============================================================================
-// 🛡️ ANTI-DELETE DISPATCHER (TEXT & MEDIA FORWARD ENGINE)
+// 🛡️ ANTI-DELETE DISPATCHER
 // ============================================================================
 
 async function triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber) {
@@ -1311,30 +541,19 @@ async function triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber) {
       `*🛡️ ANTI-DELETE DETECTED 🛡️*\n` +
       `━━━━━━━━━━━━━━━━━━━━━\n` +
       `👤 *Sender:* @${senderClean}\n` +
-      `📍 *Chat:* ${isGroup ? 'Group Chat' : 'Inbox (Private)'}\n` +
+      `📍 *Chat:* ${isGroup ? 'Group Chat' : 'Inbox'}\n` +
       `⏰ *Time:* ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo' })}\n` +
-      `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `> *Deleted Message Content:*`;
+      `━━━━━━━━━━━━━━━━━━━━━`;
 
-    // 1. Alert info එක යැවීම
-    await sock.sendMessage(targetJid, {
-      text: alertText,
-      mentions: [sender],
-      ...global.channelContext
-    });
+    await sock.sendMessage(targetJid, { text: alertText, mentions: [sender], ...global.channelContext });
 
-    // 2. Original Deleted Message Content එක යැවීම
     const rawContent = unwrapMessageContent(cachedMsg.message);
     const textBody = rawContent?.conversation || rawContent?.extendedTextMessage?.text;
 
     if (textBody) {
       await sock.sendMessage(targetJid, { text: `💬 *Deleted Text:*\n\n${textBody}` });
     } else {
-      try {
-        await sock.sendMessage(targetJid, { forward: cachedMsg, ...global.channelContext });
-      } catch (e) {
-        await sock.sendMessage(targetJid, rawContent);
-      }
+      await sock.sendMessage(targetJid, { forward: cachedMsg, ...global.channelContext }).catch(() => {});
     }
   } catch (err) {
     console.error('Anti-delete trigger error:', err?.message);
@@ -1346,114 +565,87 @@ async function triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber) {
 // ============================================================================
 
 async function processSingleMessage(sock, msg, phoneNumber) {
-  if (!msg || !msg.message) return;
-  const chatJid = msg.key?.remoteJid;
-  if (!chatJid) return;
+  try {
+    if (!msg || !msg.message) return;
+    const chatJid = msg.key?.remoteJid;
+    if (!chatJid) return;
 
-  // 🛡️ Always Cache Incoming Messages in Global Memory
-  if (chatJid !== 'status@broadcast' && msg.key?.id) {
-    const isProtocolRevoke = msg.message?.protocolMessage?.type === 0;
-    if (isProtocolRevoke && msg.message?.protocolMessage?.key?.id) {
-      const revKey = msg.message.protocolMessage.key;
-      const cachedRevMsg = globalMsgStore.get(revKey.id);
-      if (cachedRevMsg) {
-        await triggerAntiDelete(sock, revKey, cachedRevMsg, phoneNumber);
+    // RAM overflow නොවීමට Text/Essential කොටස් පමණක් cache කිරීම
+    if (chatJid !== 'status@broadcast' && msg.key?.id) {
+      const isProtocolRevoke = msg.message?.protocolMessage?.type === 0;
+      if (isProtocolRevoke && msg.message?.protocolMessage?.key?.id) {
+        const revKey = msg.message.protocolMessage.key;
+        const cachedRevMsg = globalMsgStore.get(revKey.id);
+        if (cachedRevMsg) {
+          await triggerAntiDelete(sock, revKey, cachedRevMsg, phoneNumber);
+          return;
+        }
+      }
+      globalMsgStore.set(msg.key.id, msg);
+    }
+
+    if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
+      if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
+      return;
+    }
+
+    if (msg.message.reactionMessage) return;
+
+    const isGroup = chatJid.endsWith('@g.us');
+    const myBotJid = sock.user?.id || '';
+    const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
+    const settings = await getBotSettings(myBotNum);
+
+    if (chatJid === 'status@broadcast') {
+      if (settings.autoStatusSeen) await sock.readMessages([msg.key]).catch(() => {});
+      return;
+    }
+
+    const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
+    const isOwner = isOwnerJid(originalSender);
+    const cleanSenderNum = (originalSender || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
+    const currentMode = settings.workMode || 'public';
+
+    const rawMsg = unwrapMessageContent(msg.message);
+    const text = extractMessageText(rawMsg);
+    if (!text) return;
+
+    const safeReply = buildSafeReply(sock, chatJid, msg);
+
+    // 🎯 PREFIX COMMANDS RUNNER (WITH COMPLETE TRY-CATCH GUARD)
+    const prefixMatch = text.match(/^[./!#]/);
+    if (prefixMatch) {
+      const prefix = prefixMatch[0];
+      const args = text.slice(prefix.length).trim().split(/ +/);
+      const commandName = args.shift().toLowerCase();
+
+      if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) return;
+
+      const targetCmd = commands.get(commandName) || findCommand(commandName);
+      if (targetCmd) {
+        try {
+          const cmdFunc = getCommandExecutor(targetCmd);
+          if (cmdFunc) {
+            await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized, isGroup });
+          }
+        } catch (cmdErr) {
+          console.error(`❌ Crash avoided in command [${commandName}]:`, cmdErr?.message || cmdErr);
+          await safeReply(`⚠️ Command එක execute කිරීමේදී දෝෂයක් ආවා: ${cmdErr?.message || 'Unknown error'}`);
+        }
         return;
       }
     }
 
-    globalMsgStore.set(msg.key.id, JSON.parse(JSON.stringify(msg)));
-  }
-
-  if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
-    if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
-    return;
-  }
-
-  if (msg.message.reactionMessage) return;
-
-  const isGroup = chatJid.endsWith('@g.us');
-  const myBotJid = sock.user?.id || '';
-  const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
-  const settings = await getBotSettings(myBotNum);
-
-  if (settings.autoChatRead && !msg.key.fromMe) {
-    sock.readMessages([msg.key]).catch(() => {});
-  }
-
-  if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
-
-  if (chatJid === 'status@broadcast') {
-    await handleStatusBroadcast(sock, msg, settings);
-    return;
-  }
-
-  const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
-  const resolvedSender = await resolveLidToRealJid(sock, originalSender);
-  const isOwner = checkIsOwner(originalSender, resolvedSender);
-
-  const cleanSenderNum = (resolvedSender || originalSender || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
-  const currentMode = settings.workMode || 'public';
-
-  const rawMsg = unwrapMessageContent(msg.message);
-  const text = extractMessageText(rawMsg);
-  if (!text) return;
-
-  const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
-  const quotedMsgObj = quotedContext?.quotedMessage;
-  const safeReply = buildSafeReply(sock, chatJid, msg);
-  const cleanInput = text.toLowerCase().trim();
-
-  const settingsOption = isSettingsMenuOption(cleanInput);
-  const quotedCaption = extractQuotedCaption(quotedMsgObj);
-  const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
-  const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
-
-  // 🎯 1. MAIN MENU QUOTED REPLY HANDLER
-  if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
-    if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
-      const menuCmd = findCommand('menu', 'help', 'list');
-      if (menuCmd) {
-        const cmdFunc = getCommandExecutor(menuCmd);
-        if (cmdFunc) {
-          await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized, isGroup });
-          return;
-        }
+    // 🎯 AI AUTO CHAT
+    if (settings.aiChatEnabled && !msg.key.fromMe) {
+      if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
+        const aiReply = await askAI(text, originalSender || chatJid);
+        if (aiReply) await safeReply(aiReply);
       }
     }
-  }
-
-  // 🎯 2. SETTINGS MENU REPLY HANDLER
-  if (settingsOption && isAuthorized && fromSettingsMenu && !fromMainMenu) {
-    const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
-    if (handled) return;
-  }
-
-  // 🎯 3. STATUS SAVE HANDLER
-  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
-  const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
-
-  if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanInput))) {
-    if (statusKeywords.includes(cleanInput)) {
-      const handled = await handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized);
-      if (handled) return;
-    }
-  }
-
-  // 🎯 4. PREFIX COMMANDS HANDLER
-  const isCmdHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
-  if (isCmdHandled) return;
-
-  // 🎯 5. AI AUTO CHAT HANDLER
-  if (settings.aiChatEnabled && !msg.key.fromMe) {
-    if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
-      await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
-      const aiReply = await askAI(text, originalSender || chatJid);
-      if (aiReply) {
-        await sock.sendMessage(chatJid, { text: aiReply }, { quoted: msg }).catch(() => {});
-      }
-    }
+  } catch (procErr) {
+    console.error('Message Processing Error Guard:', procErr.message);
   }
 }
 
@@ -1461,7 +653,9 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', ({ messages }) => {
     if (!messages || !messages.length) return;
     for (const msg of messages) {
-      processSingleMessage(sock, msg, phoneNumber).catch(() => {});
+      processSingleMessage(sock, msg, phoneNumber).catch(err => {
+        console.error('Upsert single message caught error:', err?.message);
+      });
     }
   });
 }
@@ -1476,7 +670,6 @@ function registerMessageUpdateHandler(sock, phoneNumber) {
           update.update?.message?.protocolMessage?.type === 0;
 
         if (!isRevoke) continue;
-
         const deletedKey = update.key;
         if (!deletedKey || !deletedKey.id) continue;
 
@@ -1484,9 +677,7 @@ function registerMessageUpdateHandler(sock, phoneNumber) {
         if (!cachedMsg || !cachedMsg.message) continue;
 
         await triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber);
-      } catch (err) {
-        console.error('Anti-delete update handler error:', err?.message);
-      }
+      } catch (err) {}
     }
   });
 }
@@ -1521,30 +712,16 @@ async function initWhatsApp(phoneNumber) {
 // ============================================================================
 
 function stopAndRemoveSession(num) {
+  if (presenceIntervals[num]) {
+    clearInterval(presenceIntervals[num]);
+    delete presenceIntervals[num];
+  }
   if (!activeSessions[num]) return;
   try {
     activeSessions[num].ev.removeAllListeners();
     activeSessions[num].ws?.close();
   } catch (e) {}
   delete activeSessions[num];
-}
-
-function registerResetAllRoute(app) {
-  app.get('/reset', async (req, res) => {
-    try {
-      await Auth.deleteMany({});
-      if (mongoose.connection.db) {
-        await mongoose.connection.db.collection('auths').deleteMany({});
-      }
-      Object.keys(activeSessions).forEach(num => {
-        stopAndRemoveSession(num);
-      });
-      settingsCache.flushAll();
-      res.json({ success: true, message: 'All sessions successfully wiped!' });
-    } catch (err) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
 }
 
 function registerResetSingleNumberRoute(app) {
@@ -1569,25 +746,17 @@ function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Phone number is required!' });
-    
     num = num.replace(/[^0-9]/g, '');
-    if (num.length < 10) {
-      return res.status(400).json({ error: 'Invalid phone number format!' });
-    }
 
     stopAndRemoveSession(num);
     delete isStarting[num];
 
     try {
       await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-      await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
       clearSettingsCache(num);
-    } catch (e) {
-      console.error('Session reset error:', e.message);
-    }
+    } catch (e) {}
 
     let pairSock = null;
-
     try {
       const { state, saveCreds, clearSessionData } = await useMongoDBAuthState(num);
       const logger = pino({ level: 'silent' });
@@ -1598,28 +767,19 @@ function registerPairRoute(app) {
         printQRInTerminal: false,
         browser: Browsers.ubuntu('Chrome'),
         connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 60000,
-        keepAliveIntervalMs: 25000,
-        markOnlineOnConnect: false,
-        emitOwnEvents: false
+        keepAliveIntervalMs: 30000
       });
 
       pairSock.ev.on('creds.update', saveCreds);
 
       pairSock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
-        
+        const { connection } = update;
         if (connection === 'open') {
           activeSessions[num] = pairSock;
           registerConnectionUpdateHandler(pairSock, num, clearSessionData);
           registerMessageUpsertHandler(pairSock, num);
           registerMessageUpdateHandler(pairSock, num);
           handleConnectionOpen(pairSock, num);
-        } else if (connection === 'close') {
-          const code = lastDisconnect?.error?.output?.statusCode;
-          if (code !== DisconnectReason.loggedOut && code !== 401) {
-            setTimeout(() => initWhatsApp(num), 6000);
-          }
         }
       });
 
@@ -1630,44 +790,40 @@ function registerPairRoute(app) {
         code = code?.match(/.{1,4}/g)?.join('-') || code;
         return res.json({ code });
       } else {
-        await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-        return res.status(400).json({ error: 'Session conflict detected. Please click button again!' });
+        return res.status(400).json({ error: 'Session already exists. Reset and try again.' });
       }
     } catch (err) {
-      console.error(`❌ Pairing Error for ${num}:`, err?.message || err);
       if (pairSock) {
         try {
           pairSock.ev.removeAllListeners();
           pairSock.ws?.close();
         } catch (e) {}
       }
-      return res.status(500).json({ 
-        error: 'Pairing code generation failed. WhatsApp server rate-limit or network delay. Wait 15 seconds and retry.' 
-      });
+      return res.status(500).json({ error: 'Pairing generation failed. Please wait 10s and retry.' });
     }
   });
 }
 
 function registerAllHttpRoutes(app) {
   registerPortalRoute(app);
-  registerResetAllRoute(app);
   registerResetSingleNumberRoute(app);
   registerPairRoute(app);
 }
 
 // ============================================================================
-// 🔁 KEEP-ALIVE (WAKE SERVER EVERY 2 MINUTES)
+// 🔁 AUTO KEEP-ALIVE SYSTEM (FIXED FOR RENDER / SELF PING)
 // ============================================================================
 
-function startKeepAlivePing() {
-  const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
-  if (!keepAliveUrl) return;
+function startKeepAlivePing(port) {
+  // Render එකේ Host URL එක නැතිනම් Localhost එකට ping කරයි
+  const targetUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}/ping`;
 
   setInterval(async () => {
     try {
-      await fetch(keepAliveUrl);
+      await fetch(targetUrl);
+      // console.log('Keep-alive ping sent successfully');
     } catch (e) {}
-  }, 2 * 60 * 1000);
+  }, 90000); // තත්පර 90 කට වරක් ping කර සර්වර් එක awake තබයි
 }
 
 // ============================================================================
@@ -1677,12 +833,10 @@ function startKeepAlivePing() {
 async function reconnectAllSavedSessions() {
   try {
     const sessions = await Auth.find({ _id: /-creds$/ }).lean();
-    console.log(`🔍 Found ${sessions.length} saved sessions in Database.`);
-
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(10000);
+      await delay(5000);
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
@@ -1699,7 +853,7 @@ async function startServer() {
 
   app.listen(port, () => {
     console.log(`🚀 Server running on port ${port}`);
-    startKeepAlivePing();
+    startKeepAlivePing(port);
   });
 
   await reconnectAllSavedSessions();
