@@ -83,7 +83,6 @@ const DEFAULT_SETTINGS = {
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 200 });
-// පැය 4ක් යනතුරු ලැබෙන messages මතක තබා ගන්නා cache එක
 const globalMsgStore = new NodeCache({ stdTTL: 14400, checkperiod: 300, maxKeys: 20000 });
 
 const activeSessions = {};
@@ -387,7 +386,7 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'),
+    browser: Browsers.macOS('Desktop'),
     msgRetryCounterCache,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
@@ -833,14 +832,12 @@ async function triggerAntiDelete(sock, deletedKey, cachedMsg, phoneNumber) {
       `━━━━━━━━━━━━━━━━━━━━━\n` +
       `> *Deleted Message Content:*`;
 
-    // 1. Alert info එක යැවීම
     await sock.sendMessage(targetJid, {
       text: alertText,
       mentions: [sender],
       ...global.channelContext
     });
 
-    // 2. Original Deleted Message Content එක යැවීම
     const rawContent = unwrapMessageContent(cachedMsg.message);
     const textBody = rawContent?.conversation || rawContent?.extendedTextMessage?.text;
 
@@ -867,9 +864,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
-  // 🛡️ Always Cache Incoming Messages in Global Memory
   if (chatJid !== 'status@broadcast' && msg.key?.id) {
-    // Protocol Message (Revoke) එකක් හරහා මැසේජ් එක ඩිලීට් කළාද බැලීම
     const isProtocolRevoke = msg.message?.protocolMessage?.type === 0;
     if (isProtocolRevoke && msg.message?.protocolMessage?.key?.id) {
       const revKey = msg.message.protocolMessage.key;
@@ -880,7 +875,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
       }
     }
 
-    // Normal message එක cache කරගැනීම
     globalMsgStore.set(msg.key.id, JSON.parse(JSON.stringify(msg)));
   }
 
@@ -929,7 +923,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
   const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
 
-  // 🎯 1. MAIN MENU QUOTED REPLY HANDLER
   if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
     if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
       const menuCmd = findCommand('menu', 'help', 'list');
@@ -943,13 +936,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🎯 2. SETTINGS MENU REPLY HANDLER
   if (settingsOption && isAuthorized && fromSettingsMenu && !fromMainMenu) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
   }
 
-  // 🎯 3. STATUS SAVE HANDLER
   const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
@@ -960,11 +951,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🎯 4. PREFIX COMMANDS HANDLER
   const isCmdHandled = await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
   if (isCmdHandled) return;
 
-  // 🎯 5. AI AUTO CHAT HANDLER
   if (settings.aiChatEnabled && !msg.key.fromMe) {
     if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
       await sock.sendPresenceUpdate('composing', chatJid).catch(() => {});
@@ -985,7 +974,6 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
   });
 }
 
-// 🛡️ Baileys Revoke Event Listener
 function registerMessageUpdateHandler(sock, phoneNumber) {
   sock.ev.on('messages.update', async (updates) => {
     for (const update of updates) {
@@ -1116,7 +1104,7 @@ function registerPairRoute(app) {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: Browsers.ubuntu('Chrome'),
+        browser: Browsers.macOS('Desktop'),
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
         keepAliveIntervalMs: 25000,
@@ -1143,7 +1131,8 @@ function registerPairRoute(app) {
         }
       });
 
-      await delay(3000);
+      // Render servers වල WebSocket ready වීමට delay එක 6s දක්වා වැඩි කරන ලදී
+      await delay(6000);
 
       if (!pairSock.authState.creds.registered) {
         let code = await pairSock.requestPairingCode(num);
