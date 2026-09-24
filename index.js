@@ -86,7 +86,7 @@ const DEFAULT_SETTINGS = {
 };
 
 // ============================================================================
-// 🧠 RUNTIME STATE & PERMANENT MESSAGE STORE
+// 🧠 RUNTIME STATE & STORAGE
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 200 });
@@ -99,7 +99,7 @@ const reconnectAttempts = {};
 const commands = new Map();
 
 // ============================================================================
-// 🗄️ DATABASE SCHEMA & HELPERS
+// 🗄️ DATABASE HELPERS
 // ============================================================================
 
 function createSettingsModel() {
@@ -377,7 +377,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION (Ubuntu/Chrome Profile)
+// 🔌 SOCKET CREATION (Stable Browser Profile for WhatsApp Linking)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -392,7 +392,8 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'),
+    // WhatsApp pairing code reliably support කරන browser signature එක
+    browser: ['Ubuntu', 'Chrome', '20.0.04'],
     msgRetryCounterCache,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
@@ -572,7 +573,7 @@ function stopAndRemoveSession(num) {
 }
 
 // ============================================================================
-// 🌐 PAIRING ROUTE (STABLE LINK DEVICE)
+// 🌐 PAIRING ROUTE (FIXED LINKING LOGIC)
 // ============================================================================
 
 function registerPairRoute(app) {
@@ -607,7 +608,8 @@ function registerPairRoute(app) {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: Browsers.ubuntu('Chrome'),
+        // Browser signature compatible with phone pairing
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
         keepAliveIntervalMs: 25000,
@@ -615,11 +617,14 @@ function registerPairRoute(app) {
         emitOwnEvents: false
       });
 
+      // Code එක ගහලා connect වෙනකොට session එක save කරගන්න Listener එක
       pairSock.ev.on('creds.update', saveCreds);
 
       pairSock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
+        
         if (connection === 'open') {
+          console.log(`🎉 SUCCESS: Linked to WhatsApp! (${num})`);
           activeSessions[num] = pairSock;
           registerConnectionUpdateHandler(pairSock, num, clearSessionData);
           registerMessageUpsertHandler(pairSock, num);
@@ -627,13 +632,13 @@ function registerPairRoute(app) {
         } else if (connection === 'close') {
           const code = lastDisconnect?.error?.output?.statusCode;
           if (code !== DisconnectReason.loggedOut && code !== 401) {
-            setTimeout(() => initWhatsApp(num), 6000);
+            setTimeout(() => initWhatsApp(num), 5000);
           }
         }
       });
 
-      // Render server websocket ready වීමට delay එක 8s තබා ඇත
-      await delay(8000);
+      // Socket එක WhatsApp WebSocket එක එක්ක handshake වෙනකන් delay එකක් දීම
+      await delay(5000);
 
       if (!pairSock.authState.creds.registered) {
         let code = await pairSock.requestPairingCode(num);
