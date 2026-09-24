@@ -14,44 +14,48 @@ try {
 
 let ffmpegPath = 'ffmpeg';
 try {
-    ffmpegPath = require('ffmpeg-static');
+  const staticFfmpeg = require('ffmpeg-static');
+  if (staticFfmpeg) ffmpegPath = staticFfmpeg;
 } catch (e) {}
 
-// 🟢 Beautiful Waveform Generator
+// 🟢 Channel Waveform Generator
 const generateWaveform = () => {
-    const waveform = new Uint8Array(64);
-    for (let i = 0; i < 64; i++) {
-        waveform[i] = Math.floor(Math.random() * 80) + 20; 
-    }
-    return waveform;
+  const waveform = new Uint8Array(64);
+  for (let i = 0; i < 64; i++) {
+    waveform[i] = Math.floor(Math.random() * 85) + 15;
+  }
+  return waveform;
 };
 
-// 🟢 100% Stable Audio Converter (RAM-backed TMP processing - OPUS FORMAT)
-// මෙයින් සහතික කරන්නේ Channel එකට යවන Voice Note එක WhatsApp හි Native PTT (Opus) එකක් ලෙසම Play වන බවයි.
+// 🟢 High-Quality OPUS Audio Converter (Music-optimized 48kHz)
 function convertToOpus(inputBuffer) {
-    return new Promise((resolve, reject) => {
-        const tmpIn = path.join(os.tmpdir(), `in_${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`);
-        const tmpOut = path.join(os.tmpdir(), `out_${Date.now()}_${Math.random().toString(36).substring(7)}.ogg`);
-        
-        fs.writeFileSync(tmpIn, inputBuffer);
-        try { fs.chmodSync(ffmpegPath, 0o777); } catch (e) {}
+  return new Promise((resolve, reject) => {
+    const tmpIn = path.join(os.tmpdir(), `in_${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`);
+    const tmpOut = path.join(os.tmpdir(), `out_${Date.now()}_${Math.random().toString(36).substring(7)}.ogg`);
 
-        const cmd = `"${ffmpegPath}" -y -threads 4 -i "${tmpIn}" -vn -c:a libopus -b:a 48k -vbr on -compression_level 2 -frame_duration 20 -application voip -ac 1 -ar 16000 "${tmpOut}"`;
-        
-        exec(cmd, (err, stdout, stderr) => {
-            try { fs.unlinkSync(tmpIn); } catch (e) {}
-            if (err) return reject(new Error("FFmpeg Conversion Failed"));
-            
-            try {
-                const opusBuffer = fs.readFileSync(tmpOut);
-                fs.unlinkSync(tmpOut);
-                if (opusBuffer.length < 1024) return reject(new Error("Corrupted File"));
-                resolve(opusBuffer);
-            } catch (e) {
-                reject(e);
-            }
-        });
+    fs.writeFileSync(tmpIn, inputBuffer);
+    try { fs.chmodSync(ffmpegPath, 0o777); } catch (e) {}
+
+    // 🎵 Music application, 48000Hz stereo/mono, 96k bitrate for high quality voice note
+    const cmd = `"${ffmpegPath}" -y -i "${tmpIn}" -vn -c:a libopus -b:a 96k -vbr on -compression_level 10 -frame_duration 20 -application audio -ar 48000 "${tmpOut}"`;
+
+    exec(cmd, (err) => {
+      try { fs.unlinkSync(tmpIn); } catch (e) {}
+      if (err) {
+        console.error("FFmpeg error:", err);
+        return reject(new Error("FFmpeg Conversion Failed"));
+      }
+
+      try {
+        const opusBuffer = fs.readFileSync(tmpOut);
+        try { fs.unlinkSync(tmpOut); } catch (e) {}
+        if (!opusBuffer || opusBuffer.length < 1024) return reject(new Error("Corrupted Audio Output"));
+        resolve(opusBuffer);
+      } catch (e) {
+        reject(e);
+      }
     });
+  });
 }
 
 function extractYouTubeId(url) {
@@ -59,48 +63,64 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ Ultra-fast Native WhatsApp Voice Stream Fetcher
+// ⚡ Multi-Engine YouTube MP3 Fetcher
 async function fetchVoiceAudioStream(videoUrl) {
-  // 1. Primary Engine
+  const cleanId = extractYouTubeId(videoUrl);
+
+  // Engine 1: Gifted Tech Direct
   try {
     const res = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 30000
+      timeout: 20000
     });
     const dlUrl = res.data?.result?.download_url || res.data?.result?.dl_url;
     if (dlUrl) {
       return {
         downloadUrl: dlUrl,
-        title: res.data?.result?.title || 'YouTube Audio',
-        thumbnail: res.data?.result?.thumbnail || `https://i.ytimg.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`
+        title: res.data?.result?.title || 'YouTube Music',
+        thumbnail: res.data?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : null)
       };
     }
-  } catch (e) {
-    console.error("Primary voice engine error, using fallback:", e.message);
-  }
+  } catch (e) {}
 
-  // 2. Secondary Engine: Chamindu Direct Fallback
-  const chamRes = await axios.get(`https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=128kbps&format=mp3&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`, {
-    timeout: 30000
-  });
-  const chamData = chamRes.data?.data || chamRes.data;
-  const chamUrl = chamData?.direct_url || chamData?.download_url;
+  // Engine 2: Chamindu Site API
+  try {
+    const chamRes = await axios.get(`https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=128kbps&format=mp3&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`, {
+      timeout: 20000
+    });
+    const chamData = chamRes.data?.data || chamRes.data;
+    const chamUrl = chamData?.direct_url || chamData?.download_url;
+    if (chamUrl) {
+      return {
+        downloadUrl: chamUrl,
+        title: chamData?.title || 'YouTube Music',
+        thumbnail: chamData?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : null)
+      };
+    }
+  } catch (e) {}
 
-  if (chamUrl) {
-    return {
-      downloadUrl: chamUrl,
-      title: chamData?.title || 'YouTube Audio',
-      thumbnail: chamData?.thumbnail || `https://i.ytimg.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`
-    };
-  }
+  // Engine 3: Dark Yahu Secondary Fallback
+  try {
+    const fallbackRes = await axios.get(`https://api.siputzx.my.id/api/d/youtube/mp3?url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 20000
+    });
+    const fbUrl = fallbackRes.data?.data?.dl;
+    if (fbUrl) {
+      return {
+        downloadUrl: fbUrl,
+        title: fallbackRes.data?.data?.title || 'YouTube Music',
+        thumbnail: fallbackRes.data?.data?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : null)
+      };
+    }
+  } catch (e) {}
 
-  throw new Error("ගීතය ලබාගැනීමට නොහැකි විය.");
+  throw new Error("ගීතය Download කර ගැනීමට නොහැකි විය. කරුණාකර නැවත උත්සාහ කරන්න.");
 }
 
 module.exports = {
   name: 'csong',
   alias: ['channelsong', 'cplay', 'chsong'],
   category: 'channel',
-  desc: 'Download and post playable Voice Note directly into a WhatsApp Channel',
+  desc: 'Download and post high-quality playable audio directly into a WhatsApp Channel',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -144,9 +164,9 @@ module.exports = {
 
     sock.sendMessage(targetChat, { react: { text: "🎙️", key: msg.key } }).catch(() => {});
 
-    // Channel ID Extraction
+    // Channel ID Resolver
     let channelJid = null;
-    if (channelInput.includes('@newsletter')) {
+    if (channelInput.endsWith('@newsletter')) {
       channelJid = channelInput;
     } else {
       const match = channelInput.match(/(?:whatsapp\.com\/channel\/|chat\.whatsapp\.com\/)([a-zA-Z0-9]+)/i);
@@ -163,68 +183,73 @@ module.exports = {
     if (!channelJid) {
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       return await sock.sendMessage(targetChat, {
-        text: '❌ වලංගු නොවන Channel Link එකක්!',
+        text: '❌ වලංගු නොවන Channel Link එකක් හෝ Channel එක සොයාගත නොහැකි විය!',
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
     let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Processing Voice Audio:* _${songQuery}_\n📢 Sending to Channel...`
+      text: `⚡ *Searching & Downloading:* _${songQuery}_\n📢 Channel එකට සූදානම් කරමින් පවතී...`
     }, { quoted: msg }).catch(() => null);
 
     try {
       let videoUrl = songQuery;
       let videoTitle = songQuery;
       let thumb = 'https://files.catbox.moe/a58add.jpeg';
-      let timestampStr = "0:00"; // Duration fallback
+      let timestampStr = "0:00";
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(songQuery);
 
       if (!isYtUrl) {
         if (!yts) throw new Error('yt-search library missing.');
         const res = await yts(songQuery);
-        if (!res?.videos?.length) throw new Error('Song not found!');
+        if (!res?.videos?.length) throw new Error('සින්දුව සොයා ගැනීමට නොහැකි විය!');
         videoUrl = res.videos[0].url;
         videoTitle = res.videos[0].title || songQuery;
         thumb = res.videos[0].thumbnail || thumb;
         timestampStr = res.videos[0].timestamp || (res.videos[0].duration ? res.videos[0].duration.timestamp : "0:00");
       } else if (yts) {
-        // YT Link එකක් දුන්නොත් Thumbnail එකයි Duration එකයි ගන්න
         try {
-            const ytId = extractYouTubeId(videoUrl);
-            const searchResults = await yts({ videoId: ytId });
-            if (searchResults && searchResults.title) {
-                videoTitle = searchResults.title;
-                thumb = searchResults.thumbnail || thumb;
-                timestampStr = searchResults.timestamp || (searchResults.duration ? searchResults.duration.timestamp : "0:00");
-            }
-        } catch(e) {}
+          const ytId = extractYouTubeId(videoUrl);
+          const searchResults = await yts({ videoId: ytId });
+          if (searchResults && searchResults.title) {
+            videoTitle = searchResults.title;
+            thumb = searchResults.thumbnail || thumb;
+            timestampStr = searchResults.timestamp || (searchResults.duration ? searchResults.duration.timestamp : "0:00");
+          }
+        } catch (e) {}
       }
 
       const songData = await fetchVoiceAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Binary Audio Stream Buffer
+      // Download raw audio
       const audioStream = await axios.get(songData.downloadUrl, {
         responseType: 'arraybuffer',
         timeout: 60000,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
       });
       const rawAudioBuffer = Buffer.from(audioStream.data);
 
       if (!rawAudioBuffer || rawAudioBuffer.length < 10000) {
-          throw new Error("Downloaded audio is corrupted or too small.");
+        throw new Error("බාගත කල audio ගොනුව දෝෂ සහිතයි.");
       }
 
-      // 🟢 1. Convert to Native WhatsApp Voice Note (OPUS)
-      await sock.sendMessage(targetChat, { text: `⚡ *Processing Voice Audio:* _${cleanTitle}_\n⚙️ Converting to Native Voice Note...`, edit: statusMsg?.key }).catch(()=>{});
+      if (statusMsg?.key) {
+        await sock.sendMessage(targetChat, { 
+          text: `⚡ *Processing Voice Audio:* _${cleanTitle}_\n⚙️ High Quality Audio වලට Convert කරමින් පවතී...`, 
+          edit: statusMsg.key 
+        }).catch(() => {});
+      }
+
+      // Convert to WhatsApp Native Opus
       const finalAudioBuffer = await convertToOpus(rawAudioBuffer);
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // 🟢 2. Universal Compact Card Design (ඔබේ බොට්ගේ විලාසය)
+      // 🎨 Card Design
       const cardCaption = 
 `🎶 ❝ ${cleanTitle} ❞
 
@@ -235,27 +260,36 @@ module.exports = {
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`.trim();
 
-      // 3. Channel එකට Image Card එක යැවීම
+      // 1. Image Card to Channel
       await sock.sendMessage(channelJid, {
         image: { url: songData.thumbnail || thumb },
         caption: cardCaption
       });
 
-      // 🟢 4. Spam වැළැක්වීමට තත්පර 3 ක අනිවාර්ය Delay එක
-      await new Promise(r => setTimeout(r, 3000));
+      // 2. Safe Delay
+      await new Promise(r => setTimeout(r, 2500));
 
-      // 5. Channel එකට 100% Play වෙන Native Voice Note එකක් විදියට Waveform එකත් සමග යැවීම
-      await sock.sendMessage(channelJid, {
-        audio: finalAudioBuffer,
-        mimetype: 'audio/ogg; codecs=opus',
-        ptt: true,
-        waveform: generateWaveform() 
-      });
+      // 3. Audio upload to Channel
+      try {
+        await sock.sendMessage(channelJid, {
+          audio: finalAudioBuffer,
+          mimetype: 'audio/ogg; codecs=opus',
+          ptt: true,
+          waveform: generateWaveform()
+        });
+      } catch (errChannelPtt) {
+        // Fallback: If channel rejects PTT voice note format
+        await sock.sendMessage(channelJid, {
+          audio: rawAudioBuffer,
+          mimetype: 'audio/mp4',
+          ptt: false
+        });
+      }
 
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
       await sock.sendMessage(targetChat, {
-        text: `✅ *Voice Note Uploaded & Ready to Play!*\n\n• *Track:* ${cleanTitle}\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
+        text: `✅ *Track Uploaded Successfully!*\n\n• *Track:* ${cleanTitle}\n• *Duration:* ${timestampStr}\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg });
 
@@ -273,3 +307,4 @@ module.exports = {
     }
   }
 };
+
