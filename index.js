@@ -185,7 +185,7 @@ function getCommandExecutor(cmd) {
 }
 
 // ============================================================================
-// 🌐 LUXURY RED-BLACK GLASSMORPHIC PORTAL
+// 🌐 CYBER RED-BLACK GLASSMORPHIC PORTAL
 // ============================================================================
 
 function renderPortalHtml(botName) {
@@ -198,49 +198,72 @@ function renderPortalHtml(botName) {
       <title>${botName} • PAIRING STATION</title>
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet">
       <style>
         :root {
-          --bg-core: #090305;
-          --panel-bg: rgba(20, 6, 10, 0.72);
-          --accent-red: #e11d48;
-          --accent-glow: rgba(225, 29, 72, 0.35);
-          --crimson-soft: #fb7185;
-          --border-glass: rgba(244, 63, 94, 0.22);
-          --border-focus: rgba(244, 63, 94, 0.65);
-          --text-main: #fcfcfd;
-          --text-muted: #9f8e93;
+          --bg-black: #060203;
+          --panel-card: rgba(18, 5, 8, 0.78);
+          --neon-red: #ff003c;
+          --deep-red: #990024;
+          --crimson-glow: rgba(255, 0, 60, 0.45);
+          --card-border: rgba(255, 0, 60, 0.28);
+          --input-bg: rgba(10, 2, 4, 0.85);
+          --text-bright: #ffffff;
+          --text-dim: #a89498;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        
+        * {
+          box-sizing: border-box;
+          margin: 0;
+          padding: 0;
+          -webkit-tap-highlight-color: transparent;
+        }
+
         body {
-          background-color: var(--bg-core);
+          background-color: var(--bg-black);
           background-image: 
-            radial-gradient(circle at 50% 0%, rgba(225, 29, 72, 0.18) 0%, transparent 60%),
-            radial-gradient(circle at 10% 90%, rgba(159, 18, 57, 0.12) 0%, transparent 45%);
-          color: var(--text-main);
+            radial-gradient(circle at 50% 0%, rgba(255, 0, 60, 0.22) 0%, transparent 55%),
+            radial-gradient(circle at 100% 100%, rgba(153, 0, 36, 0.18) 0%, transparent 50%),
+            radial-gradient(circle at 0% 100%, rgba(255, 0, 60, 0.12) 0%, transparent 45%);
+          color: var(--text-bright);
           font-family: 'Outfit', sans-serif;
+          min-height: 100vh;
           display: flex;
           align-items: center;
           justify-content: center;
-          min-height: 100vh;
-          padding: 24px;
+          padding: 20px;
+          overflow-x: hidden;
+        }
+
+        .portal-container {
+          width: 100%;
+          max-width: 430px;
+          position: relative;
+        }
+
+        /* Ambient Glow Behind Card */
+        .portal-container::after {
+          content: '';
+          position: absolute;
+          inset: -2px;
+          background: radial-gradient(circle, var(--crimson-glow) 0%, transparent 70%);
+          filter: blur(40px);
+          z-index: -1;
+          opacity: 0.6;
         }
 
         .portal-card {
-          background: var(--panel-bg);
-          backdrop-filter: blur(28px) saturate(160%);
-          -webkit-backdrop-filter: blur(28px) saturate(160%);
-          border: 1px solid var(--border-glass);
+          background: var(--panel-card);
+          backdrop-filter: blur(30px) saturate(180%);
+          -webkit-backdrop-filter: blur(30px) saturate(180%);
+          border: 1px solid var(--card-border);
           border-radius: 28px;
-          padding: 44px 34px;
-          width: 100%;
-          max-width: 440px;
+          padding: 44px 32px;
           text-align: center;
           box-shadow: 
-            0 24px 60px rgba(0, 0, 0, 0.65),
-            0 0 45px var(--accent-glow);
+            0 30px 80px rgba(0, 0, 0, 0.85),
+            0 0 35px rgba(255, 0, 60, 0.2),
+            inset 0 0 1px 1px rgba(255, 255, 255, 0.1);
           position: relative;
           overflow: hidden;
         }
@@ -252,249 +275,347 @@ function renderPortalHtml(botName) {
           left: 0;
           right: 0;
           height: 3px;
-          background: linear-gradient(90deg, transparent, var(--accent-red), transparent);
+          background: linear-gradient(90deg, transparent, var(--neon-red), transparent);
+          box-shadow: 0 0 15px var(--neon-red);
         }
 
-        .badge-status {
+        .status-pill {
           display: inline-flex;
           align-items: center;
-          gap: 7px;
+          gap: 8px;
+          background: rgba(255, 0, 60, 0.1);
+          border: 1px solid rgba(255, 0, 60, 0.35);
+          padding: 6px 16px;
+          border-radius: 99px;
           font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          color: var(--crimson-soft);
-          background: rgba(225, 29, 72, 0.12);
-          border: 1px solid rgba(225, 29, 72, 0.28);
-          padding: 5px 14px;
-          border-radius: 30px;
-          margin-bottom: 20px;
-        }
-
-        .badge-dot {
-          width: 6px;
-          height: 6px;
-          background: var(--accent-red);
-          border-radius: 50%;
-          box-shadow: 0 0 8px var(--accent-red);
-        }
-
-        .app-title {
-          font-size: 30px;
           font-weight: 800;
+          letter-spacing: 2px;
+          color: #ff4d6d;
+          text-transform: uppercase;
+          margin-bottom: 22px;
+        }
+
+        .status-dot {
+          width: 7px;
+          height: 7px;
+          background: var(--neon-red);
+          border-radius: 50%;
+          box-shadow: 0 0 12px var(--neon-red);
+          animation: pulse 1.8s infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.3); opacity: 0.5; }
+        }
+
+        .brand-title {
+          font-size: 32px;
+          font-weight: 900;
           letter-spacing: -0.5px;
-          background: linear-gradient(135deg, #ffffff 40%, var(--crimson-soft) 80%, var(--accent-red) 100%);
+          text-transform: uppercase;
+          background: linear-gradient(135deg, #ffffff 30%, #ff8097 70%, var(--neon-red) 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           margin-bottom: 6px;
         }
 
-        .app-desc {
+        .brand-subtitle {
+          color: var(--text-dim);
           font-size: 13.5px;
-          color: var(--text-muted);
-          margin-bottom: 30px;
-          font-weight: 400;
+          margin-bottom: 32px;
+          font-weight: 500;
         }
 
-        .input-wrap {
+        .field-group {
+          margin-bottom: 20px;
           position: relative;
-          margin-bottom: 16px;
         }
 
-        .phone-input {
+        .phone-field {
           width: 100%;
-          padding: 16px 20px;
-          border-radius: 16px;
-          border: 1px solid var(--border-glass);
-          background: rgba(12, 3, 6, 0.7);
-          color: var(--text-main);
-          font-size: 17px;
-          font-weight: 600;
-          letter-spacing: 0.8px;
+          padding: 18px 22px;
+          background: var(--input-bg);
+          border: 1.5px solid var(--card-border);
+          border-radius: 18px;
+          color: #ffffff;
+          font-size: 18px;
+          font-weight: 700;
+          letter-spacing: 1px;
           text-align: center;
           outline: none;
           transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .phone-input::placeholder {
-          color: rgba(255, 255, 255, 0.25);
+        .phone-field::placeholder {
+          color: rgba(255, 255, 255, 0.22);
           font-weight: 400;
           letter-spacing: 0;
         }
 
-        .phone-input:focus {
-          border-color: var(--border-focus);
-          box-shadow: 0 0 24px rgba(225, 29, 72, 0.35);
-          background: rgba(18, 4, 9, 0.9);
+        .phone-field:focus {
+          border-color: var(--neon-red);
+          background: rgba(18, 2, 6, 0.95);
+          box-shadow: 0 0 30px rgba(255, 0, 60, 0.35);
         }
 
-        .btn-action {
+        /* 🔘 ACTION BUTTON */
+        .btn-generate {
           width: 100%;
-          padding: 16px;
-          border-radius: 16px;
+          padding: 18px;
           border: none;
-          background: linear-gradient(135deg, #be123c 0%, var(--accent-red) 100%);
+          border-radius: 18px;
+          background: linear-gradient(135deg, var(--deep-red) 0%, var(--neon-red) 100%);
           color: #ffffff;
-          font-size: 14.5px;
-          font-weight: 700;
-          letter-spacing: 0.5px;
+          font-size: 15px;
+          font-weight: 800;
+          letter-spacing: 1px;
+          text-transform: uppercase;
           cursor: pointer;
-          transition: all 0.25s ease;
-          box-shadow: 0 8px 24px rgba(225, 29, 72, 0.3);
-          margin-bottom: 12px;
+          position: relative;
+          overflow: hidden;
+          transition: all 0.3s ease;
+          box-shadow: 0 10px 30px rgba(255, 0, 60, 0.4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          min-height: 58px;
         }
 
-        .btn-action:hover {
+        .btn-generate:hover:not(:disabled) {
           transform: translateY(-2px);
-          box-shadow: 0 12px 30px rgba(225, 29, 72, 0.45);
+          box-shadow: 0 15px 40px rgba(255, 0, 60, 0.6);
+          filter: brightness(1.1);
         }
 
-        .btn-action:active {
+        .btn-generate:active:not(:disabled) {
           transform: translateY(0);
         }
 
-        .btn-reset {
-          width: 100%;
-          padding: 13px;
-          border-radius: 14px;
-          border: 1px solid rgba(225, 29, 72, 0.25);
-          background: rgba(225, 29, 72, 0.08);
-          color: var(--crimson-soft);
-          font-size: 12.5px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.25s ease;
+        .btn-generate:disabled {
+          opacity: 0.85;
+          cursor: not-allowed;
         }
 
-        .btn-reset:hover {
-          background: rgba(225, 29, 72, 0.18);
-          border-color: rgba(225, 29, 72, 0.45);
-        }
-
-        .code-container {
+        /* 🌀 SPINNER ANIMATION */
+        .spinner {
           display: none;
-          margin-top: 24px;
-          animation: fadeIn 0.4s ease;
+          width: 22px;
+          height: 22px;
+          border: 3px solid rgba(255, 255, 255, 0.25);
+          border-top-color: #ffffff;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
         }
 
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
         }
 
-        .code-box {
+        /* 📦 CODE SECTION */
+        .code-panel {
+          display: none;
+          margin-top: 26px;
+          animation: glowIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes glowIn {
+          from {
+            opacity: 0;
+            transform: scale(0.92) translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+
+        .code-badge {
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--text-dim);
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          margin-bottom: 8px;
+        }
+
+        .code-display {
           font-family: 'JetBrains Mono', monospace;
-          font-size: 32px;
+          font-size: 34px;
           font-weight: 800;
-          letter-spacing: 5px;
-          color: #ffe4e6;
-          background: rgba(225, 29, 72, 0.14);
-          border: 1.5px dashed rgba(251, 113, 133, 0.45);
+          letter-spacing: 6px;
+          color: #ffffff;
+          background: rgba(255, 0, 60, 0.12);
+          border: 2px dashed rgba(255, 0, 60, 0.55);
+          border-radius: 18px;
           padding: 18px;
-          border-radius: 16px;
           cursor: pointer;
+          position: relative;
+          box-shadow: 0 0 35px rgba(255, 0, 60, 0.25);
           transition: all 0.25s ease;
         }
 
-        .code-box:hover {
-          background: rgba(225, 29, 72, 0.22);
-          border-color: var(--crimson-soft);
+        .code-display:hover {
+          background: rgba(255, 0, 60, 0.2);
+          border-color: var(--neon-red);
           transform: scale(1.02);
+          box-shadow: 0 0 45px rgba(255, 0, 60, 0.45);
         }
 
-        .copy-tag {
-          font-size: 11.5px;
-          color: var(--text-muted);
-          margin-top: 8px;
-          font-weight: 500;
+        .code-hint {
+          font-size: 12px;
+          color: var(--text-dim);
+          margin-top: 10px;
         }
 
-        .footer-note {
-          margin-top: 28px;
+        /* 🔔 TOAST NOTIFICATION */
+        .toast {
+          position: fixed;
+          top: 24px;
+          left: 50%;
+          transform: translateX(-50%) translateY(-100px);
+          background: rgba(18, 3, 6, 0.95);
+          border: 1px solid var(--neon-red);
+          box-shadow: 0 10px 40px rgba(255, 0, 60, 0.5);
+          color: #ffffff;
+          padding: 12px 24px;
+          border-radius: 50px;
+          font-size: 13.5px;
+          font-weight: 700;
+          letter-spacing: 0.5px;
+          backdrop-filter: blur(20px);
+          z-index: 9999;
+          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          opacity: 0;
+          pointer-events: none;
+        }
+
+        .toast.show {
+          transform: translateX(-50%) translateY(0);
+          opacity: 1;
+        }
+
+        .footer {
+          margin-top: 30px;
           font-size: 11px;
-          letter-spacing: 1px;
-          color: rgba(255, 255, 255, 0.25);
+          letter-spacing: 1.5px;
           text-transform: uppercase;
+          color: rgba(255, 255, 255, 0.25);
+          font-weight: 600;
         }
       </style>
     </head>
     <body>
-      <div class="portal-card">
-        <div class="badge-status">
-          <span class="badge-dot"></span> Online System
+      <div id="toast" class="toast">
+        <span>⚡</span>
+        <span id="toastMsg">Code Copied Automatically!</span>
+      </div>
+
+      <div class="portal-container">
+        <div class="portal-card">
+          <div class="status-pill">
+            <span class="status-dot"></span> System Ready
+          </div>
+          <h1 class="brand-title">${botName}</h1>
+          <p class="brand-subtitle">Enter WhatsApp number with country code</p>
+
+          <div class="field-group">
+            <input type="tel" id="phone" class="phone-field" placeholder="e.g. 9471xxxxxxx" autofocus />
+          </div>
+
+          <button id="genBtn" class="btn-generate" onclick="generatePairCode()">
+            <span class="spinner" id="btnSpinner"></span>
+            <span id="btnText">GENERATE PAIR CODE</span>
+          </button>
+
+          <div class="code-panel" id="codePanel">
+            <div class="code-badge">Pairing Code (Click to Copy)</div>
+            <div class="code-display" id="codeDisplay" onclick="copyCodeManually()"></div>
+            <div class="code-hint">Code automatically copied to clipboard!</div>
+          </div>
+
+          <p class="footer">Heshan MD • Ultra Engine</p>
         </div>
-        <h1 class="app-title">${botName}</h1>
-        <p class="app-desc">Enter phone number with country code</p>
-
-        <div class="input-wrap">
-          <input type="text" id="phone" class="phone-input" placeholder="e.g. 9470xxxxxxx" />
-        </div>
-
-        <button id="btn" class="btn-action" onclick="fetchPairCode()">GET PAIRING CODE</button>
-        <button class="btn-reset" onclick="cleanSessionSlot()">CLEAN THIS SESSION</button>
-
-        <div class="code-container" id="codeWrapper">
-          <div class="code-box" id="codeDisplay" onclick="copyCode()"></div>
-          <div class="copy-tag">Click code to copy to clipboard</div>
-        </div>
-
-        <p class="footer-note">Powered by Heshan MD</p>
       </div>
 
       <script>
-        async function fetchPairCode() {
-          const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
-          if (!phone || phone.length < 10) return alert('කරුණාකර නිවැරදි Country Code සහිත අංකය ඇතුළත් කරන්න!');
+        function showToast(text) {
+          const toast = document.getElementById('toast');
+          const toastMsg = document.getElementById('toastMsg');
+          toastMsg.innerText = text;
+          toast.classList.add('show');
+          setTimeout(() => {
+            toast.classList.remove('show');
+          }, 3500);
+        }
 
-          const btn = document.getElementById('btn');
-          const wrapper = document.getElementById('codeWrapper');
+        async function generatePairCode() {
+          const phoneInput = document.getElementById('phone');
+          const cleanPhone = phoneInput.value.replace(/[^0-9]/g, '');
+          
+          if (!cleanPhone || cleanPhone.length < 10) {
+            showToast('⚠️ කරුණාකර නිවැරදි Country Code සහිත අංකය ඇතුළත් කරන්න!');
+            return;
+          }
+
+          const btn = document.getElementById('genBtn');
+          const btnText = document.getElementById('btnText');
+          const spinner = document.getElementById('btnSpinner');
+          const panel = document.getElementById('codePanel');
           const display = document.getElementById('codeDisplay');
 
-          btn.innerText = 'GENERATING CODE...';
+          // Start Spinner state
           btn.disabled = true;
-          wrapper.style.display = 'none';
+          spinner.style.display = 'block';
+          btnText.innerText = 'GENERATING...';
+          panel.style.display = 'none';
 
           try {
-            const res = await fetch('/pair?num=' + phone);
+            const res = await fetch('/pair?num=' + cleanPhone);
             const data = await res.json();
+
             if (data.code) {
               display.innerText = data.code;
-              wrapper.style.display = 'block';
-              navigator.clipboard.writeText(data.code).catch(()=>{});
-              alert('✅ Pairing Code: ' + data.code);
+              panel.style.display = 'block';
+
+              // Auto-copy to clipboard
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(data.code).catch(() => {});
+              }
+              showToast('✅ Code Copied: ' + data.code);
             } else {
-              alert(data.error || 'Connection rate-limited. Please wait 15 seconds.');
+              showToast(data.error || 'Connection rate-limited. Please wait 15 seconds.');
             }
           } catch(e) {
-            alert('Server connection error. Refresh page and retry!');
-          }
-          btn.innerText = 'GET PAIRING CODE';
-          btn.disabled = false;
-        }
-
-        async function cleanSessionSlot() {
-          const phone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
-          if (!phone) return alert('Clean කිරීමට Phone Number එක ඇතුළත් කරන්න!');
-          if (confirm('+' + phone + ' සඳහා පැරණි session එක සම්පූර්ණයෙන්ම Clean කරන්නද?')) {
-            try {
-              const res = await fetch('/reset-num?num=' + phone);
-              const data = await res.json();
-              if (data.success) {
-                alert('✅ Session Cleared! දැන් Pair Code එක Generate කරන්න.');
-              }
-            } catch(e) {
-              alert('Clean request failed!');
-            }
+            showToast('Server error! Please refresh and retry.');
+          } finally {
+            btn.disabled = false;
+            spinner.style.display = 'none';
+            btnText.innerText = 'GENERATE PAIR CODE';
           }
         }
 
-        function copyCode() {
+        function copyCodeManually() {
           const code = document.getElementById('codeDisplay').innerText;
           if (code) {
-            navigator.clipboard.writeText(code);
-            alert('✅ Copied to clipboard: ' + code);
+            navigator.clipboard.writeText(code).then(() => {
+              showToast('✅ Copied to clipboard: ' + code);
+            }).catch(() => {
+              showToast('✅ Pair Code: ' + code);
+            });
           }
         }
+
+        // Allow pressing Enter key to generate
+        document.getElementById('phone').addEventListener('keypress', function(e) {
+          if (e.key === 'Enter') {
+            generatePairCode();
+          }
+        });
       </script>
     </body>
     </html>
@@ -703,7 +824,7 @@ async function handleStatusBroadcast(sock, msg, settings) {
   } catch (e) {}
 }
 
-// ⚡ FIX: Group Sender Extraction 100% Reliable
+// ⚡ Group Sender Extraction 100% Reliable
 function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   if (msg.key.fromMe) return myBotJid;
   if (isGroup) {
@@ -844,7 +965,6 @@ async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply
   return true;
 }
 
-// ⚡ FIX: Prefix Commands Group Execution & Settings Allowed for Owner
 async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum) {
   const prefixMatch = text.match(/^[./!#]/);
   if (!prefixMatch) return false;
@@ -855,13 +975,11 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
 
   const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
 
-  // Group හෝ Inbox ඕනෑම තැනක Owner ට Settings ක්‍රියාත්මක කිරීමට අවසර දීම
   if (isSettingsCmd && !isAuthorized) {
     await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
     return true;
   }
 
-  // Work mode එක අනුව normal user commands group වල skip වීම වැළැක්වීම
   if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
     return true;
   }
@@ -903,7 +1021,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
-  // Auto Chat Read
   if (settings.autoChatRead && !msg.key.fromMe) {
     sock.readMessages([msg.key]).catch(() => {});
   }
@@ -915,7 +1032,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return;
   }
 
-  // Sender & Permission calculations
   const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
   const resolvedSender = await resolveLidToRealJid(sock, originalSender);
   const isOwner = checkIsOwner(originalSender, resolvedSender);
@@ -938,7 +1054,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
   const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
 
-  // 🎯 1. MAIN MENU QUOTED REPLY HANDLER
   if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
     if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
       const menuCmd = findCommand('menu', 'help', 'list');
@@ -952,13 +1067,11 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🎯 2. SETTINGS MENU REPLY HANDLER (Group වලත් Owner ට reply මගින් setting වෙනස් කළ හැක)
   if (settingsOption && isAuthorized && fromSettingsMenu && !fromMainMenu) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
   }
 
-  // 🎯 3. STATUS SAVE HANDLER
   const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
@@ -969,11 +1082,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🎯 4. PREFIX COMMANDS HANDLER
   await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
 }
 
-// ⚡ Real-time Upsert Listener
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (!messages || !messages.length) return;
