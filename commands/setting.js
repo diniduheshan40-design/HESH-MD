@@ -72,7 +72,8 @@ module.exports = {
 
     const isSettingsReply = quotedCaption.includes("SYSTEM SETTINGS") || 
                             quotedCaption.includes("WORK MODE") ||
-                            quotedCaption.includes("PRESENCE STATUS");
+                            quotedCaption.includes("PRESENCE STATUS") ||
+                            quotedCaption.includes("ANTI-DELETE");
 
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
@@ -217,9 +218,15 @@ module.exports = {
     else if (input === '10.2') { settings.antiDeleteType = 'group'; isUpdated = true; }
     else if (input === '10.3') { settings.antiDeleteType = 'all'; isUpdated = true; }
 
-    // 11. ANTI-DELETE DESTINATION
-    else if (input === '11.1') { settings.antiDeleteDest = 'me'; isUpdated = true; }
-    else if (input === '11.2') { settings.antiDeleteDest = 'from'; isUpdated = true; }
+    // 11. ANTI-DELETE DESTINATION (ME / FROM)
+    else if (input === '11.1' || input === 'antisend me' || input === 'antidel me') { 
+      settings.antiDeleteDest = 'me'; 
+      isUpdated = true; 
+    }
+    else if (input === '11.2' || input === 'antisend from' || input === 'antidel from') { 
+      settings.antiDeleteDest = 'from'; 
+      isUpdated = true; 
+    }
 
     // 12. ALWAYS ONLINE / OFFLINE
     else if (input === '12.1') { 
@@ -258,14 +265,16 @@ module.exports = {
       }
 
       const reactEmojiDisplay = settings.statusReactEmoji === 'random' ? 'RANDOM EMOJIS 🔀' : settings.statusReactEmoji;
+      const antiSendDisplay = settings.antiDeleteDest === 'from' ? 'CHAT ITSELF (FROM) 💬' : 'MY INBOX (ME) 📥';
 
       return await reply(
         `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n\n` +
         `• Status Seen     : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
         `• Status React    : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'}*\n` +
         `• React Style     : *${reactEmojiDisplay}*\n` +
-        `• Always Online   : *${settings.alwaysOnline.toUpperCase()}*\n` +
-        `• Anti-Delete     : *${settings.antiDeleteEnabled ? 'ON 🟢' : 'OFF 🔴'}*`
+        `• Anti-Delete     : *${settings.antiDeleteEnabled ? 'ON 🟢' : 'OFF 🔴'}*\n` +
+        `• Anti-Send Dest  : *${antiSendDisplay}*\n` +
+        `• Always Online   : *${settings.alwaysOnline.toUpperCase()}*`
       );
     }
 
@@ -279,6 +288,7 @@ module.exports = {
     }[settings.workMode] || 'PUBLIC 🌐';
 
     const currentReactDisplay = settings.statusReactEmoji === 'random' ? 'RANDOM 🔀' : (settings.statusReactEmoji || '💚');
+    const antiSendDestDisplay = settings.antiDeleteDest === 'from' ? 'FROM (Chat Itself) 💬' : 'ME (My Inbox) 📥';
 
     const menu = `╭─── ⚡ *HESHAN-MD SYSTEM SETTINGS* ⚡ ───╮
 │
@@ -324,15 +334,24 @@ module.exports = {
 │  ├ 9.1 Anti-Delete On 🛡️
 │  └ 9.2 Anti-Delete Off 🛑
 │
-├─◈ *10. ALWAYS ONLINE* ⤿ [ ${settings.alwaysOnline.toUpperCase()} ]
-│  ├ 10.1 Always Online 🟢
-│  ├ 10.2 Always Offline ⚪
-│  └ 10.3 Normal Mode 🔴
+├─◈ *10. ANTI-DELETE SCOPE* ⤿ [ ${(settings.antiDeleteType || 'all').toUpperCase()} ]
+│  ├ 10.1 Inbox Only
+│  ├ 10.2 Groups Only
+│  └ 10.3 All Chats
+│
+├─◈ *11. ANTI-DELETE SEND TO* ⤿ [ ${antiSendDestDisplay} ]
+│  ├ 11.1 Send To Me (My Inbox) 📥
+│  └ 11.2 Send To From (Same Chat) 💬
+│
+├─◈ *12. ALWAYS ONLINE* ⤿ [ ${settings.alwaysOnline.toUpperCase()} ]
+│  ├ 12.1 Always Online 🟢
+│  ├ 12.2 Always Offline ⚪
+│  └ 12.3 Normal Mode 🔴
 │
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• Settings පණිවිඩයට අදාළ අංකය Reply කරන්න (උදා: *4.1* හෝ *4.2*)
-• නැතහොත් command එක run කරන්න (උදා: *.set 4.1*, *.statusreact random*)
+• Settings පණිවිඩයට අදාළ අංකය Reply කරන්න (උදා: *11.1* හෝ *11.2*)
+• නැතහොත් command එක run කරන්න (උදා: *.set 11.1*, *.set antisend from*)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
@@ -355,4 +374,3 @@ module.exports = {
     }, { quoted: msg }).catch(() => {});
   }
 };
-
