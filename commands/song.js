@@ -1,5 +1,6 @@
 // commands/song.js
 const axios = require('axios');
+
 let yts;
 try {
   yts = require('yt-search');
@@ -11,26 +12,69 @@ const CHAMINDU_API_KEY = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
 
 function extractYouTubeId(url) {
   const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/;
-  const match = url.match(regExp);
+  const match = String(url).match(regExp);
   return match ? match[1] : null;
 }
 
-async function fetchAudioFromChamindu(videoUrl, quality = '320kbps') {
+// ⚡ Multi-Engine Audio Stream Fetcher
+async function fetchAudioStream(videoUrl, quality = '320kbps') {
   const cleanQuality = quality.replace(/[^0-9]/g, '') + 'kbps';
-  const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=${cleanQuality}&format=mp3&api_key=${CHAMINDU_API_KEY}`;
+  const cleanId = extractYouTubeId(videoUrl);
 
-  const res = await axios.get(apiUrl, { timeout: 35000 });
-  const data = res.data?.data || res.data;
+  // Engine 1: Chamindu Site API
+  try {
+    const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=${cleanQuality}&format=mp3&api_key=${CHAMINDU_API_KEY}`;
+    const res = await axios.get(apiUrl, { timeout: 25000 });
+    const data = res.data?.data || res.data;
+    const dlUrl = data?.direct_url || data?.download_url;
 
-  const dlUrl = data?.direct_url || data?.download_url;
-  if (!dlUrl) throw new Error('Download URL generation failed.');
+    if (dlUrl) {
+      return {
+        downloadUrl: dlUrl,
+        title: data?.title || 'YouTube Audio',
+        thumbnail: data?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg'),
+        quality: data?.quality || cleanQuality
+      };
+    }
+  } catch (e) {}
 
-  return {
-    downloadUrl: dlUrl,
-    title: data?.title || 'YouTube Audio',
-    thumbnail: data?.thumbnail || `https://i.ytimg.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`,
-    quality: data?.quality || cleanQuality
-  };
+  // Engine 2: Gifted Tech Fallback
+  try {
+    const res2 = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 25000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const dlUrl2 = res2.data?.result?.download_url || res2.data?.result?.dl_url;
+
+    if (dlUrl2) {
+      return {
+        downloadUrl: dlUrl2,
+        title: res2.data?.result?.title || 'YouTube Audio',
+        thumbnail: res2.data?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg'),
+        quality: cleanQuality
+      };
+    }
+  } catch (e) {}
+
+  // Engine 3: Siputzx Fallback
+  try {
+    const res3 = await axios.get(`https://api.siputzx.my.id/api/d/youtube/mp3?url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 25000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const dlUrl3 = res3.data?.data?.dl;
+
+    if (dlUrl3) {
+      return {
+        downloadUrl: dlUrl3,
+        title: res3.data?.data?.title || 'YouTube Audio',
+        thumbnail: res3.data?.data?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg'),
+        quality: cleanQuality
+      };
+    }
+  } catch (e) {}
+
+  throw new Error('Download URL generation failed. Please try again.');
 }
 
 module.exports = {
@@ -84,7 +128,7 @@ module.exports = {
     try {
       let videoUrl = rawInput;
       let videoTitle = rawInput;
-      let duration = 'N/A';
+      let duration = '03:20';
       let author = 'YouTube Music';
       let thumb = 'https://files.catbox.moe/a58add.jpeg';
 
@@ -103,11 +147,35 @@ module.exports = {
         duration = video.timestamp || duration;
         author = video.author?.name || author;
         thumb = video.thumbnail || thumb;
+      } else if (yts) {
+        try {
+          const ytId = extractYouTubeId(videoUrl);
+          if (ytId) {
+            const searchResults = await yts({ videoId: ytId });
+            if (searchResults && searchResults.title) {
+              videoTitle = searchResults.title;
+              duration = searchResults.timestamp || duration;
+              author = searchResults.author?.name || author;
+              thumb = searchResults.thumbnail || thumb;
+            }
+          }
+        } catch (e) {}
       }
 
-      const songData = await fetchAudioFromChamindu(videoUrl, selectedQuality);
+      const songData = await fetchAudioStream(videoUrl, selectedQuality);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
+      // Thumbnail Image buffer download to avoid drop
+      let thumbBuffer;
+      try {
+        const thumbRes = await axios.get(songData.thumbnail || thumb, { responseType: 'arraybuffer', timeout: 12000 });
+        thumbBuffer = Buffer.from(thumbRes.data);
+      } catch (e) {
+        const fallbackThumb = await axios.get('https://files.catbox.moe/a58add.jpeg', { responseType: 'arraybuffer' });
+        thumbBuffer = Buffer.from(fallbackThumb.data);
+      }
+
+      // Download Audio Binary Stream
       const audioRes = await axios.get(songData.downloadUrl, {
         responseType: 'arraybuffer',
         timeout: 60000,
@@ -117,11 +185,15 @@ module.exports = {
       });
       const audioBuffer = Buffer.from(audioRes.data);
 
+      if (!audioBuffer || audioBuffer.length < 5000) {
+        throw new Error('Downloaded audio is corrupted or empty.');
+      }
+
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // ⚡ Compact, Modern & Universal Clean Card
+      // Compact & Clean Card Design
       const songCard = 
 `*🎧 HESHAN-MD AUDIO PLAYER*
 ━━━━━━━━━━━━━━━━━━━━━
@@ -132,10 +204,10 @@ module.exports = {
 ━━━━━━━━━━━━━━━━━━━━━
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // Send Card with Image
+      // 1. Send Card Image
       try {
         await sock.sendMessage(targetChat, {
-          image: { url: songData.thumbnail || thumb },
+          image: thumbBuffer,
           caption: songCard,
           contextInfo: channelContext
         }, { quoted: msg });
@@ -143,18 +215,19 @@ module.exports = {
         await sock.sendMessage(targetChat, { text: songCard, contextInfo: channelContext }, { quoted: msg }).catch(() => {});
       }
 
-      // Send Audio
+      // 2. Send Playable Audio File
       await sock.sendMessage(targetChat, {
         audio: audioBuffer,
-        mimetype: 'audio/mpeg',
+        mimetype: 'audio/mp4',
         fileName: `${cleanTitle}.mp3`,
-        ptt: false
+        ptt: false,
+        contextInfo: channelContext
       }, { quoted: msg });
 
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error('Song Download Error:', err.message);
+      console.error('Song Download Error:', err?.message || err);
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
@@ -162,9 +235,9 @@ module.exports = {
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
 
       await sock.sendMessage(targetChat, { 
-        text: `❌ *Error:* ${err.message}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`
+        text: `❌ *Error:* ${err.message || 'සින්දුව බාගත කිරීමට නොහැකි විය.'}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`,
+        contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
     }
   }
 };
-
