@@ -1,15 +1,22 @@
+// commands/save.js
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+
+// 🎯 ViewOnce save සඳහා වලංගු Emoji ලැයිස්තුව
+const TRIGGER_EMOJIS = ['❤️', '🥺', '😚', '🌚', '😼', '😂', '🫡', '🥱', '🙌', '🖤', '👍', '🤣', '🥰', '🫢', '🤭', '🫣'];
 
 module.exports = {
   name: 'save',
-  description: 'Download and save ViewOnce photos, videos, audios, or statuses',
+  alias: ['vv', 'viewonce', ...TRIGGER_EMOJIS],
+  category: 'tools',
+  description: 'Download and save ViewOnce photos, videos, or audios using emojis or .vv',
+
   async execute(sock, msg, args, chatJid, safeReply) {
     try {
       const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
       
       if (!quotedMsg) {
         return await safeReply({ 
-          text: "❌ කරුණාකර Status එකකට හෝ View Once ෆොටෝ/වීඩියෝ එකකට Reply කර .save ලෙස යොදන්න." 
+          text: "❌ කරුණාකර View Once ෆොටෝ/වීඩියෝ එකකට Reply කර ඉමෝජියක් හෝ .vv ලෙස යොදන්න." 
         });
       }
 
@@ -45,16 +52,16 @@ module.exports = {
 
       if (!mediaMsg || !mediaType) {
         return await safeReply({ 
-          text: "❌ මෙහි ෆොටෝ, වීඩියෝ හෝ ඕඩියෝ එකක් හමු නොවුණි." 
+          text: "❌ මෙහි View Once ෆොටෝ, වීඩියෝ හෝ ඕඩියෝ එකක් හමු නොවුණි." 
         });
       }
 
-      // 2. React downloading
+      // 2. React Downloading
       try {
         await sock.sendMessage(chatJid, { react: { text: '⬇️', key: msg.key } });
       } catch (e) {}
 
-      // 3. Fast Stream Buffering with Limit Protection
+      // 3. Fast Stream Buffering
       const stream = await downloadContentFromMessage(mediaMsg, mediaType);
       const chunks = [];
       for await (const chunk of stream) { 
@@ -63,7 +70,7 @@ module.exports = {
       const buffer = Buffer.concat(chunks);
 
       const originalCaption = mediaMsg.caption ? `\n\n*📝 Caption:* ${mediaMsg.caption}` : '';
-      const captionText = `*⚡ HESHAN-MD MEDIA SAVER ⚡*
+      const captionText = `*⚡ HESHAN-MD VIEW ONCE SAVER ⚡*
 ────────────────────────────
 *📥 Type:* ${mediaType.toUpperCase()}
 *🟢 Status:* Successfully Retrieved${originalCaption}
