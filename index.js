@@ -69,7 +69,12 @@ const DEFAULT_SETTINGS = {
   statusReactEmoji: '💐',
   botLogo: DEFAULT_BACKUP_LOGO,
   autoPresence: 'off',
+  alwaysOnline: 'off',
   autoChatRead: false,
+  aiChatEnabled: false,
+  antiDeleteEnabled: true,
+  antiDeleteType: 'all',
+  antiDeleteDest: 'me',
   securityPin: '1234',
   isFirstConnectDone: false
 };
@@ -98,7 +103,12 @@ function createSettingsModel() {
     statusReactEmoji: { type: String, default: DEFAULT_SETTINGS.statusReactEmoji },
     botLogo: { type: String, default: DEFAULT_SETTINGS.botLogo },
     autoPresence: { type: String, default: DEFAULT_SETTINGS.autoPresence },
+    alwaysOnline: { type: String, default: DEFAULT_SETTINGS.alwaysOnline },
     autoChatRead: { type: Boolean, default: DEFAULT_SETTINGS.autoChatRead },
+    aiChatEnabled: { type: Boolean, default: DEFAULT_SETTINGS.aiChatEnabled },
+    antiDeleteEnabled: { type: Boolean, default: DEFAULT_SETTINGS.antiDeleteEnabled },
+    antiDeleteType: { type: String, default: DEFAULT_SETTINGS.antiDeleteType },
+    antiDeleteDest: { type: String, default: DEFAULT_SETTINGS.antiDeleteDest },
     securityPin: { type: String, default: DEFAULT_SETTINGS.securityPin },
     isFirstConnectDone: { type: Boolean, default: DEFAULT_SETTINGS.isFirstConnectDone }
   });
@@ -911,10 +921,11 @@ function buildSafeReply(sock, chatJid, msg) {
 
 function isSettingsMenuOption(cleanInput) {
   return (
-    /^([1-7](\.[1-4])?)$/.test(cleanInput) ||
+    /^([1-9]|1[0-2])(\.[1-4])?$/.test(cleanInput) ||
     cleanInput.startsWith('6 ') ||
     cleanInput.startsWith('pin ') ||
-    cleanInput.startsWith('set ')
+    cleanInput.startsWith('set ') ||
+    cleanInput.startsWith('antisend ')
   );
 }
 
@@ -932,7 +943,8 @@ function isQuotedFromSettingsMenu(quotedCaption) {
   return (
     quotedCaption.includes('SYSTEM SETTINGS') ||
     quotedCaption.includes('WORK MODE') ||
-    quotedCaption.includes('FAKE ACTION')
+    quotedCaption.includes('FAKE ACTION') ||
+    quotedCaption.includes('ANTI-DELETE')
   );
 }
 
@@ -1009,23 +1021,29 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
-  if (chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter')) {
+  const isChannel = chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter');
+
+  if (isChannel) {
     if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
-    return;
   }
 
   if (msg.message.reactionMessage) return;
+
+  const rawMsg = unwrapMessageContent(msg.message);
+  const text = extractMessageText(rawMsg);
+  if (!text) return;
 
   const isGroup = chatJid.endsWith('@g.us');
   const myBotJid = sock.user?.id || '';
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
-  if (settings.autoChatRead && !msg.key.fromMe) {
-    sock.readMessages([msg.key]).catch(() => {});
+  if (!isChannel) {
+    if (settings.autoChatRead && !msg.key.fromMe) {
+      sock.readMessages([msg.key]).catch(() => {});
+    }
+    if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
   }
-
-  if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
 
   if (chatJid === 'status@broadcast') {
     await handleStatusBroadcast(sock, msg, settings);
@@ -1040,14 +1058,39 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
   const currentMode = settings.workMode || 'public';
 
-  const rawMsg = unwrapMessageContent(msg.message);
-  const text = extractMessageText(rawMsg);
-  if (!text) return;
+  const safeReply = buildSafeReply(sock, chatJid, msg);
+
+  // 🎯 Channel .setchannel Command Handler
+  if (isChannel) {
+    if (text.startsWith('.setchannel') || text.startsWith('!setchannel') || text.startsWith('#setchannel')) {
+      const setCmd = findCommand('setchannel');
+      if (setCmd) {
+        const cmdFunc = getCommandExecutor(setCmd);
+        const args = text.trim().split(/ +/).slice(1);
+        if (cmdFunc) {
+          await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: true, isChannel: true });
+        }
+      }
+    }
+    return;
+  }
 
   const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
   const quotedMsgObj = quotedContext?.quotedMessage;
-  const safeReply = buildSafeReply(sock, chatJid, msg);
   const cleanInput = text.toLowerCase().trim();
+
+  // 🎯 ViewOnce Quick Emoji Save Handler
+  const TRIGGER_EMOJIS = ['❤️', '🥺', '😚', '🌚', '😼', '😂', '🫡', '🥱', '🙌', '🖤', '👍', '🤣', '🥰', '🫢', '🤭', '🫣', 'vv'];
+  if (quotedMsgObj && TRIGGER_EMOJIS.includes(cleanInput)) {
+    const saveCmd = findCommand('save', 'vv');
+    if (saveCmd) {
+      const cmdFunc = getCommandExecutor(saveCmd);
+      if (cmdFunc) {
+        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized, isGroup });
+        return;
+      }
+    }
+  }
 
   const settingsOption = isSettingsMenuOption(cleanInput);
   const quotedCaption = extractQuotedCaption(quotedMsgObj);
@@ -1304,4 +1347,3 @@ async function main() {
 }
 
 main();
-
