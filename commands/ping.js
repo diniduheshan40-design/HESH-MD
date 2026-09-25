@@ -20,12 +20,12 @@ module.exports = {
     try {
       const start = performance.now();
 
-      // 2. Real-time Testing Message Dispatch (Without Channel Context Info)
+      // 2. Real-time Testing Message Dispatch
       const testMsg = await sock.sendMessage(targetChat, { 
-        text: '⚡ *ms testing...*' 
+        text: 'ms testing...' 
       }, { quoted: msg }).catch(async () => {
         return await sock.sendMessage(targetChat, { 
-          text: '⚡ *ms testing...*' 
+          text: 'ms testing...' 
         }).catch(() => null);
       });
 
@@ -33,11 +33,9 @@ module.exports = {
       const end = performance.now();
       const speed = Math.round(end - start);
 
-      const pingText = `⚡ *P O N G !* 📍\n\n` +
-                       `*Speed :* \`${speed}ms\`\n\n` +
-                       `> ❄️ ʜᴇꜱʜᴀɴ ᴍᴅ`.trim();
+      const pingText = `pong speed  ${speed}ms 📍`;
 
-      // 4. Update Message & ✔️ Reaction (Plain message without channel badge)
+      // 4. Update Message & ✔️ Reaction
       if (testMsg?.key) {
         await sock.sendMessage(targetChat, { 
           text: pingText, 
@@ -56,7 +54,7 @@ module.exports = {
 
     } catch (err) {
       console.error('Ping command error:', err?.message || err);
-      await sock.sendMessage(targetChat, { text: '🏓 Pong! (Speed check error)' }).catch(() => {});
+      await sock.sendMessage(targetChat, { text: 'error 📍' }).catch(() => {});
     }
   }
 };
