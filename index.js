@@ -251,7 +251,6 @@ function renderPortalHtml(botName) {
           position: relative;
         }
 
-        /* Ambient Glow Behind Card */
         .portal-container::after {
           content: '';
           position: absolute;
@@ -369,7 +368,6 @@ function renderPortalHtml(botName) {
           box-shadow: 0 0 30px rgba(255, 0, 60, 0.35);
         }
 
-        /* 🔘 ACTION BUTTON */
         .btn-generate {
           width: 100%;
           padding: 18px;
@@ -399,16 +397,11 @@ function renderPortalHtml(botName) {
           filter: brightness(1.1);
         }
 
-        .btn-generate:active:not(:disabled) {
-          transform: translateY(0);
-        }
-
         .btn-generate:disabled {
           opacity: 0.85;
           cursor: not-allowed;
         }
 
-        /* 🌀 SPINNER ANIMATION */
         .spinner {
           display: none;
           width: 22px;
@@ -423,7 +416,6 @@ function renderPortalHtml(botName) {
           to { transform: rotate(360deg); }
         }
 
-        /* 📦 CODE SECTION */
         .code-panel {
           display: none;
           margin-top: 26px;
@@ -431,14 +423,8 @@ function renderPortalHtml(botName) {
         }
 
         @keyframes glowIn {
-          from {
-            opacity: 0;
-            transform: scale(0.92) translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1) translateY(0);
-          }
+          from { opacity: 0; transform: scale(0.92) translateY(10px); }
+          to { opacity: 1; transform: scale(1) translateY(0); }
         }
 
         .code-badge {
@@ -466,20 +452,12 @@ function renderPortalHtml(botName) {
           transition: all 0.25s ease;
         }
 
-        .code-display:hover {
-          background: rgba(255, 0, 60, 0.2);
-          border-color: var(--neon-red);
-          transform: scale(1.02);
-          box-shadow: 0 0 45px rgba(255, 0, 60, 0.45);
-        }
-
         .code-hint {
           font-size: 12px;
           color: var(--text-dim);
           margin-top: 10px;
         }
 
-        /* 🔔 TOAST NOTIFICATION */
         .toast {
           position: fixed;
           top: 24px;
@@ -493,7 +471,6 @@ function renderPortalHtml(botName) {
           border-radius: 50px;
           font-size: 13.5px;
           font-weight: 700;
-          letter-spacing: 0.5px;
           backdrop-filter: blur(20px);
           z-index: 9999;
           transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -558,9 +535,7 @@ function renderPortalHtml(botName) {
           const toastMsg = document.getElementById('toastMsg');
           toastMsg.innerText = text;
           toast.classList.add('show');
-          setTimeout(() => {
-            toast.classList.remove('show');
-          }, 3500);
+          setTimeout(() => { toast.classList.remove('show'); }, 3500);
         }
 
         async function generatePairCode() {
@@ -578,7 +553,6 @@ function renderPortalHtml(botName) {
           const panel = document.getElementById('codePanel');
           const display = document.getElementById('codeDisplay');
 
-          // Start Spinner state
           btn.disabled = true;
           spinner.style.display = 'block';
           btnText.innerText = 'GENERATING...';
@@ -592,7 +566,6 @@ function renderPortalHtml(botName) {
               display.innerText = data.code;
               panel.style.display = 'block';
 
-              // Auto-copy to clipboard
               if (navigator.clipboard && navigator.clipboard.writeText) {
                 await navigator.clipboard.writeText(data.code).catch(() => {});
               }
@@ -620,11 +593,8 @@ function renderPortalHtml(botName) {
           }
         }
 
-        // Allow pressing Enter key to generate
         document.getElementById('phone').addEventListener('keypress', function(e) {
-          if (e.key === 'Enter') {
-            generatePairCode();
-          }
+          if (e.key === 'Enter') generatePairCode();
         });
       </script>
     </body>
@@ -834,7 +804,6 @@ async function handleStatusBroadcast(sock, msg, settings) {
   } catch (e) {}
 }
 
-// ⚡ Group Sender Extraction 100% Reliable
 function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   if (msg.key.fromMe) return myBotJid;
   if (isGroup) {
@@ -1021,6 +990,10 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
+  // 🛡️ 1. IGNORE BOT'S OWN MESSAGES (CRITICAL LOOP FIX)
+  // බොට් තමන්ගෙන්ම යවන කිසිම මැසේජ් එකකට trigger නොවී නවත්වයි
+  if (msg.key.fromMe) return;
+
   const isChannel = chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter');
 
   if (isChannel) {
@@ -1039,10 +1012,10 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const settings = await getBotSettings(myBotNum);
 
   if (!isChannel) {
-    if (settings.autoChatRead && !msg.key.fromMe) {
+    if (settings.autoChatRead) {
       sock.readMessages([msg.key]).catch(() => {});
     }
-    if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
+    simulateAutoPresence(sock, chatJid, settings);
   }
 
   if (chatJid === 'status@broadcast') {
@@ -1115,7 +1088,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     if (handled) return;
   }
 
-  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status', 'send'];
+  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status'];
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
   if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanInput))) {
@@ -1129,6 +1102,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 }
 
 function registerMessageUpsertHandler(sock, phoneNumber) {
+  // පරණ listeners ඉවත් කර එකක් පමණක් තබයි
+  sock.ev.removeAllListeners('messages.upsert');
+  
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     if (!messages || !messages.length) return;
     for (const msg of messages) {
@@ -1248,6 +1224,7 @@ function registerPairRoute(app) {
       pairSock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'open') {
+          // Open වූ පසු නිවැරදිව activeSessions වෙත එකතු කිරීම
           activeSessions[num] = pairSock;
           registerConnectionUpdateHandler(pairSock, num);
           registerMessageUpsertHandler(pairSock, num);
