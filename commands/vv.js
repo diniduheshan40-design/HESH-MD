@@ -14,14 +14,21 @@ module.exports = {
     try {
       const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
       
-      if (!quotedMsg) {
-        return await safeReply({ 
-          text: "❌ කරුණාකර View Once ෆොටෝ/වීඩියෝ එකකට Reply කර ඉමෝජියක් හෝ .vv ලෙස යොදන්න." 
-        });
+      // Quoted message එකක් නැත්නම් කිසිම දෙයක් නොකර නවත්වන්න
+      if (!quotedMsg) return;
+
+      // 1. Safe Deep Unwrap සහ View Once ද යන්න නිවැරදිව පරීක්ෂා කිරීම
+      let qm = quotedMsg;
+      let isViewOnce = false;
+
+      if (
+        qm?.viewOnceMessage ||
+        qm?.viewOnceMessageV2 ||
+        qm?.viewOnceMessageV2Extension
+      ) {
+        isViewOnce = true;
       }
 
-      // 1. Safe Deep Unwrap (සියලුම wrappers recursive ලෙස ඉවත් කිරීම)
-      let qm = quotedMsg;
       while (
         qm?.viewOnceMessage?.message ||
         qm?.viewOnceMessageV2?.message ||
@@ -29,12 +36,18 @@ module.exports = {
         qm?.ephemeralMessage?.message ||
         qm?.documentWithCaptionMessage?.message
       ) {
+        if (qm?.viewOnceMessage || qm?.viewOnceMessageV2 || qm?.viewOnceMessageV2Extension) {
+          isViewOnce = true;
+        }
         qm = qm.viewOnceMessage?.message ||
              qm.viewOnceMessageV2?.message ||
              qm.viewOnceMessageV2Extension?.message ||
              qm.ephemeralMessage?.message ||
              qm.documentWithCaptionMessage?.message;
       }
+
+      // 🛡️ වැදගත්ම කොටස: Quoted කරපු මැසේජ් එක View Once එකක් නෙවෙයි නම් කිසිම මැසේජ් එකක් නොයවා Silent Exit කරන්න!
+      if (!isViewOnce) return;
 
       let mediaMsg = null;
       let mediaType = null;
@@ -50,16 +63,11 @@ module.exports = {
         mediaMsg = qm.audioMessage; 
       }
 
-      if (!mediaMsg || !mediaType) {
-        return await safeReply({ 
-          text: "❌ මෙහි View Once ෆොටෝ, වීඩියෝ හෝ ඕඩියෝ එකක් හමු නොවුණි." 
-        });
-      }
+      // Media එකක් හොයාගන්න බැරි වුණත් සද්ද නැතුව නවත්වන්න
+      if (!mediaMsg || !mediaType) return;
 
       // 2. React Downloading
-      try {
-        await sock.sendMessage(chatJid, { react: { text: '⬇️', key: msg.key } });
-      } catch (e) {}
+      await sock.sendMessage(chatJid, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
 
       // 3. Fast Stream Buffering
       const stream = await downloadContentFromMessage(mediaMsg, mediaType);
@@ -94,16 +102,10 @@ module.exports = {
         });
       }
 
-      try {
-        await sock.sendMessage(chatJid, { react: { text: '✅', key: msg.key } });
-      } catch (e) {}
+      await sock.sendMessage(chatJid, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
     } catch (err) {
       console.error("Save Command Error:", err.message);
-      try {
-        await sock.sendMessage(chatJid, { react: { text: '❌', key: msg.key } });
-      } catch (e) {}
-      await safeReply({ text: "❌ File එක බාගත කිරීමේදී දෝෂයක් ඇති විය!" });
     }
   }
 };
