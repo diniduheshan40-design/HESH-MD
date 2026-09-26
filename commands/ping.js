@@ -14,30 +14,32 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // 1. Initial ❄️ Reaction
-    await sock.sendMessage(targetChat, { react: { text: "❄️", key: msg.key } }).catch(() => {});
+    // 1. Initial Reaction
+    await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
     try {
       const start = performance.now();
 
-      // 2. Real-time Testing Message Dispatch (Without Channel Context Info)
+      // 2. Initial Testing Message
       const testMsg = await sock.sendMessage(targetChat, { 
-        text: '⚡ *ms testing...*' 
+        text: '⚡ `[ PINGING... ]`' 
       }, { quoted: msg }).catch(async () => {
         return await sock.sendMessage(targetChat, { 
-          text: '⚡ *ms testing...*' 
+          text: '⚡ `[ PINGING... ]`' 
         }).catch(() => null);
       });
 
-      // 3. Real Server Latency Calculation
+      // 3. Latency Calculation
       const end = performance.now();
       const speed = Math.round(end - start);
 
-      const pingText = `⚡ *P O N G !* 📍\n\n` +
-                       `*Speed :* \`${speed}ms\`\n\n` +
-                       `> ✨ ʜᴇꜱʜᴀɴ ᴍᴅ`.trim();
+      // Speed එක අනුව status එක සහ icon එක තේරීම
+      const status = speed < 300 ? '🚀 ᴜʟᴛʀᴀ-ꜰᴀꜱᴛ' : speed < 700 ? '⚡ ꜱᴛᴀʙʟᴇ' : '⏳ ᴅᴇʟᴀʏ';
 
-      // 4. Update Message & ✔️ Reaction (Plain message without channel badge)
+      // 🔥 Clean Single Line Design
+      const pingText = `⚡ ʀᴇꜱᴘᴏɴꜱᴇ: \`${speed}ms\` ┃ ${status} ┃ ✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ`;
+
+      // 4. Edit Message
       if (testMsg?.key) {
         await sock.sendMessage(targetChat, { 
           text: pingText, 
@@ -46,17 +48,17 @@ module.exports = {
           await sock.sendMessage(targetChat, { text: pingText }, { quoted: msg });
         });
 
-        await sock.sendMessage(targetChat, { react: { text: "✔️", key: testMsg.key } }).catch(() => {});
+        await sock.sendMessage(targetChat, { react: { text: "🎯", key: testMsg.key } }).catch(() => {});
       } else {
         const sent = await sock.sendMessage(targetChat, { text: pingText }, { quoted: msg });
         if (sent?.key) {
-          await sock.sendMessage(targetChat, { react: { text: "✔️", key: sent.key } }).catch(() => {});
+          await sock.sendMessage(targetChat, { react: { text: "🎯", key: sent.key } }).catch(() => {});
         }
       }
 
     } catch (err) {
       console.error('Ping command error:', err?.message || err);
-      await sock.sendMessage(targetChat, { text: '🏓 Pong! (Speed check error)' }).catch(() => {});
+      await sock.sendMessage(targetChat, { text: '⚡ `Error measuring ping!`' }).catch(() => {});
     }
   }
 };
