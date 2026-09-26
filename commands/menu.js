@@ -50,6 +50,8 @@ const subMenus = {
 ┃ ◈ \`.apk\`       ⌁ _<android app>_
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
+🔗 *Pair Site :* https://heshan.devofc.top
+
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
   "2": `┏━━━❮ 🛠️ *TOOLS & UTILITY* ❯━━━┓
@@ -60,6 +62,8 @@ const subMenus = {
 ┃ ◈ \`.vv\`         ⌁ _<view once reveal>_
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
+🔗 *Pair Site :* https://heshan.devofc.top
+
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
   "3": `┏━━━❮ 👥 *GROUP & ADMIN MENU* ❯━━━┓
@@ -78,6 +82,8 @@ const subMenus = {
 ┃ ◈ \`.hack\`       ⌁ _<prank hack UI>_
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
+🔗 *Pair Site :* https://heshan.devofc.top
+
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
 
   "4": `┏━━━❮ ⚡ *SYSTEM & OWNER* ❯━━━┓
@@ -88,6 +94,8 @@ const subMenus = {
 ┃ ◈ \`.setlogo\`    ⌁ _<update bot banner>_
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
+🔗 *Pair Site :* https://heshan.devofc.top
+
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`
 };
 
@@ -164,6 +172,8 @@ module.exports = {
 ┃ ◈ *4*  ➜ ⚡ *SYSTEM & OWNER*
 ┃
 ┗━━━━━━━━━━━━━━━━━━━━━┛
+🔗 *Pair Site :* https://heshan.devofc.top
+
 > 💡 *මෙම පණිවිඩයට අංකය (1, 2, 3, 4) Reply කරන්න.*
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`;
 
@@ -188,4 +198,3 @@ module.exports = {
     }, { quoted: msg }).catch(() => {});
   }
 };
-
