@@ -26,16 +26,7 @@ function getFfmpegPath() {
 
 const ffmpegBinary = getFfmpegPath();
 
-// 🟢 Channel Waveform Generator
-const generateWaveform = () => {
-  const waveform = new Uint8Array(64);
-  for (let i = 0; i < 64; i++) {
-    waveform[i] = Math.floor(Math.random() * 85) + 15;
-  }
-  return waveform;
-};
-
-// 🟢 High-Quality 48kHz Opus Voice Converter (Heroku Safe)
+// 🟢 High-Quality Opus/OGG Converter (Fallback to MP3 if failed)
 function convertToOpus(inputBuffer) {
   return new Promise((resolve) => {
     const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
@@ -48,12 +39,11 @@ function convertToOpus(inputBuffer) {
       return resolve({ buffer: inputBuffer, isOgg: false });
     }
 
-    const cmd = `"${ffmpegBinary}" -y -i "${tmpIn}" -vn -c:a libopus -b:a 96k -vbr on -compression_level 10 -ar 48000 -ac 1 "${tmpOut}"`;
+    const cmd = `"${ffmpegBinary}" -y -i "${tmpIn}" -vn -c:a libopus -b:a 128k -ar 48000 "${tmpOut}"`;
 
     exec(cmd, (err) => {
-      try { fs.unlinkSync(tmpIn); } catch (e) {}
+      try { if (fs.existsSync(tmpIn)) fs.unlinkSync(tmpIn); } catch (e) {}
       if (err) {
-        console.error("FFmpeg exec error, using MP3 fallback:", err.message);
         return resolve({ buffer: inputBuffer, isOgg: false });
       }
 
@@ -80,50 +70,49 @@ function extractYouTubeId(url) {
 async function fetchVoiceAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // Engine 1: Gifted Tech API
+  // Engine 1: Siputzx API
   try {
-    const res = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
+    const res = await axios.get(`https://api.siputzx.my.id/api/d/youtube/mp3?url=${encodeURIComponent(videoUrl)}`, {
       timeout: 25000,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
-    const dlUrl = res.data?.result?.download_url || res.data?.result?.dl_url;
+    const dlUrl = res.data?.data?.dl;
     if (dlUrl) {
       return {
         downloadUrl: dlUrl,
-        title: res.data?.result?.title || 'YouTube Audio',
-        thumbnail: res.data?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res.data?.data?.title || 'YouTube Audio',
+        thumbnail: res.data?.data?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
 
-  // Engine 2: Siputzx API
+  // Engine 2: Gifted Tech API
   try {
-    const res2 = await axios.get(`https://api.siputzx.my.id/api/d/youtube/mp3?url=${encodeURIComponent(videoUrl)}`, {
+    const res2 = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
       timeout: 25000,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
-    const dlUrl2 = res2.data?.data?.dl;
+    const dlUrl2 = res2.data?.result?.download_url || res2.data?.result?.dl_url;
     if (dlUrl2) {
       return {
         downloadUrl: dlUrl2,
-        title: res2.data?.data?.title || 'YouTube Audio',
-        thumbnail: res2.data?.data?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res2.data?.result?.title || 'YouTube Audio',
+        thumbnail: res2.data?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
 
-  // Engine 3: Chamindu API
+  // Engine 3: BK9 API
   try {
-    const res3 = await axios.get(`https://api.chamindu.site/api/v1/youtube/download?url=${encodeURIComponent(videoUrl)}&quality=128kbps&format=mp3&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`, {
+    const res3 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, {
       timeout: 25000
     });
-    const chamData = res3.data?.data || res3.data;
-    const dlUrl3 = chamData?.direct_url || chamData?.download_url;
+    const dlUrl3 = res3.data?.BK9?.BK8;
     if (dlUrl3) {
       return {
         downloadUrl: dlUrl3,
-        title: chamData?.title || 'YouTube Audio',
-        thumbnail: chamData?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res3.data?.BK9?.title || 'YouTube Audio',
+        thumbnail: res3.data?.BK9?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
@@ -135,7 +124,7 @@ module.exports = {
   name: 'csong',
   alias: ['channelsong', 'cplay', 'chsong'],
   category: 'channel',
-  desc: 'Download and post playable Voice Note and card directly into any WhatsApp Channel via link',
+  desc: 'Download and post playable Audio & Card directly into any WhatsApp Channel',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -156,16 +145,15 @@ module.exports = {
 
     const rawInput = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
 
-    // 🎯 ලින්ක් එකටම ඇලෙන්න කොමාව ගැහුවත් වෙන් කර හඳුනා ගැනීම:
+    // 🎯 Channel URL සහ Query එක වෙන් කර ගැනීම
     let channelInput = '';
     let songQuery = '';
 
     if (rawInput.includes(',')) {
-      const parts = rawInput.split(',');
-      channelInput = parts[0].trim();
-      songQuery = parts.slice(1).join(',').trim();
+      const firstComma = rawInput.indexOf(',');
+      channelInput = rawInput.substring(0, firstComma).trim();
+      songQuery = rawInput.substring(firstComma + 1).trim();
     } else {
-      // Space එකකින් වෙන් කර තිබුණහොත්
       const match = rawInput.match(/^(https?:\/\/[^\s]+|[\d]+@newsletter)\s+(.+)$/i);
       if (match) {
         channelInput = match[1].trim();
@@ -177,8 +165,7 @@ module.exports = {
       return await sock.sendMessage(targetChat, {
         text: `*🎧 HESHAN-MD CHANNEL MUSIC*\n\n` +
               `> 💡 *භාවිතය:* \`.csong <channel_link>,<song_name/yt_link>\`\n\n` +
-              `> 📌 *උදා:* \`.csong https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V,Lelena\`\n` +
-              `> 📌 *උදා 2:* \`.csong https://whatsapp.com/channel/0029VbAQYhXDZ4Lfo9K5gh1V,https://youtu.be/xxx\`\n\n` +
+              `> 📌 *උදා:* \`.csong https://whatsapp.com/channel/0029VbAAjtcC1FuCIiYc8z3T/625,මා දිහා\`\n\n` +
               `*⚡ ʜᴇꜱʜᴀɴ ᴍᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg });
@@ -186,12 +173,13 @@ module.exports = {
 
     sock.sendMessage(targetChat, { react: { text: "🎙️", key: msg.key } }).catch(() => {});
 
-    // 🔍 Channel Invite Code එකෙන් Channel JID එක සොයා ගැනීම
+    // 🔍 Channel Invite Code එක / Post ID එකෙන් තොරව පිරිසිදුව ලබා ගැනීම
     let channelJid = null;
     if (channelInput.endsWith('@newsletter')) {
       channelJid = channelInput;
     } else {
-      const inviteCodeMatch = channelInput.match(/(?:whatsapp\.com\/channel\/|chat\.whatsapp\.com\/)([a-zA-Z0-9]+)/i);
+      // https://whatsapp.com/channel/0029VbAAjtcC1FuCIiYc8z3T/625 ආකෘතියෙන් 0029... කොටස පමණක් ලබා ගැනීම
+      const inviteCodeMatch = channelInput.match(/(?:whatsapp\.com\/channel\/|chat\.whatsapp\.com\/)([a-zA-Z0-9]{20,28})/i);
       const inviteCode = inviteCodeMatch ? inviteCodeMatch[1] : null;
 
       if (inviteCode && typeof sock.newsletterMetadata === 'function') {
@@ -201,7 +189,7 @@ module.exports = {
             channelJid = meta.id.includes('@newsletter') ? meta.id : `${meta.id}@newsletter`;
           }
         } catch (e) {
-          console.error("Newsletter invite error:", e.message);
+          console.error("Newsletter metadata error:", e.message);
         }
       }
     }
@@ -258,7 +246,7 @@ module.exports = {
       const songData = await fetchVoiceAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Thumbnail Image එක Buffer එකක් කරගැනීම (URL එකක් විදියට යැව්වම Channel වල Drop වෙන එක නවත්වන්න)
+      // Thumbnail Image එක Buffer එකක් කරගැනීම
       let thumbBuffer;
       try {
         const thumbRes = await axios.get(songData.thumbnail || thumb, { responseType: 'arraybuffer', timeout: 15000 });
@@ -282,13 +270,10 @@ module.exports = {
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { 
-          text: `⚡ *Processing:* _${cleanTitle}_\n⚙️ Channel එකට Post කරමින් පවතී...`, 
+          text: `⚡ *Uploading to Channel:* _${cleanTitle}_\n⚙️ Channel එකට Post කරමින් පවතී...`, 
           edit: statusMsg.key 
         }).catch(() => {});
       }
-
-      // OPUS Conversion
-      const { buffer: audioToSend, isOgg } = await convertToOpus(rawAudioBuffer);
 
       // 🎨 1. Photo Card Design
       const cardCaption = 
@@ -301,31 +286,22 @@ module.exports = {
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`.trim();
 
-      // 🖼️ STEP 1: Image Card එක Channel එකට යැවීම (No contextInfo to avoid WhatsApp drop)
+      // 🖼️ STEP 1: Image Card එක Channel එකට යැවීම
       await sock.sendMessage(channelJid, {
         image: thumbBuffer,
         caption: cardCaption
       });
 
-      // Channel Rate-limit delay (තත්පර 2.5)
-      await new Promise(r => setTimeout(r, 2500));
+      // Channel rate-limit delay
+      await new Promise(r => setTimeout(r, 2000));
 
-      // 🎧 STEP 2: Playable Audio එක Channel එකට යැවීම
-      try {
-        await sock.sendMessage(channelJid, {
-          audio: audioToSend,
-          mimetype: isOgg ? 'audio/ogg; codecs=opus' : 'audio/mp4',
-          ptt: true,
-          waveform: generateWaveform()
-        });
-      } catch (errPTT) {
-        console.log("Channel PTT fallback to standard audio:", errPTT.message);
-        await sock.sendMessage(channelJid, {
-          audio: rawAudioBuffer,
-          mimetype: 'audio/mp4',
-          ptt: false
-        });
-      }
+      // 🎧 STEP 2: Playable Audio එක Channel එකට යැවීම (Channels support audio/mp4 / audio/mpeg best)
+      await sock.sendMessage(channelJid, {
+        audio: rawAudioBuffer,
+        mimetype: 'audio/mp4',
+        ptt: false,
+        fileName: `${cleanTitle}.mp3`
+      });
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
@@ -333,7 +309,7 @@ module.exports = {
 
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
-      // පරිශීලකයාට Confirmation මැසේජ් එක යැවීම
+      // පරිශීලකයාට Confirmation මැසේජ් එක
       await sock.sendMessage(targetChat, {
         text: `✅ *Track & Card Uploaded Successfully!*\n\n• *Track:* ${cleanTitle}\n• *Duration:* ${timestampStr}\n• *Channel ID:* \`${channelJid}\`\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
         contextInfo: channelContext
@@ -353,4 +329,3 @@ module.exports = {
     }
   }
 };
-
