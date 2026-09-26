@@ -135,6 +135,8 @@ module.exports = {
 │  ➜ *.owner* - Owner Details
 │
 └─────────────────────┘
+🔗 *Pair Site :* https://heshan.devofc.top
+
 > 🔐 *heshan ofc • all rights reserved*`;
 
         const channelContext = global.channelContext?.contextInfo || {
@@ -170,4 +172,3 @@ module.exports = {
         });
     }
 };
-
