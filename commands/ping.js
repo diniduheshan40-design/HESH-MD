@@ -14,7 +14,7 @@ module.exports = {
 
     if (!targetChat) return;
 
-    // 1. Initial Reaction
+    // 1. Initial ⚡ Reaction
     await sock.sendMessage(targetChat, { react: { text: "⚡", key: msg.key } }).catch(() => {});
 
     try {
@@ -22,24 +22,21 @@ module.exports = {
 
       // 2. Initial Testing Message
       const testMsg = await sock.sendMessage(targetChat, { 
-        text: '⚡ `[ PINGING... ]`' 
+        text: '⚡ `testing...`' 
       }, { quoted: msg }).catch(async () => {
         return await sock.sendMessage(targetChat, { 
-          text: '⚡ `[ PINGING... ]`' 
+          text: '⚡ `testing...`' 
         }).catch(() => null);
       });
 
-      // 3. Latency Calculation
+      // 3. Speed Calculation
       const end = performance.now();
       const speed = Math.round(end - start);
 
-      // Speed එක අනුව status එක සහ icon එක තේරීම
-      const status = speed < 300 ? '🚀 ᴜʟᴛʀᴀ-ꜰᴀꜱᴛ' : speed < 700 ? '⚡ ꜱᴛᴀʙʟᴇ' : '⏳ ᴅᴇʟᴀʏ';
+      // 🔥 Minimal Clean Single Line Text
+      const pingText = `*Pong* \`${speed} ms\` ⚡ ✨`;
 
-      // 🔥 Clean Single Line Design
-      const pingText = `⚡ ʀᴇꜱᴘᴏɴꜱᴇ: \`${speed}ms\` ┃ ${status} ┃ ✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ`;
-
-      // 4. Edit Message
+      // 4. Edit Message to Final Ping
       if (testMsg?.key) {
         await sock.sendMessage(targetChat, { 
           text: pingText, 
