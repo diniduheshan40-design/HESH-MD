@@ -14,15 +14,15 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ Fast Audio Fetcher
+// ⚡ Ultra-Fast Audio Stream Fetcher
 async function fetchAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // 🥇 Primary Engine: Chamindu API
+  // 🥇 Primary Engine: Chamindu API (High Speed 10Gbps SaveTube CDN)
   try {
     const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=${CHAMINDU_API_KEY}`;
     const res = await axios.get(apiUrl, { 
-      timeout: 15000,
+      timeout: 12000,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
     const data = res.data?.data || res.data?.result;
@@ -40,7 +40,7 @@ async function fetchAudioStream(videoUrl) {
   // 🥈 Fallback Engine: BK9 API
   try {
     const res2 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 12000
+      timeout: 10000
     });
     const dlUrl2 = res2.data?.BK9?.BK8;
     if (dlUrl2) {
@@ -80,7 +80,9 @@ module.exports = {
 
     let rawInput = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
 
+    // 1. හිස්ව .song පමණක් ගැහූ විට 🎧 වැටී උපදෙස් පණිවිඩය යවයි
     if (!rawInput) {
+      await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
       return await sock.sendMessage(targetChat, { 
         text: `*🎵 HESHAN MUSIC PLAYER*\n\n` +
               `> 💡 Please provide a song name or YouTube link.\n` +
@@ -91,11 +93,8 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
-
-    let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Searching Track:* _${rawInput}_\n⏳ Searching audio on YouTube...`
-    }, { quoted: msg }).catch(() => null);
+    // 2. සින්දුවක නමක් සහිතව ඉල්ලූ සැනින් ⬆️ රිඇක්ට් එක වැටේ
+    await sock.sendMessage(targetChat, { react: { text: "⬆️", key: msg.key } }).catch(() => {});
 
     try {
       let videoUrl = rawInput;
@@ -121,14 +120,10 @@ module.exports = {
         thumb = video.thumbnail || thumb;
       }
 
-      if (statusMsg?.key) {
-        await sock.sendMessage(targetChat, { 
-          text: `⚡ *Downloading Audio:* _${videoTitle}_\n📥 Sending audio track...`, 
-          edit: statusMsg.key 
-        }).catch(() => {});
-      }
-
+      // 3. Audio Link එක සාර්ථකව Fetch කරගත් පසු (කාඩ් එකයි සින්දුවයි එවන්න ළං වූ විට) ⬇️ රිඇක්ට් එක වැටේ
       const songData = await fetchAudioStream(videoUrl);
+      await sock.sendMessage(targetChat, { react: { text: "⬇️", key: msg.key } }).catch(() => {});
+
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
       const songCard = 
@@ -142,14 +137,14 @@ module.exports = {
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // 1. Send Card Image (Channel context එක සහිතයි)
+      // Card Image එක යැවීම (කාඩ් එකට පමණක් කොළ පාට Channel Header එක සහිතයි)
       await sock.sendMessage(targetChat, {
         image: { url: songData.thumbnail || thumb },
         caption: songCard,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
 
-      // 2. Direct Audio Stream Dispatch (Timeout 25s)
+      // Audio එක Direct URL මඟින් යැවීම (ඕඩියෝ එකට Channel Header නොමැත)
       await Promise.race([
         sock.sendMessage(targetChat, {
           audio: { url: songData.downloadUrl },
@@ -157,21 +152,15 @@ module.exports = {
           fileName: `${cleanTitle}.mp3`,
           ptt: false
         }, { quoted: msg }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('WhatsApp upload timed out')), 25000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Audio sending timeout')), 25000))
       ]);
 
-      if (statusMsg?.key) {
-        await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
-      }
-
+      // 4. කාඩ් එක සහ සින්දුව සාර්ථකව ගිය පසු ✅ රිඇක්ට් එක වැටේ
       await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
       console.error('Song Command Error:', err?.message || err);
 
-      if (statusMsg?.key) {
-        sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
-      }
       await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
 
       await sock.sendMessage(targetChat, { 
