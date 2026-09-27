@@ -154,20 +154,19 @@ module.exports = {
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // 1. Send Card Image
+      // 1. Send Card Image (මෙහි පමණක් කොළ පාට Channel Header එක සහිත Context එක ඇත)
       await sock.sendMessage(targetChat, {
         image: { url: songData.thumbnail || thumb },
         caption: songCard,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
 
-      // 2. Direct Stream Audio Dispatch
+      // 2. Direct Stream Audio Dispatch (Channel Context එක සම්පූර්ණයෙන්ම ඉවත් කර ඇත)
       await sock.sendMessage(targetChat, {
         audio: { url: songData.downloadUrl },
         mimetype: 'audio/mp4',
         fileName: `${cleanTitle}.mp3`,
-        ptt: false,
-        contextInfo: channelContext
+        ptt: false
       }, { quoted: msg });
 
       if (statusMsg?.key) {
