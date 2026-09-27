@@ -1,11 +1,6 @@
 // commands/song.js
 const axios = require('axios');
 
-let giftedDls = null;
-try {
-  giftedDls = require('gifted-dls');
-} catch (e) {}
-
 let yts = null;
 try {
   yts = require('yt-search');
@@ -17,68 +12,52 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ 100% Working Multi-Engine Audio Stream Fetcher
+// ⚡ Fast & Crash-Proof Multi-Engine Stream Fetcher
 async function fetchAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // 🥇 Engine 1: Native gifted-dls package (Direct engine in your package.json)
-  if (giftedDls && typeof giftedDls.giftedytmp3 === 'function') {
-    try {
-      const res = await giftedDls.giftedytmp3(videoUrl);
-      const dlUrl = res?.result?.download_url || res?.download_url || res?.result?.dl_url;
-      if (dlUrl) {
-        return {
-          downloadUrl: dlUrl,
-          title: res?.result?.title || res?.title || 'YouTube Audio',
-          thumbnail: res?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
-        };
-      }
-    } catch (e) {}
-  }
-
-  // 🥈 Engine 2: Okatsu API (Working High-Speed YouTube MP3)
+  // 🥇 Engine 1: Dark Yasiya API (Very stable for YouTube Audio)
   try {
-    const res2 = await axios.get(`https://api.okatsu.my.id/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 12000,
+    const res1 = await axios.get(`https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 10000,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
-    const dlUrl2 = res2.data?.data?.download || res2.data?.result?.download;
+    const dlUrl1 = res1.data?.result?.dl_link || res1.data?.result?.download;
+    if (dlUrl1) {
+      return {
+        downloadUrl: dlUrl1,
+        title: res1.data?.result?.title || 'YouTube Audio',
+        thumbnail: res1.data?.result?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+      };
+    }
+  } catch (e) {}
+
+  // 🥈 Engine 2: NexOracle API
+  try {
+    const res2 = await axios.get(`https://api.nexoracle.com/downloader/yt-audio?apikey=free_key@maher_apis&url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 10000
+    });
+    const dlUrl2 = res2.data?.result?.url || res2.data?.result?.audio;
     if (dlUrl2) {
       return {
         downloadUrl: dlUrl2,
-        title: res2.data?.data?.title || res2.data?.result?.title || 'YouTube Audio',
-        thumbnail: res2.data?.data?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res2.data?.result?.title || 'YouTube Audio',
+        thumbnail: res2.data?.result?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
 
-  // 🥉 Engine 3: NexOracle Multi-Stream Engine
+  // 🥉 Engine 3: BK9 API
   try {
-    const res3 = await axios.get(`https://api.nexoracle.com/downloader/yt-audio?apikey=free_key@maher_apis&url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 12000
+    const res3 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 10000
     });
-    const dlUrl3 = res3.data?.result?.url || res3.data?.result?.audio;
+    const dlUrl3 = res3.data?.BK9?.BK8;
     if (dlUrl3) {
       return {
         downloadUrl: dlUrl3,
-        title: res3.data?.result?.title || 'YouTube Audio',
-        thumbnail: res3.data?.result?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
-      };
-    }
-  } catch (e) {}
-
-  // 🏅 Engine 4: Siputzx Fast Endpoint
-  try {
-    const res4 = await axios.get(`https://api.siputzx.my.id/api/d/youtube/mp3?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 12000,
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    const dlUrl4 = res4.data?.data?.dl;
-    if (dlUrl4) {
-      return {
-        downloadUrl: dlUrl4,
-        title: res4.data?.data?.title || 'YouTube Audio',
-        thumbnail: res4.data?.data?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res3.data?.BK9?.title || 'YouTube Audio',
+        thumbnail: res3.data?.BK9?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
@@ -162,6 +141,33 @@ module.exports = {
       const songData = await fetchAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
+      // Thumbnail Image එක Buffer කරගැනීම (Timeout 6s)
+      let thumbBuffer;
+      try {
+        const thumbRes = await axios.get(songData.thumbnail || thumb, {
+          responseType: 'arraybuffer',
+          timeout: 6000
+        });
+        thumbBuffer = Buffer.from(thumbRes.data);
+      } catch (e) {
+        const fallback = await axios.get('https://files.catbox.moe/a58add.jpeg', { responseType: 'arraybuffer' });
+        thumbBuffer = Buffer.from(fallback.data);
+      }
+
+      // Audio ගොනුව Safe Stream Buffer එකක් ලෙස බාගත කිරීම (Timeout 25s)
+      const audioRes = await axios.get(songData.downloadUrl, {
+        responseType: 'arraybuffer',
+        timeout: 25000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      const audioBuffer = Buffer.from(audioRes.data);
+
+      if (!audioBuffer || audioBuffer.length < 5000) {
+        throw new Error('Downloaded audio is corrupted.');
+      }
+
       const songCard = 
 `*🎧 HESHAN-MD AUDIO PLAYER*
 ━━━━━━━━━━━━━━━━━━━━━
@@ -175,18 +181,21 @@ module.exports = {
 
       // 1. Send Card Image (Channel Context සහිතයි)
       await sock.sendMessage(targetChat, {
-        image: { url: songData.thumbnail || thumb },
+        image: thumbBuffer,
         caption: songCard,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
 
-      // 2. Direct Stream Audio Dispatch (Channel Context රහිතයි)
-      await sock.sendMessage(targetChat, {
-        audio: { url: songData.downloadUrl },
-        mimetype: 'audio/mp4',
-        fileName: `${cleanTitle}.mp3`,
-        ptt: false
-      }, { quoted: msg });
+      // 2. Send Audio File (Buffer එකක් ලෙස කෙලින්ම යැවීම - Timeout Guard සහිතයි)
+      await Promise.race([
+        sock.sendMessage(targetChat, {
+          audio: audioBuffer,
+          mimetype: 'audio/mp4',
+          fileName: `${cleanTitle}.mp3`,
+          ptt: false
+        }, { quoted: msg }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('WhatsApp upload timed out')), 25000))
+      ]);
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
