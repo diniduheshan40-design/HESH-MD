@@ -638,12 +638,12 @@ async function createBaileysSocket(phoneNumber) {
     msgRetryCounterCache,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
-    fireInitQueries: false, // Prevents reconnect spam & ping conflicts
+    fireInitQueries: false,
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 25000, // 25s prevents disconnect loop on Render
-    markOnlineOnConnect: false, // Prevents toggling offline/online status instantly
+    keepAliveIntervalMs: 25000,
+    markOnlineOnConnect: false,
     emitOwnEvents: false,
     shouldIgnoreJid: (jid) => jid?.endsWith('@broadcast') && jid !== 'status@broadcast'
   });
@@ -764,7 +764,6 @@ function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
   reconnectAttempts[phoneNumber] = 0;
   
-  // Set online presence based on settings
   getBotSettings(phoneNumber).then(st => {
     if (st.alwaysOnline === 'on') {
       sock.sendPresenceUpdate('available').catch(() => {});
@@ -1176,45 +1175,81 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
   const quotedMsgObj = quotedContext?.quotedMessage;
 
-  // 🎵 Interactive Fast Audio Streamer
+  // 🎵 Interactive Music Menu Reply Handler (Chamindu High-Speed API)
   const quotedMsgId = quotedContext?.stanzaId;
-  if (quotedMsgId && global.songSessions?.has(quotedMsgId) && ['1', '2', '3'].includes(cleanInput)) {
-    const session = global.songSessions.get(quotedMsgId);
-    global.songSessions.delete(quotedMsgId);
+  const hasSession = (quotedMsgId && global.songSessions?.has(quotedMsgId)) || global.songSessions?.has(chatJid);
+
+  if (hasSession && ['1', '2', '3'].includes(cleanInput)) {
+    const session = (quotedMsgId && global.songSessions.get(quotedMsgId)) || global.songSessions.get(chatJid);
+    
+    if (quotedMsgId) global.songSessions.delete(quotedMsgId);
+    global.songSessions.delete(chatJid);
 
     await sock.sendMessage(chatJid, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
     try {
-      const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(session.videoUrl)}&quality=128kbps&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`;
-      const res = await axios.get(apiUrl, { timeout: 20000 });
-      const dlUrl = res.data?.data?.download_url || res.data?.data?.direct_url;
+      const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
+      const targetUrl = encodeURIComponent(session.videoUrl);
+      const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${targetUrl}&quality=320kbps&format=mp3&api_key=${apiKey}`;
 
-      if (!dlUrl) throw new Error('Download link generation failed.');
-
-      // Stream fast directly into buffer
-      const audioStream = await axios.get(dlUrl, {
-        responseType: 'arraybuffer',
-        timeout: 45000,
+      const res = await axios.get(apiUrl, { 
+        timeout: 25000,
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
+
+      const dlUrl = res.data?.download_url || 
+                    res.data?.direct_url || 
+                    res.data?.data?.download_url || 
+                    res.data?.data?.direct_url;
+
+      if (!dlUrl) {
+        throw new Error('Direct download link generation failed.');
+      }
+
+      await sock.sendMessage(chatJid, { react: { text: "⬇️", key: msg.key } }).catch(() => {});
+
+      const audioStream = await axios.get(dlUrl, {
+        responseType: 'arraybuffer',
+        timeout: 60000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          'Referer': 'https://savetube.me/'
+        }
+      });
+
       const audioBuffer = Buffer.from(audioStream.data);
+      const songTitle = session.title || res.data?.title || res.data?.data?.title || 'Song';
 
       await sock.sendMessage(chatJid, { react: { text: "⬆️", key: msg.key } }).catch(() => {});
 
       if (cleanInput === '1') {
+        // [1] Playable Audio MP3
         await sock.sendMessage(chatJid, {
           audio: audioBuffer,
           mimetype: 'audio/mp4',
-          fileName: `${session.title}.mp3`,
-          ptt: false
+          fileName: `${songTitle}.mp3`,
+          ptt: false,
+          contextInfo: {
+            externalAdReply: {
+              title: songTitle,
+              body: 'HESHAN-MD AUDIO ENGINE',
+              thumbnailUrl: session.thumb || res.data?.thumbnail,
+              sourceUrl: session.videoUrl,
+              mediaType: 2,
+              renderLargerThumbnail: true
+            }
+          }
         }, { quoted: msg });
       } else if (cleanInput === '2') {
+        // [2] Document HQ File
         await sock.sendMessage(chatJid, {
           document: audioBuffer,
           mimetype: 'audio/mpeg',
-          fileName: `${session.title}.mp3`
+          fileName: `${songTitle}.mp3`,
+          contextInfo: global.channelContext?.contextInfo
         }, { quoted: msg });
       } else if (cleanInput === '3') {
+        // [3] Voice Note (PTT Waveform)
         await sock.sendMessage(chatJid, {
           audio: audioBuffer,
           mimetype: 'audio/ogg; codecs=opus',
@@ -1227,7 +1262,10 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     } catch (e) {
       console.error('Interactive Menu Download Error:', e?.message);
       await sock.sendMessage(chatJid, { react: { text: "❌", key: msg.key } }).catch(() => {});
-      await sock.sendMessage(chatJid, { text: '❌ ගීතය එවීමේදී දෝෂයක් මතු විය.' }, { quoted: msg });
+      await sock.sendMessage(chatJid, { 
+        text: `❌ *ගීතය බාගත කිරීමේදී දෝෂයක් මතු විය!* (${e?.message || 'Server Timeout'})`,
+        contextInfo: global.channelContext?.contextInfo
+      }, { quoted: msg });
       return;
     }
   }
@@ -1262,7 +1300,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // Settings Menu Single/Sub-Option Replies (e.g. 1.1, 2, 11.2, 4.2)
   if (isAuthorized && (fromSettingsMenu || isSettingsMenuOption(cleanInput)) && !fromMainMenu) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
