@@ -1,8 +1,11 @@
 // commands/bots.js
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
-// 👑 MASTER DEVELOPER NUMBER
-const DEVELOPER_NUMBER = '94719845166';
+// 👑 MASTER DEVELOPER IDENTIFIERS (Number + LID)
+const DEVELOPER_IDS = [
+  '94719845166',
+  '15947733680169'
+];
 
 module.exports = {
   name: 'bots',
@@ -20,7 +23,7 @@ module.exports = {
       return await sock.sendMessage(targetChat, { ...payload, ...(global.channelContext || {}) }, { quoted: msg });
     };
 
-    // ⚡ 1. ACCURATE SENDER & SENDER RESOLUTION (Inbox, Group, fromMe & LID Safe)
+    // ⚡ 1. SENDER IDENTIFICATION (LID, JID & fromMe Safe)
     const isGroup = targetChat.endsWith('@g.us');
     let senderJid = '';
 
@@ -32,26 +35,21 @@ module.exports = {
       senderJid = targetChat;
     }
 
-    // LID to Real Phone Number Resolution
-    if (senderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
-      try {
-        const resolved = await sock.signalRepository.lidToJid(senderJid);
-        if (resolved) senderJid = resolved;
-      } catch (e) {}
-    }
+    // අංක සහ ID පමණක් Extract කිරීම
+    const rawSenderDigits = String(senderJid).replace(/\D/g, '');
+    const cleanNormalized = jidNormalizedUser(senderJid).replace(/\D/g, '');
+    const myBotDigits = jidNormalizedUser(sock.user?.id || '').replace(/\D/g, '');
 
-    // Device port / suffix (:xx) සම්පූර්ණයෙන්ම ඉවත් කර පිරිසිදු අංකය ලබාගැනීම
-    const cleanSenderNum = jidNormalizedUser(senderJid).replace(/\D/g, '');
-    const myBotNum = jidNormalizedUser(sock.user?.id || '').replace(/\D/g, '');
-
-    // ⚡ 2. DEVELOPER VERIFICATION
-    // ඔයා Developer number එකෙන් message එක එව්වත්, නැතහොත් Developer number එක තියෙන bot ගෙන් fromMe විදිහට ගැහුවත් verify වේ
-    const isDeveloper = (cleanSenderNum === DEVELOPER_NUMBER) || 
-                        (msg.key?.fromMe && myBotNum === DEVELOPER_NUMBER);
+    // ⚡ 2. DEVELOPER VERIFICATION (Check both Phone Number & LID)
+    const isDeveloper = DEVELOPER_IDS.some(id => 
+      rawSenderDigits.includes(id) || 
+      cleanNormalized.includes(id) || 
+      (msg.key?.fromMe && myBotDigits.includes(id))
+    );
 
     if (!isDeveloper) {
       return await reply(
-        `⛔ *Access Denied!* මෙම Command එක භාවිත කළ හැක්කේ ප්‍රධාන Developer හට පමණි (+${DEVELOPER_NUMBER}).`
+        `⛔ *Access Denied!* මෙම Command එක භාවිත කළ හැක්කේ ප්‍රධාන Developer හට පමණි (+94719845166).`
       );
     }
 
