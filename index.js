@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const NodeCache = require('node-cache');
 const fetch = require('node-fetch');
+const axios = require('axios');
 const {
   default: makeWASocket,
   DisconnectReason,
@@ -51,6 +52,7 @@ const channelContext = {
   }
 };
 global.channelContext = channelContext;
+global.songSessions = global.songSessions || new Map();
 
 const REAL_OWNER_NUMBER = '94719845166';
 const OWNER_NUMBERS = [
@@ -994,7 +996,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const text = extractMessageText(rawMsg);
 
   // 🛡️ Loop Protection Fix:
-  // Text එකක් නැත්නම් හෝ Reaction එකක් නම් නවත්වන්න
   if (!text || msg.message.reactionMessage) return;
 
   const cleanInput = text.toLowerCase().trim();
@@ -1003,8 +1004,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status'];
   const isSpecialAction = isSettingsMenuOption(cleanInput) || statusKeywords.includes(cleanInput);
 
-  // බොට් තමන්ම යවන (fromMe) සාමාන්‍ය මැසේජ් වලින් Loop හැදීම වළක්වයි.
-  // නමුත් Bot Host account එකෙන් ගහන Commands (.menu, .song ආදී) සාමාන්‍ය පරිදි ක්‍රියාත්මක වේ.
   if (msg.key.fromMe && !isPrefixCommand && !isNumericMenuReply && !isSpecialAction) return;
 
   const isChannel = chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter');
@@ -1058,6 +1057,55 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
   const quotedMsgObj = quotedContext?.quotedMessage;
 
+  // 🎵 Interactive Music Menu Reply Handler (1: Audio, 2: Document, 3: Voice Note)
+  const quotedMsgId = quotedContext?.stanzaId;
+  if (quotedMsgId && global.songSessions?.has(quotedMsgId) && ['1', '2', '3'].includes(cleanInput)) {
+    const session = global.songSessions.get(quotedMsgId);
+    global.songSessions.delete(quotedMsgId);
+
+    await sock.sendMessage(chatJid, { react: { text: "⬇️", key: msg.key } }).catch(() => {});
+
+    try {
+      const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(session.videoUrl)}&quality=320kbps&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`;
+      const res = await axios.get(apiUrl, { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const dlUrl = res.data?.data?.download_url || res.data?.data?.direct_url;
+
+      if (!dlUrl) throw new Error('Download link generation failed.');
+
+      if (cleanInput === '1') {
+        // [1] Playable Audio MP3
+        await sock.sendMessage(chatJid, {
+          audio: { url: dlUrl },
+          mimetype: 'audio/mp4',
+          fileName: `${session.title}.mp3`,
+          ptt: false
+        }, { quoted: msg });
+      } else if (cleanInput === '2') {
+        // [2] Document HQ File
+        await sock.sendMessage(chatJid, {
+          document: { url: dlUrl },
+          mimetype: 'audio/mpeg',
+          fileName: `${session.title}.mp3`
+        }, { quoted: msg });
+      } else if (cleanInput === '3') {
+        // [3] Voice Note (PTT Waveform)
+        await sock.sendMessage(chatJid, {
+          audio: { url: dlUrl },
+          mimetype: 'audio/ogg; codecs=opus',
+          ptt: true
+        }, { quoted: msg });
+      }
+
+      await sock.sendMessage(chatJid, { react: { text: "✅", key: msg.key } }).catch(() => {});
+      return;
+    } catch (e) {
+      console.error('Interactive Menu Download Error:', e?.message);
+      await sock.sendMessage(chatJid, { react: { text: "❌", key: msg.key } }).catch(() => {});
+      await sock.sendMessage(chatJid, { text: '❌ ගීතය එවීමේදී දෝෂයක් මතු විය.' }, { quoted: msg });
+      return;
+    }
+  }
+
   // 🎯 ViewOnce Quick Emoji Save Handler
   const TRIGGER_EMOJIS = ['❤️', '🥺', '😚', '🌚', '😼', '😂', '🫡', '🥱', '🙌', '🖤', '👍', '🤣', '🥰', '🫢', '🤭', '🫣', 'vv'];
   if (quotedMsgObj && TRIGGER_EMOJIS.includes(cleanInput)) {
@@ -1107,7 +1155,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 }
 
 function registerMessageUpsertHandler(sock, phoneNumber) {
-  // පරණ listeners ඉවත් කර එකක් පමණක් තබයි
   sock.ev.removeAllListeners('messages.upsert');
   
   sock.ev.on('messages.upsert', ({ messages, type }) => {
