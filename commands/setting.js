@@ -66,23 +66,6 @@ module.exports = {
       }
     };
 
-    const quotedCaption = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage?.caption || 
-                          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.conversation || 
-                          msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text || '';
-
-    const isSettingsReply = quotedCaption.includes("SYSTEM SETTINGS") || 
-                            quotedCaption.includes("WORK MODE") ||
-                            quotedCaption.includes("PRESENCE STATUS") ||
-                            quotedCaption.includes("ANTI-DELETE");
-
-    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
-    const isExplicitCommand = /^[./!#]?(settings|setting|set|config)/i.test(rawText);
-    const hasArgsPassed = Array.isArray(args) && args.length > 0;
-
-    if (!isExplicitCommand && !isSettingsReply && !hasArgsPassed) {
-      return;
-    }
-
     const rawBotId = sock.user?.id || sock.user?.jid || '';
     const botNumber = rawBotId.split(':')[0].split('@')[0].replace(/\D/g, '') || 'default';
     const senderNumber = (msg.key.participant || targetChat || '').split(':')[0].split('@')[0].replace(/\D/g, '');
@@ -90,7 +73,7 @@ module.exports = {
     const isOwner = Boolean(
       options.isOwner || 
       msg.key.fromMe || 
-      (Array.isArray(global.owner) && global.owner.includes(senderNumber)) ||
+      (Array.isArray(global.owner) && global.owner.some(o => o.includes(senderNumber))) ||
       senderNumber === botNumber
     );
 
@@ -106,8 +89,6 @@ module.exports = {
     if (!isOwner) {
       return await reply('⛔ *Access Denied!* Only Bot Owner can modify settings.');
     }
-
-    sock.sendMessage(targetChat, { react: { text: "⚙️", key: msg.key } }).catch(() => {});
 
     const defaultValues = {
       workMode: 'public',
@@ -126,25 +107,26 @@ module.exports = {
 
     let settings = { ...defaultValues };
 
-    if (memSettingsCache.has(botNumber)) {
-      settings = Object.assign(settings, memSettingsCache.get(botNumber));
-    } else {
-      try {
-        const SettingsModel = getModel();
-        if (SettingsModel) {
-          const doc = await SettingsModel.findById(botNumber).lean();
-          if (doc) settings = Object.assign(settings, doc);
-        }
-      } catch (e) {}
-      memSettingsCache.set(botNumber, settings);
-    }
+    try {
+      const SettingsModel = getModel();
+      if (SettingsModel) {
+        const doc = await SettingsModel.findById(botNumber).lean();
+        if (doc) settings = Object.assign(settings, doc);
+      }
+    } catch (e) {}
 
+    // Input Resolution
+    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     let input = "";
+
     if (Array.isArray(args) && args.length > 0) {
       input = args.join(' ').trim().toLowerCase();
-    } else if (isSettingsReply) {
+    } else {
       input = rawText.toLowerCase().trim();
     }
+
+    // Strip prefix if invoked directly like .set or .settings
+    input = input.replace(/^[./!#]?(settings|setting|set|config)\s*/i, '').trim();
 
     let isUpdated = false;
 
@@ -155,14 +137,16 @@ module.exports = {
     else if (input === '1.4' || input === 'groups' || input === 'group') { settings.workMode = 'groups'; isUpdated = true; }
 
     // 2. AUTO STATUS SEEN
-    else if (input === '2.1') { settings.autoStatusSeen = true; isUpdated = true; }
-    else if (input === '2.2') { settings.autoStatusSeen = false; isUpdated = true; }
+    else if (input === '2.1' || input === 'statusseen on') { settings.autoStatusSeen = true; isUpdated = true; }
+    else if (input === '2.2' || input === 'statusseen off') { settings.autoStatusSeen = false; isUpdated = true; }
+    else if (input === '2') { settings.autoStatusSeen = !settings.autoStatusSeen; isUpdated = true; }
 
     // 3. STATUS REACTION ON/OFF
-    else if (input === '3.1') { settings.statusReact = true; isUpdated = true; }
-    else if (input === '3.2') { settings.statusReact = false; isUpdated = true; }
+    else if (input === '3.1' || input === 'react on') { settings.statusReact = true; isUpdated = true; }
+    else if (input === '3.2' || input === 'react off') { settings.statusReact = false; isUpdated = true; }
+    else if (input === '3') { settings.statusReact = !settings.statusReact; isUpdated = true; }
 
-    // 4. STATUS REACT EMOJI (💚 GREEN HEART / RANDOM / CUSTOM)
+    // 4. STATUS REACT EMOJI
     else if (input === '4.1' || input === 'react green') { 
       settings.statusReact = true;
       settings.statusReactEmoji = '💚'; 
@@ -175,9 +159,10 @@ module.exports = {
     }
     else if (input.startsWith('4.3 ') || input.startsWith('4 ')) {
       const parts = input.split(' ');
-      if (parts[1]) {
+      const emoji = parts.slice(1).join('').trim();
+      if (emoji) {
         settings.statusReact = true;
-        settings.statusReactEmoji = parts[1].trim();
+        settings.statusReactEmoji = emoji;
         isUpdated = true;
       } else {
         return await reply('⚠️ කරුණාකර Emoji එකක් ලබාදෙන්න! (උදා: `.set 4.3 🔥` හෝ `.set 4 🌸`)');
@@ -185,9 +170,9 @@ module.exports = {
     }
 
     // 5. FAKE ACTION (PRESENCE)
-    else if (input === '5.1') { settings.autoPresence = 'composing'; isUpdated = true; }
-    else if (input === '5.2') { settings.autoPresence = 'recording'; isUpdated = true; }
-    else if (input === '5.3') { settings.autoPresence = 'off'; isUpdated = true; }
+    else if (input === '5.1' || input === 'typing') { settings.autoPresence = 'composing'; isUpdated = true; }
+    else if (input === '5.2' || input === 'recording') { settings.autoPresence = 'recording'; isUpdated = true; }
+    else if (input === '5.3' || input === 'presence off') { settings.autoPresence = 'off'; isUpdated = true; }
 
     // 6. CHANGE PIN
     else if (input.startsWith('pin') || input.startsWith('6')) {
@@ -202,21 +187,24 @@ module.exports = {
     }
 
     // 7. AUTO CHAT READ (BLUE TICK)
-    else if (input === '7.1') { settings.autoChatRead = true; isUpdated = true; }
-    else if (input === '7.2') { settings.autoChatRead = false; isUpdated = true; }
+    else if (input === '7.1' || input === 'read on') { settings.autoChatRead = true; isUpdated = true; }
+    else if (input === '7.2' || input === 'read off') { settings.autoChatRead = false; isUpdated = true; }
+    else if (input === '7') { settings.autoChatRead = !settings.autoChatRead; isUpdated = true; }
 
     // 8. AI AUTO CHAT
-    else if (input === '8.1') { settings.aiChatEnabled = true; isUpdated = true; }
-    else if (input === '8.2') { settings.aiChatEnabled = false; isUpdated = true; }
+    else if (input === '8.1' || input === 'ai on') { settings.aiChatEnabled = true; isUpdated = true; }
+    else if (input === '8.2' || input === 'ai off') { settings.aiChatEnabled = false; isUpdated = true; }
+    else if (input === '8') { settings.aiChatEnabled = !settings.aiChatEnabled; isUpdated = true; }
 
     // 9. ANTI-DELETE ON/OFF
-    else if (input === '9.1') { settings.antiDeleteEnabled = true; isUpdated = true; }
-    else if (input === '9.2') { settings.antiDeleteEnabled = false; isUpdated = true; }
+    else if (input === '9.1' || input === 'antidel on') { settings.antiDeleteEnabled = true; isUpdated = true; }
+    else if (input === '9.2' || input === 'antidel off') { settings.antiDeleteEnabled = false; isUpdated = true; }
+    else if (input === '9') { settings.antiDeleteEnabled = !settings.antiDeleteEnabled; isUpdated = true; }
 
     // 10. ANTI-DELETE SCOPE
-    else if (input === '10.1') { settings.antiDeleteType = 'inbox'; isUpdated = true; }
-    else if (input === '10.2') { settings.antiDeleteType = 'group'; isUpdated = true; }
-    else if (input === '10.3') { settings.antiDeleteType = 'all'; isUpdated = true; }
+    else if (input === '10.1' || input === 'scope inbox') { settings.antiDeleteType = 'inbox'; isUpdated = true; }
+    else if (input === '10.2' || input === 'scope group') { settings.antiDeleteType = 'group'; isUpdated = true; }
+    else if (input === '10.3' || input === 'scope all') { settings.antiDeleteType = 'all'; isUpdated = true; }
 
     // 11. ANTI-DELETE DESTINATION (ME / FROM)
     else if (input === '11.1' || input === 'antisend me' || input === 'antidel me') { 
@@ -229,17 +217,17 @@ module.exports = {
     }
 
     // 12. ALWAYS ONLINE / OFFLINE
-    else if (input === '12.1') { 
+    else if (input === '12.1' || input === 'online on') { 
       settings.alwaysOnline = 'on'; 
       isUpdated = true; 
       sock.sendPresenceUpdate('available').catch(() => {});
     }
-    else if (input === '12.2') { 
+    else if (input === '12.2' || input === 'online offline') { 
       settings.alwaysOnline = 'offline'; 
       isUpdated = true; 
       sock.sendPresenceUpdate('unavailable').catch(() => {});
     }
-    else if (input === '12.3') { 
+    else if (input === '12.3' || input === 'online off') { 
       settings.alwaysOnline = 'off'; 
       isUpdated = true; 
       sock.sendPresenceUpdate('unavailable').catch(() => {});
@@ -264,11 +252,14 @@ module.exports = {
         global.clearSettingsCache(botNumber);
       }
 
-      const reactEmojiDisplay = settings.statusReactEmoji === 'random' ? 'RANDOM EMOJIS 🔀' : settings.statusReactEmoji;
+      const reactEmojiDisplay = settings.statusReactEmoji === 'random' ? 'RANDOM EMOJIS 🔀' : (settings.statusReactEmoji || '💚');
       const antiSendDisplay = settings.antiDeleteDest === 'from' ? 'CHAT ITSELF (FROM) 💬' : 'MY INBOX (ME) 📥';
+
+      await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
       return await reply(
         `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n\n` +
+        `• Work Mode       : *${settings.workMode.toUpperCase()}*\n` +
         `• Status Seen     : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
         `• Status React    : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'}*\n` +
         `• React Style     : *${reactEmojiDisplay}*\n` +
@@ -279,6 +270,8 @@ module.exports = {
     }
 
     // DISPLAY SETTINGS MENU
+    await sock.sendMessage(targetChat, { react: { text: "⚙️", key: msg.key } }).catch(() => {});
+
     const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
     const modeBadge = {
       public: 'PUBLIC 🌐',
