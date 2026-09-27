@@ -1,123 +1,167 @@
 // commands/insta.js
 const axios = require('axios');
-let gifted;
-try {
-    gifted = require('gifted-dls');
-} catch (e) {}
+
+// ⚡ Multi-Engine Instagram Media Extractor
+async function fetchInstagramMedia(cleanUrl) {
+  const targetUrl = encodeURIComponent(cleanUrl);
+
+  // 1. Engine 1: GiftedTech Instagram Downloader (Primary)
+  try {
+    const res = await axios.get(`https://api.giftedtech.web.id/api/download/instagram?apikey=gifted&url=${targetUrl}`, {
+      timeout: 15000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+
+    const result = res.data?.result;
+    if (Array.isArray(result) && result.length > 0) {
+      const mediaList = result.map(item => ({
+        url: item.url || item.download_url || item,
+        type: (item.type || '').includes('image') || (item.url && item.url.includes('.jpg')) ? 'image' : 'video'
+      })).filter(m => typeof m.url === 'string' && m.url.startsWith('http'));
+
+      if (mediaList.length > 0) return mediaList;
+    }
+  } catch (e) {}
+
+  // 2. Engine 2: BK9 Instagram Gateway
+  try {
+    const res = await axios.get(`https://bk9.fun/download/instagram?url=${targetUrl}`, {
+      timeout: 15000
+    });
+
+    const bkData = res.data?.BK9;
+    if (Array.isArray(bkData) && bkData.length > 0) {
+      const mediaList = bkData.map(item => ({
+        url: item.url || item,
+        type: item.type === 'image' || (item.url && item.url.includes('.jpg')) ? 'image' : 'video'
+      })).filter(m => typeof m.url === 'string' && m.url.startsWith('http'));
+
+      if (mediaList.length > 0) return mediaList;
+    }
+  } catch (e) {}
+
+  // 3. Engine 3: KCeY Worker Fallback
+  try {
+    const workerUrl = `https://instadl.kcey.workers.dev/?url=${targetUrl}`;
+    const res = await axios.get(workerUrl, {
+      timeout: 12000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+
+    const data = res.data;
+    const mediaData = data?.result || data?.data || data?.media;
+
+    if (Array.isArray(mediaData) && mediaData.length > 0) {
+      const mediaList = mediaData.map(item => ({
+        url: item.url || item.download_url || item,
+        type: (item.url && item.url.includes('.jpg')) ? 'image' : 'video'
+      })).filter(m => typeof m.url === 'string' && m.url.startsWith('http'));
+
+      if (mediaList.length > 0) return mediaList;
+    } else if (data?.url) {
+      return [{ url: data.url, type: 'video' }];
+    }
+  } catch (e) {}
+
+  throw new Error('Instagram මාධ්‍යය ලබාගත නොහැක. Post එක Public එකක් දැයි පරීක්ෂා කරන්න!');
+}
+
+// Media Stream Buffer Helper
+async function downloadMediaBuffer(url) {
+  const res = await axios.get(url, {
+    responseType: 'arraybuffer',
+    timeout: 45000,
+    headers: { 'User-Agent': 'Mozilla/5.0' }
+  });
+  return Buffer.from(res.data);
+}
 
 module.exports = {
-    name: 'insta',
-    alias: ['ig', 'reels', 'igdl'],
-    category: 'download',
-    desc: 'Download Instagram Reels and Videos using KCeY API',
+  name: 'insta',
+  alias: ['ig', 'reels', 'igdl', 'reel'],
+  category: 'download',
+  desc: 'Download Instagram Reels, Videos, and Photos',
 
-    async execute(sock, msg, args, chatJid) {
-        const DEFAULT_FOOTER = '\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡';
-        const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
-            ? chatJid 
-            : msg.key.remoteJid;
+  async execute(sock, msg, args, chatJid, safeReply) {
+    const DEFAULT_FOOTER = '\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡';
+    const targetChat = chatJid || msg.key?.remoteJid;
+    if (!targetChat) return;
 
-        const rawText = msg.message?.conversation || 
-                        msg.message?.extendedTextMessage?.text || 
-                        args.join(' ');
+    const reply = async (text) => {
+      if (typeof safeReply === 'function') return await safeReply(text);
+      return await sock.sendMessage(targetChat, { text, ...(global.channelContext || {}) }, { quoted: msg });
+    };
 
-        // URL එක Extract කරගැනීම
-        const match = rawText.match(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)\/(p|reel|tv|share)\/[A-Za-z0-9_-]+/i);
+    const rawText = msg.message?.conversation || 
+                    msg.message?.extendedTextMessage?.text || 
+                    (Array.isArray(args) ? args.join(' ') : String(args || ''));
 
-        if (!match) {
-            return await sock.sendMessage(targetChat, { 
-                text: `*❪ ERROR ❫*\n\n⚠️ *කරුණාකර Instagram Reel හෝ Video ලින්ක් එකක් ඇතුළත් කරන්න!*\n\n📸 *Example:*\n• .insta https://www.instagram.com/reel/xxxxxx/${DEFAULT_FOOTER}` 
-            }, { quoted: msg });
-        }
+    // URL Extract Matcher
+    const match = rawText.match(/https?:\/\/(www\.)?(instagram\.com|instagr\.am)\/(p|reel|reels|tv|share)\/[A-Za-z0-9_-]+/i);
 
-        const cleanUrl = match[0];
-        sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
-
-        let downloadUrl = null;
-        let isVideo = true;
-
-        // ⚡ Method 1: KCeY Worker API (instadl.kcey.workers.dev)
-        try {
-            const workerUrl = `https://instadl.kcey.workers.dev/?url=${encodeURIComponent(cleanUrl)}`;
-            const res = await axios.get(workerUrl, { 
-                timeout: 10000,
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-            });
-
-            const data = res.data;
-
-            // Worker API JSON structure parsing
-            if (data?.status === "success" || data?.status === true || data?.result || data?.data) {
-                const mediaData = data.result || data.data || data.media || data;
-
-                if (Array.isArray(mediaData) && mediaData.length > 0) {
-                    downloadUrl = mediaData[0]?.url || mediaData[0]?.download_url || mediaData[0];
-                } else if (typeof mediaData === 'object') {
-                    downloadUrl = mediaData.url || mediaData.download || mediaData.video || mediaData.link;
-                } else if (typeof mediaData === 'string') {
-                    downloadUrl = mediaData;
-                }
-            } else if (data?.url) {
-                downloadUrl = data.url;
-            }
-        } catch (e) {
-            console.log("KCeY API Error, Switching to fallback...");
-        }
-
-        // ⚡ Method 2: Gifted-DLS Fallback
-        if (!downloadUrl && gifted && typeof gifted.giftedig === 'function') {
-            try {
-                const gRes = await gifted.giftedig(cleanUrl);
-                if (gRes?.result && gRes.result.length > 0) {
-                    downloadUrl = gRes.result[0]?.url || gRes.result[0];
-                }
-            } catch (e) {}
-        }
-
-        if (!downloadUrl || typeof downloadUrl !== 'string' || !downloadUrl.startsWith('http')) {
-            sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
-            return await sock.sendMessage(targetChat, { 
-                text: `❌ *Instagram මාධ්‍යය ලබාගත නොහැක. Post එක Public එකක් දැයි පරීක්ෂා කරන්න!*${DEFAULT_FOOTER}` 
-            }, { quoted: msg });
-        }
-
-        const caption = `*📸 𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 📸*${DEFAULT_FOOTER}`;
-
-        try {
-            // URL Stream එකෙන් කෙලින්ම Dispatch කිරීම (RAM එක Safe වෙනවා)
-            await sock.sendMessage(targetChat, {
-                video: { url: downloadUrl },
-                caption: caption,
-                mimetype: 'video/mp4'
-            }, { quoted: msg });
-
-            sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
-
-        } catch (sendErr) {
-            // Stream එක Block වුවහොත් Buffer එකක් විදියට යැවීම
-            try {
-                const vidBuffer = await axios.get(downloadUrl, { 
-                    responseType: 'arraybuffer', 
-                    timeout: 25000,
-                    headers: { 'User-Agent': 'Mozilla/5.0' }
-                });
-
-                await sock.sendMessage(targetChat, {
-                    video: Buffer.from(vidBuffer.data),
-                    caption: caption,
-                    mimetype: 'video/mp4'
-                }, { quoted: msg });
-
-                sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
-            } catch (finalErr) {
-                sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
-                await sock.sendMessage(targetChat, { 
-                    text: `❌ *වීඩියෝව එවීමේදී දෝෂයක් මතු විය.*${DEFAULT_FOOTER}` 
-                }, { quoted: msg });
-            }
-        }
+    if (!match) {
+      return await reply(
+        `*❪ INSTAGRAM DOWNLOADER ❫*\n\n⚠️ *කරුණාකර Instagram Post, Reel හෝ Video link එකක් ලබාදෙන්න!*\n\n📸 *Example:*\n• .insta https://www.instagram.com/reel/xxxxxx/${DEFAULT_FOOTER}`
+      );
     }
-};
 
+    const cleanUrl = match[0];
+    sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
+
+    try {
+      const mediaItems = await fetchInstagramMedia(cleanUrl);
+      const caption = `*📸 𝗜𝗡𝗦𝗧𝗔𝗚𝗥𝗔𝗠 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗 📸*${DEFAULT_FOOTER}`;
+
+      sock.sendMessage(targetChat, { react: { text: '⬆️', key: msg.key } }).catch(() => {});
+
+      // Multiple items හෝ Single item handle කිරීම (Max 3 to prevent spam)
+      const itemsToSend = mediaItems.slice(0, 3);
+
+      for (const item of itemsToSend) {
+        const isImage = item.type === 'image' || item.url.includes('.jpg') || item.url.includes('.jpeg') || item.url.includes('.webp');
+        
+        try {
+          // Direct URL Dispatch
+          if (isImage) {
+            await sock.sendMessage(targetChat, {
+              image: { url: item.url },
+              caption: caption,
+              ...(global.channelContext || {})
+            }, { quoted: msg });
+          } else {
+            await sock.sendMessage(targetChat, {
+              video: { url: item.url },
+              caption: caption,
+              mimetype: 'video/mp4',
+              ...(global.channelContext || {})
+            }, { quoted: msg });
+          }
+        } catch (streamErr) {
+          // Fallback to Buffer Dispatch
+          const mediaBuf = await downloadMediaBuffer(item.url);
+          if (isImage) {
+            await sock.sendMessage(targetChat, {
+              image: mediaBuf,
+              caption: caption,
+              ...(global.channelContext || {})
+            }, { quoted: msg });
+          } else {
+            await sock.sendMessage(targetChat, {
+              video: mediaBuf,
+              caption: caption,
+              mimetype: 'video/mp4',
+              ...(global.channelContext || {})
+            }, { quoted: msg });
+          }
+        }
+      }
+
+      sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
+
+    } catch (err) {
+      console.error('Insta DL Error:', err?.message || err);
+      sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+      await reply(`❌ *Instagram Download Error:* ${err.message || 'Error downloading media'}${DEFAULT_FOOTER}`);
+    }
+  }
+};
