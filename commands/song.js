@@ -8,56 +8,58 @@ try {
   yts = null;
 }
 
-const MR_THINUZZ_API_KEY = 'key_525b5ceb068ac7f2';
-
 function extractYouTubeId(url) {
   const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/;
   const match = String(url).match(regExp);
   return match ? match[1] : null;
 }
 
-// ⚡ Direct High-Speed Download URL Fetcher
+// ⚡ 100% Free & Working Multi-Engine Stream Fetcher
 async function fetchAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // 🥇 Engine 1: Mr Thinuzz API
+  // 🥇 Engine 1: Gifted Tech (High Speed & No Key Limit)
   try {
-    const apiUrl = `https://mr-thinuzz-api-build.vercel.app/api/ytmp3/download?url=${encodeURIComponent(videoUrl)}&apiKey=${MR_THINUZZ_API_KEY}`;
-    const res = await axios.get(apiUrl, { timeout: 10000 });
-    const data = res.data?.data;
-    const dlUrl = data?.links?.audio;
-
-    if (dlUrl) {
+    const res1 = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 12000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const dlUrl1 = res1.data?.result?.download_url || res1.data?.result?.dl_url;
+    if (dlUrl1) {
       return {
-        downloadUrl: dlUrl,
-        title: data?.title || 'YouTube Audio',
-        thumbnail: data?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        downloadUrl: dlUrl1,
+        title: res1.data?.result?.title || 'YouTube Audio',
+        thumbnail: res1.data?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
 
-  // 🥈 Engine 2: BK9 API
+  // 🥈 Engine 2: David Cyril API
   try {
-    const res2 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, { timeout: 10000 });
-    const dlUrl2 = res2.data?.BK9?.BK8;
+    const res2 = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 12000
+    });
+    const dlUrl2 = res2.data?.result?.download_url;
     if (dlUrl2) {
       return {
         downloadUrl: dlUrl2,
-        title: res2.data?.BK9?.title || 'YouTube Audio',
-        thumbnail: res2.data?.BK9?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res2.data?.result?.title || 'YouTube Audio',
+        thumbnail: res2.data?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
 
-  // 🥉 Engine 3: Dark Yasiya API
+  // 🥉 Engine 3: BK9 API
   try {
-    const res3 = await axios.get(`https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, { timeout: 10000 });
-    const dlUrl3 = res3.data?.result?.dl_link || res3.data?.result?.download;
+    const res3 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, { 
+      timeout: 12000 
+    });
+    const dlUrl3 = res3.data?.BK9?.BK8;
     if (dlUrl3) {
       return {
         downloadUrl: dlUrl3,
-        title: res3.data?.result?.title || 'YouTube Audio',
-        thumbnail: res3.data?.result?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res3.data?.BK9?.title || 'YouTube Audio',
+        thumbnail: res3.data?.BK9?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
@@ -154,14 +156,14 @@ module.exports = {
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // 1. Send Card Image (මෙහි පමණක් කොළ පාට Channel Header එක සහිත Context එක ඇත)
+      // 1. Send Card Image (මෙහි පමණක් Channel Context එක ඇත)
       await sock.sendMessage(targetChat, {
         image: { url: songData.thumbnail || thumb },
         caption: songCard,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
 
-      // 2. Direct Stream Audio Dispatch (Channel Context එක සම්පූර්ණයෙන්ම ඉවත් කර ඇත)
+      // 2. Direct Stream Audio Dispatch (Audio එකට Channel Context නෑ)
       await sock.sendMessage(targetChat, {
         audio: { url: songData.downloadUrl },
         mimetype: 'audio/mp4',
