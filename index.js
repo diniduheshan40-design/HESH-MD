@@ -990,21 +990,28 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
-  // 🛡️ 1. IGNORE BOT'S OWN MESSAGES (CRITICAL LOOP FIX)
-  // බොට් තමන්ගෙන්ම යවන කිසිම මැසේජ් එකකට trigger නොවී නවත්වයි
-  if (msg.key.fromMe) return;
+  const rawMsg = unwrapMessageContent(msg.message);
+  const text = extractMessageText(rawMsg);
+
+  // 🛡️ Loop Protection Fix:
+  // Text එකක් නැත්නම් හෝ Reaction එකක් නම් නවත්වන්න
+  if (!text || msg.message.reactionMessage) return;
+
+  const cleanInput = text.toLowerCase().trim();
+  const isPrefixCommand = /^[./!#]/.test(text.trim());
+  const isNumericMenuReply = /^[1-4]$/.test(cleanInput);
+  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status'];
+  const isSpecialAction = isSettingsMenuOption(cleanInput) || statusKeywords.includes(cleanInput);
+
+  // බොට් තමන්ම යවන (fromMe) සාමාන්‍ය මැසේජ් වලින් Loop හැදීම වළක්වයි.
+  // නමුත් Bot Host account එකෙන් ගහන Commands (.menu, .song ආදී) සාමාන්‍ය පරිදි ක්‍රියාත්මක වේ.
+  if (msg.key.fromMe && !isPrefixCommand && !isNumericMenuReply && !isSpecialAction) return;
 
   const isChannel = chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter');
 
   if (isChannel) {
-    if (!msg.message.reactionMessage) reactToChannelPost(sock, msg, chatJid);
+    reactToChannelPost(sock, msg, chatJid);
   }
-
-  if (msg.message.reactionMessage) return;
-
-  const rawMsg = unwrapMessageContent(msg.message);
-  const text = extractMessageText(rawMsg);
-  if (!text) return;
 
   const isGroup = chatJid.endsWith('@g.us');
   const myBotJid = sock.user?.id || '';
@@ -1012,10 +1019,10 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const settings = await getBotSettings(myBotNum);
 
   if (!isChannel) {
-    if (settings.autoChatRead) {
+    if (settings.autoChatRead && !msg.key.fromMe) {
       sock.readMessages([msg.key]).catch(() => {});
     }
-    simulateAutoPresence(sock, chatJid, settings);
+    if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
   }
 
   if (chatJid === 'status@broadcast') {
@@ -1050,7 +1057,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 
   const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
   const quotedMsgObj = quotedContext?.quotedMessage;
-  const cleanInput = text.toLowerCase().trim();
 
   // 🎯 ViewOnce Quick Emoji Save Handler
   const TRIGGER_EMOJIS = ['❤️', '🥺', '😚', '🌚', '😼', '😂', '🫡', '🥱', '🙌', '🖤', '👍', '🤣', '🥰', '🫢', '🤭', '🫣', 'vv'];
@@ -1088,7 +1094,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     if (handled) return;
   }
 
-  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status'];
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
   if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanInput))) {
@@ -1224,7 +1229,6 @@ function registerPairRoute(app) {
       pairSock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'open') {
-          // Open වූ පසු නිවැරදිව activeSessions වෙත එකතු කිරීම
           activeSessions[num] = pairSock;
           registerConnectionUpdateHandler(pairSock, num);
           registerMessageUpsertHandler(pairSock, num);
