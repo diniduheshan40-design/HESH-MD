@@ -299,36 +299,6 @@ function renderPortalHtml(botName) {
           box-shadow: 0 0 15px var(--neon-red);
         }
 
-        .status-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          background: rgba(255, 0, 60, 0.1);
-          border: 1px solid rgba(255, 0, 60, 0.35);
-          padding: 6px 16px;
-          border-radius: 99px;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 2px;
-          color: #ff4d6d;
-          text-transform: uppercase;
-          margin-bottom: 22px;
-        }
-
-        .status-dot {
-          width: 7px;
-          height: 7px;
-          background: var(--neon-red);
-          border-radius: 50%;
-          box-shadow: 0 0 12px var(--neon-red);
-          animation: pulse 1.8s infinite;
-        }
-
-        @keyframes pulse {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.3); opacity: 0.5; }
-        }
-
         .brand-title {
           font-size: 32px;
           font-weight: 900;
@@ -367,12 +337,6 @@ function renderPortalHtml(botName) {
           transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .phone-field::placeholder {
-          color: rgba(255, 255, 255, 0.22);
-          font-weight: 400;
-          letter-spacing: 0;
-        }
-
         .phone-field:focus {
           border-color: var(--neon-red);
           background: rgba(18, 2, 6, 0.95);
@@ -391,60 +355,12 @@ function renderPortalHtml(botName) {
           letter-spacing: 1px;
           text-transform: uppercase;
           cursor: pointer;
-          position: relative;
-          overflow: hidden;
-          transition: all 0.3s ease;
-          box-shadow: 0 10px 30px rgba(255, 0, 60, 0.4);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
           min-height: 58px;
-        }
-
-        .btn-generate:hover:not(:disabled) {
-          transform: translateY(-2px);
-          box-shadow: 0 15px 40px rgba(255, 0, 60, 0.6);
-          filter: brightness(1.1);
-        }
-
-        .btn-generate:disabled {
-          opacity: 0.85;
-          cursor: not-allowed;
-        }
-
-        .spinner {
-          display: none;
-          width: 22px;
-          height: 22px;
-          border: 3px solid rgba(255, 255, 255, 0.25);
-          border-top-color: #ffffff;
-          border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-          to { transform: rotate(360deg); }
         }
 
         .code-panel {
           display: none;
           margin-top: 26px;
-          animation: glowIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-
-        @keyframes glowIn {
-          from { opacity: 0; transform: scale(0.92) translateY(10px); }
-          to { opacity: 1; transform: scale(1) translateY(0); }
-        }
-
-        .code-badge {
-          font-size: 11px;
-          font-weight: 700;
-          color: var(--text-dim);
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          margin-bottom: 8px;
         }
 
         .code-display {
@@ -458,155 +374,42 @@ function renderPortalHtml(botName) {
           border-radius: 18px;
           padding: 18px;
           cursor: pointer;
-          position: relative;
-          box-shadow: 0 0 35px rgba(255, 0, 60, 0.25);
-          transition: all 0.25s ease;
-        }
-
-        .code-hint {
-          font-size: 12px;
-          color: var(--text-dim);
-          margin-top: 10px;
-        }
-
-        .toast {
-          position: fixed;
-          top: 24px;
-          left: 50%;
-          transform: translateX(-50%) translateY(-100px);
-          background: rgba(18, 3, 6, 0.95);
-          border: 1px solid var(--neon-red);
-          box-shadow: 0 10px 40px rgba(255, 0, 60, 0.5);
-          color: #ffffff;
-          padding: 12px 24px;
-          border-radius: 50px;
-          font-size: 13.5px;
-          font-weight: 700;
-          backdrop-filter: blur(20px);
-          z-index: 9999;
-          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          opacity: 0;
-          pointer-events: none;
-        }
-
-        .toast.show {
-          transform: translateX(-50%) translateY(0);
-          opacity: 1;
-        }
-
-        .footer {
-          margin-top: 30px;
-          font-size: 11px;
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          color: rgba(255, 255, 255, 0.25);
-          font-weight: 600;
         }
       </style>
     </head>
     <body>
-      <div id="toast" class="toast">
-        <span>⚡</span>
-        <span id="toastMsg">Code Copied Automatically!</span>
-      </div>
-
       <div class="portal-container">
         <div class="portal-card">
-          <div class="status-pill">
-            <span class="status-dot"></span> System Ready
-          </div>
           <h1 class="brand-title">${botName}</h1>
           <p class="brand-subtitle">Enter WhatsApp number with country code</p>
-
           <div class="field-group">
             <input type="tel" id="phone" class="phone-field" placeholder="e.g. 9471xxxxxxx" autofocus />
           </div>
-
-          <button id="genBtn" class="btn-generate" onclick="generatePairCode()">
-            <span class="spinner" id="btnSpinner"></span>
-            <span id="btnText">GENERATE PAIR CODE</span>
-          </button>
-
+          <button id="genBtn" class="btn-generate" onclick="generatePairCode()">GENERATE PAIR CODE</button>
           <div class="code-panel" id="codePanel">
-            <div class="code-badge">Pairing Code (Click to Copy)</div>
-            <div class="code-display" id="codeDisplay" onclick="copyCodeManually()"></div>
-            <div class="code-hint">Code automatically copied to clipboard!</div>
+            <div class="code-display" id="codeDisplay"></div>
           </div>
-
-          <p class="footer">Heshan MD • Ultra Engine</p>
         </div>
       </div>
-
       <script>
-        function showToast(text) {
-          const toast = document.getElementById('toast');
-          const toastMsg = document.getElementById('toastMsg');
-          toastMsg.innerText = text;
-          toast.classList.add('show');
-          setTimeout(() => { toast.classList.remove('show'); }, 3500);
-        }
-
         async function generatePairCode() {
           const phoneInput = document.getElementById('phone');
           const cleanPhone = phoneInput.value.replace(/[^0-9]/g, '');
-          
-          if (!cleanPhone || cleanPhone.length < 10) {
-            showToast('⚠️ කරුණාකර නිවැරදි Country Code සහිත අංකය ඇතුළත් කරන්න!');
-            return;
-          }
-
+          if (!cleanPhone || cleanPhone.length < 10) return alert('කරුණාකර නිවැරදි අංකය ලබාදෙන්න!');
           const btn = document.getElementById('genBtn');
-          const btnText = document.getElementById('btnText');
-          const spinner = document.getElementById('btnSpinner');
-          const panel = document.getElementById('codePanel');
-          const display = document.getElementById('codeDisplay');
-
+          btn.innerText = 'GENERATING...';
           btn.disabled = true;
-          spinner.style.display = 'block';
-          btnText.innerText = 'GENERATING...';
-          panel.style.display = 'none';
-
           try {
             const res = await fetch('/pair?num=' + cleanPhone);
             const data = await res.json();
-
             if (data.code) {
-              display.innerText = data.code;
-              panel.style.display = 'block';
-
-              if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(data.code).catch(() => {});
-              }
-              showToast('✅ Code Copied: ' + data.code);
-            } else {
-              showToast(data.error || 'Connection rate-limited. Please wait 15 seconds.');
-            }
-          } catch(e) {
-            showToast('Server error! Please refresh and retry.');
-          } finally {
-            btn.disabled = false;
-            spinner.style.display = 'none';
-            btnText.innerText = 'GENERATE PAIR CODE';
-          }
+              document.getElementById('codeDisplay').innerText = data.code;
+              document.getElementById('codePanel').style.display = 'block';
+              if (navigator.clipboard) navigator.clipboard.writeText(data.code).catch(()=>{});
+            } else { alert(data.error || 'Connection rate-limited.'); }
+          } catch(e) { alert('Server error!'); }
+          finally { btn.innerText = 'GENERATE PAIR CODE'; btn.disabled = false; }
         }
-
-        function copyCodeManually() {
-          const code = document.getElementById('codeDisplay').innerText;
-          if (code) {
-            navigator.clipboard.writeText(code).then(() => {
-              showToast('✅ Copied to clipboard: ' + code);
-            }).catch(() => {
-              showToast('✅ Pair Code: ' + code);
-            });
-          }
-        }
-
-        document.getElementById('phone').addEventListener('keypress', function(e) {
-          if (e.key === 'Enter') generatePairCode();
-        });
       </script>
     </body>
     </html>
@@ -1135,12 +938,13 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const quotedText = extractQuotedText(rawMsg);
   const quotedMsgId = extractQuotedStanzaId(rawMsg);
 
+  // 🛡️ CRITICAL FIX: Self Messages (fromMe) ignore නොවී 1, 2, 3 selection එකට ඉඩ දීම
+  const isNumericSelection = ['1', '2', '3'].includes(cleanInput);
   const isPrefixCommand = /^[./!#]/.test(text.trim());
-  const isNumericMenuReply = /^[1-4]$/.test(cleanInput);
-  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status'];
-  const isSpecialAction = isSettingsMenuOption(cleanInput) || statusKeywords.includes(cleanInput);
 
-  if (msg.key.fromMe && !isPrefixCommand && !isNumericMenuReply && !isSpecialAction) return;
+  if (msg.key.fromMe && !isPrefixCommand && !isNumericSelection) {
+    return;
+  }
 
   const isChannel = chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter');
   if (isChannel) {
@@ -1185,7 +989,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return;
   }
 
-  // 🔎 Track Song Session Directly
+  // 🔎 Track Song Session
   const isSongCard = quotedText.includes('TRACK INFO') || 
                      quotedText.includes('SELECT FORMAT') || 
                      quotedText.includes('HESHAN AUDIO BEATS') ||
@@ -1196,9 +1000,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
                          global.songSessions?.has(chatJid);
 
   // ============================================================================
-  // 🎵 1. INSTANT INTERACTIVE SONG SENDER (100% WORKING & FAST)
+  // 🎵 1. INSTANT INTERACTIVE SONG SENDER (Buffer Download Stream)
   // ============================================================================
-  if (hasSongSession && ['1', '2', '3'].includes(cleanInput)) {
+  if ((isSongCard || hasSongSession) && isNumericSelection) {
     const session = (quotedMsgId && global.songSessions?.get(quotedMsgId)) || global.songSessions?.get(chatJid);
 
     if (session && session.videoUrl) {
@@ -1219,16 +1023,28 @@ async function processSingleMessage(sock, msg, phoneNumber) {
                       res.data?.data?.download_url || 
                       res.data?.data?.direct_url;
 
-        if (!dlUrl) throw new Error('Download URL not found in API response.');
+        if (!dlUrl) throw new Error('Download URL Missing!');
 
         await sock.sendMessage(chatJid, { react: { text: "⬇️", key: msg.key } }).catch(() => {});
 
+        // ⚡ SaveTube CDN එකෙන් ArrayBuffer හරහා Stream කිරීම
+        const streamRes = await axios.get(dlUrl, {
+          responseType: 'arraybuffer',
+          timeout: 60000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            'Referer': 'https://savetube.me/'
+          }
+        });
+        const audioBuffer = Buffer.from(streamRes.data);
         const songTitle = session.title || res.data?.title || res.data?.data?.title || 'Song';
 
+        await sock.sendMessage(chatJid, { react: { text: "⬆️", key: msg.key } }).catch(() => {});
+
         if (cleanInput === '1') {
-          // [1] Playable Audio
+          // Playable Audio
           await sock.sendMessage(chatJid, {
-            audio: { url: dlUrl },
+            audio: audioBuffer,
             mimetype: 'audio/mp4',
             fileName: `${songTitle}.mp3`,
             ptt: false,
@@ -1244,17 +1060,17 @@ async function processSingleMessage(sock, msg, phoneNumber) {
             }
           }, { quoted: msg });
         } else if (cleanInput === '2') {
-          // [2] Document HQ File
+          // Document HQ File
           await sock.sendMessage(chatJid, {
-            document: { url: dlUrl },
+            document: audioBuffer,
             mimetype: 'audio/mpeg',
             fileName: `${songTitle}.mp3`,
             contextInfo: global.channelContext?.contextInfo
           }, { quoted: msg });
         } else if (cleanInput === '3') {
-          // [3] Voice Note
+          // Voice Note
           await sock.sendMessage(chatJid, {
-            audio: { url: dlUrl },
+            audio: audioBuffer,
             mimetype: 'audio/ogg; codecs=opus',
             ptt: true
           }, { quoted: msg });
@@ -1320,11 +1136,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
-  if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanInput))) {
-    if (statusKeywords.includes(cleanInput)) {
-      const handled = await handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized);
-      if (handled) return;
-    }
+  if (quotedMsgObj && (isQuotedFromStatus || ['oni', 'ඕනි', 'save', 'status'].includes(cleanInput))) {
+    const handled = await handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized);
+    if (handled) return;
   }
 
   await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
@@ -1332,8 +1146,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.removeAllListeners('messages.upsert');
-  
-  sock.ev.on('messages.upsert', ({ messages, type }) => {
+  sock.ev.on('messages.upsert', ({ messages }) => {
     if (!messages || !messages.length) return;
     for (const msg of messages) {
       processSingleMessage(sock, msg, phoneNumber).catch(() => {});
@@ -1342,7 +1155,7 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
 }
 
 // ============================================================================
-// 🚀 MAIN WHATSAPP INITIALIZER
+// 🚀 INITIALIZATION
 // ============================================================================
 
 async function initWhatsApp(phoneNumber) {
@@ -1364,10 +1177,6 @@ async function initWhatsApp(phoneNumber) {
     console.error(`initWhatsApp Error (${phoneNumber}):`, err.message);
   }
 }
-
-// ============================================================================
-// 🌐 HTTP ROUTES & PAIRING ENGINE
-// ============================================================================
 
 function stopAndRemoveSession(num) {
   if (!activeSessions[num]) return;
