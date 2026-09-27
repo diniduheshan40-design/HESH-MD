@@ -12,7 +12,7 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ Ultra-Lightweight Stream Fetcher
+// ⚡ Fast & Direct Audio URL Fetcher
 async function fetchAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
@@ -141,15 +141,6 @@ module.exports = {
       const songData = await fetchAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // RAM Spike එක වැළැක්වීම සඳහා Stream Pipeline එකක් භාවිතයෙන් Audio Stream එක ලබාගැනීම
-      const audioStreamRes = await axios.get(songData.downloadUrl, {
-        responseType: 'stream',
-        timeout: 30000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-
       const songCard = 
 `*🎧 HESHAN-MD AUDIO PLAYER*
 ━━━━━━━━━━━━━━━━━━━━━
@@ -161,25 +152,19 @@ module.exports = {
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // 1. Send Card Image
+      // 1. Send Card Image (Channel Context සහිතයි)
       await sock.sendMessage(targetChat, {
         image: { url: songData.thumbnail || thumb },
         caption: songCard,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
 
-      // 2. Stream එක කෙලින්ම WhatsApp වෙත යැවීම (RAM එක 0% බරකින් යුක්ත වේ)
+      // 2. Send Audio File as Document (WhatsApp Media Transcoding Bypass - Never Hangs)
       await sock.sendMessage(targetChat, {
-        audio: { stream: audioStreamRes.data },
-        mimetype: 'audio/mp4',
-        fileName: `${cleanTitle}.mp3`,
-        ptt: false
+        document: { url: songData.downloadUrl },
+        mimetype: 'audio/mpeg',
+        fileName: `${cleanTitle}.mp3`
       }, { quoted: msg });
-
-      // Node Garbage Collection manually call කිරීම (RAM එක ක්ෂණිකව නිදහස් කරයි)
-      if (global.gc) {
-        global.gc();
-      }
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
