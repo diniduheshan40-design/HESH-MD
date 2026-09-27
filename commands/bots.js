@@ -1,31 +1,38 @@
 // commands/bots.js
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
-// 👑 EXCLUSIVE DEVELOPER NUMBER (මෙම අංකයට පමණක් අවසර ඇත)
+// 👑 MASTER DEVELOPER NUMBER
 const DEVELOPER_NUMBER = '94719845166';
 
 module.exports = {
   name: 'bots',
-  alias: ['activebots', 'sessions', 'botlist'],
+  alias: ['subbots', 'activebots', 'botlist'],
   category: 'developer',
-  desc: 'View real active and live connected bot sessions (Developer Only)',
+  desc: 'List all running sub-bots and server memory stats (Developer Only)',
 
   async execute(sock, msg, args, chatJid, safeReply) {
     const targetChat = chatJid || msg.key?.remoteJid;
     if (!targetChat) return;
 
-    const reply = async (text) => {
-      if (typeof safeReply === 'function') return await safeReply(text);
-      return await sock.sendMessage(targetChat, { text, ...(global.channelContext || {}) }, { quoted: msg });
+    const reply = async (content) => {
+      if (typeof safeReply === 'function' && typeof content === 'string') return await safeReply(content);
+      const payload = typeof content === 'string' ? { text: content } : content;
+      return await sock.sendMessage(targetChat, { ...payload, ...(global.channelContext || {}) }, { quoted: msg });
     };
 
-    // ⚡ 1. SENDER RESOLVER (Group / Private / LID support)
+    // ⚡ 1. ACCURATE SENDER & SENDER RESOLUTION (Inbox, Group, fromMe & LID Safe)
     const isGroup = targetChat.endsWith('@g.us');
-    let senderJid = isGroup 
-      ? (msg.key?.participant || msg.participant || '') 
-      : (msg.key?.fromMe ? (sock.user?.id || '') : targetChat);
+    let senderJid = '';
 
-    // LID නම් Real JID එකට Decode කිරීම
+    if (msg.key?.fromMe) {
+      senderJid = sock.user?.id || '';
+    } else if (isGroup) {
+      senderJid = msg.key?.participant || msg.participant || '';
+    } else {
+      senderJid = targetChat;
+    }
+
+    // LID to Real Phone Number Resolution
     if (senderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
       try {
         const resolved = await sock.signalRepository.lidToJid(senderJid);
@@ -33,71 +40,65 @@ module.exports = {
       } catch (e) {}
     }
 
+    // Device port / suffix (:xx) සම්පූර්ණයෙන්ම ඉවත් කර පිරිසිදු අංකය ලබාගැනීම
     const cleanSenderNum = jidNormalizedUser(senderJid).replace(/\D/g, '');
+    const myBotNum = jidNormalizedUser(sock.user?.id || '').replace(/\D/g, '');
 
-    // ⛔ 2. STRICT DEVELOPER CHECK
-    // Bot run කරන කෙනාටවත් (fromMe) වැඩ කරන්නේ නැත. ඔයාගේ නම්බර් එකට පමණි!
-    if (cleanSenderNum !== DEVELOPER_NUMBER) {
-      return await reply('⛔ *Access Denied!* මෙම Command එක භාවිත කළ හැක්කේ ප්‍රධාන Developer හට පමණි (+94719845166).');
-    }
+    // ⚡ 2. DEVELOPER VERIFICATION
+    // ඔයා Developer number එකෙන් message එක එව්වත්, නැතහොත් Developer number එක තියෙන bot ගෙන් fromMe විදිහට ගැහුවත් verify වේ
+    const isDeveloper = (cleanSenderNum === DEVELOPER_NUMBER) || 
+                        (msg.key?.fromMe && myBotNum === DEVELOPER_NUMBER);
 
-    sock.sendMessage(targetChat, { react: { text: "🔍", key: msg.key } }).catch(() => {});
-
-    // ⚡ 3. LIVE SESSIONS SCANNER
-    const activeSessions = global.activeSessions || {};
-    const allSessionKeys = Object.keys(activeSessions);
-
-    const liveBots = [];
-    const deadBots = [];
-
-    for (const num of allSessionKeys) {
-      const s = activeSessions[num];
-      // WebSocket readyState === 1 (OPEN) සහ Authenticated User Session එකක්ද යන්න තහවුරු කිරීම
-      const isWsOpen = s?.ws?.readyState === 1 || s?.ws?.socket?.readyState === 1;
-      const isUserLoaded = Boolean(s?.user?.id);
-
-      if (s && isWsOpen && isUserLoaded) {
-        liveBots.push(num);
-      } else {
-        deadBots.push(num);
-      }
-    }
-
-    if (liveBots.length === 0) {
+    if (!isDeveloper) {
       return await reply(
-        `╭───❮ ⚡ *HESHAN-MD BOT MONITOR* ⚡ ❯───╮\n` +
-        `│\n` +
-        `│ ⚠️ *දැනට කිසිදු Live Active Bot කෙනෙක් නොමැත!*\n` +
-        `│ 🥀 Disconnected Slots : ${deadBots.length}\n` +
-        `│ 📊 Total Tracked Slots: ${allSessionKeys.length}\n` +
-        `│\n` +
-        `╰───────────────────────────────────────╯\n` +
-        `> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ⚡`
+        `⛔ *Access Denied!* මෙම Command එක භාවිත කළ හැක්කේ ප්‍රධාන Developer හට පමණි (+${DEVELOPER_NUMBER}).`
       );
     }
 
-    // 📋 LIVE BOTS REPORT
-    let listText = '';
-    liveBots.forEach((num, index) => {
-      listText += `│  [${index + 1}] +${num} 🟢 LIVE\n`;
-    });
+    sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
-    const report = 
-      `╭───❮ ⚡ *DEVELOPER BOT MONITOR* ⚡ ❯───╮\n` +
-      `│\n` +
-      `├ 🟢 *Real Live Bots :* ${liveBots.length} Active\n` +
-      `├ 🔴 *Inactive Slots :* ${deadBots.length} Disconnected\n` +
-      `├ 📊 *Total Sessions :* ${allSessionKeys.length}\n` +
-      `├ 👑 *Root Developer :* +${DEVELOPER_NUMBER}\n` +
-      `│\n` +
-      `├──────❮ 🤖 *ACTIVE WORKERS* ❯──────╮\n` +
-      `│\n` +
-      `${listText}` +
-      `│\n` +
-      `╰───────────────────────────────────╯\n` +
-      `> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ⚡`;
+    try {
+      const sessions = global.activeSessions || {};
+      const sessionKeys = Object.keys(sessions);
 
-    await reply(report);
-    sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
+      let activeCount = 0;
+      let botListText = '';
+
+      sessionKeys.forEach((num, index) => {
+        const s = sessions[num];
+        const isLive = Boolean(s && s.user?.id && (s.ws?.readyState === 1 || s.ws?.socket?.readyState === 1));
+        if (isLive) activeCount++;
+
+        botListText += `│  ${index + 1}. +${num} ⤿ ${isLive ? '🟢 Online' : '🔴 Standby'}\n`;
+      });
+
+      if (sessionKeys.length === 0) {
+        botListText = `│  _කිසිදු Sub-bot session එකක් හමු නොවීය._\n`;
+      }
+
+      const memoryUsage = process.memoryUsage();
+      const usedMem = (memoryUsage.rss / (1024 * 1024)).toFixed(1);
+
+      const panel = 
+`╭───❮ 👑 *HESHAN-MD ACTIVE BOTS* ❯───╮
+│
+├ 🤖 *Total Bots  :* ${sessionKeys.length}
+├ 🟢 *Live Active :* ${activeCount}
+├ 📊 *Node RAM    :* ${usedMem} MB
+│
+├────❮ 📱 *CONNECTED SESSIONS* ❯────╮
+│
+${botListText}│
+╰────────────────────────────────────╯
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ⚡`.trim();
+
+      sock.sendMessage(targetChat, { react: { text: "👑", key: msg.key } }).catch(() => {});
+      return await reply(panel);
+
+    } catch (err) {
+      console.error('Bots Command Error:', err?.message || err);
+      sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+      return await reply(`❌ *Error:* ${err.message || 'Failed to fetch bot list'}`);
+    }
   }
 };
