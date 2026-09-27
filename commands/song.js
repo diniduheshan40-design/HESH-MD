@@ -1,4 +1,4 @@
-// commands/song.js
+// commands/csong.js
 const axios = require('axios');
 
 let yts;
@@ -9,32 +9,31 @@ try {
 }
 
 function extractYouTubeId(url) {
-  const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/;
-  const match = String(url).match(regExp);
+  const match = String(url).match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
   return match ? match[1] : null;
 }
 
-// ⚡ 100% Free & Working Multi-Engine Stream Fetcher
-async function fetchAudioStream(videoUrl) {
+// ⚡ 100% Free Multi-Engine MP3 Stream Fetcher
+async function fetchVoiceAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // 🥇 Engine 1: Gifted Tech (High Speed & No Key Limit)
+  // Engine 1: Gifted Tech (High Speed & Unlimited)
   try {
-    const res1 = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
+    const res = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
       timeout: 12000,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
-    const dlUrl1 = res1.data?.result?.download_url || res1.data?.result?.dl_url;
-    if (dlUrl1) {
+    const dlUrl = res.data?.result?.download_url || res.data?.result?.dl_url;
+    if (dlUrl) {
       return {
-        downloadUrl: dlUrl1,
-        title: res1.data?.result?.title || 'YouTube Audio',
-        thumbnail: res1.data?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        downloadUrl: dlUrl,
+        title: res.data?.result?.title || 'YouTube Audio',
+        thumbnail: res.data?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
 
-  // 🥈 Engine 2: David Cyril API
+  // Engine 2: David Cyril API
   try {
     const res2 = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
       timeout: 12000
@@ -49,10 +48,10 @@ async function fetchAudioStream(videoUrl) {
     }
   } catch (e) {}
 
-  // 🥉 Engine 3: BK9 API
+  // Engine 3: BK9 API
   try {
-    const res3 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, { 
-      timeout: 12000 
+    const res3 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 12000
     });
     const dlUrl3 = res3.data?.BK9?.BK8;
     if (dlUrl3) {
@@ -64,14 +63,14 @@ async function fetchAudioStream(videoUrl) {
     }
   } catch (e) {}
 
-  throw new Error('Failed to retrieve download link.');
+  throw new Error("ගීතය Download කර ගැනීමට නොහැකි විය. වෙනත් නමකින් උත්සාහ කරන්න.");
 }
 
 module.exports = {
-  name: 'song',
-  alias: ['play', 'sing', 'mp3', 'ytmp3'],
-  category: 'download',
-  desc: 'Download YouTube audio directly',
+  name: 'csong',
+  alias: ['channelsong', 'cplay', 'chsong'],
+  category: 'channel',
+  desc: 'Download and post Audio & Card directly into any WhatsApp Channel',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -90,86 +89,133 @@ module.exports = {
       }
     };
 
-    let rawInput = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
+    const rawInput = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
 
-    if (!rawInput) {
-      return await sock.sendMessage(targetChat, { 
-        text: `*🎵 HESHAN MUSIC PLAYER*\n\n` +
-              `> 💡 Please provide a song name or YouTube link.\n` +
-              `> 📌 Example: *.song Lelena*\n\n` +
+    let channelInput = '';
+    let songQuery = '';
+
+    if (rawInput.includes(',')) {
+      const firstComma = rawInput.indexOf(',');
+      channelInput = rawInput.substring(0, firstComma).trim();
+      songQuery = rawInput.substring(firstComma + 1).trim();
+    } else {
+      const match = rawInput.match(/^(https?:\/\/[^\s]+|[\d]+@newsletter)\s+(.+)$/i);
+      if (match) {
+        channelInput = match[1].trim();
+        songQuery = match[2].trim();
+      }
+    }
+
+    if (!channelInput || !songQuery) {
+      return await sock.sendMessage(targetChat, {
+        text: `*🎧 HESHAN-MD CHANNEL MUSIC*\n\n` +
+              `> 💡 *භාවිතය:* \`.csong <channel_link>,<song_name>\`\n\n` +
+              `> 📌 *උදා:* \`.csong https://whatsapp.com/channel/0029VbAAjtcC1FuCIiYc8z3T,මා දිහා\`\n\n` +
               `🔗 *Pair Site :* https://heshan.devofc.top\n\n` +
-              `> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`,
+              `> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
-    await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
+    await sock.sendMessage(targetChat, { react: { text: "🎙️", key: msg.key } }).catch(() => {});
 
-    let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Searching Track:* _${rawInput}_\n⏳ Searching audio on YouTube...`
+    // 🛡️ 1. Safe Channel Identifier Isolation
+    let channelJid = null;
+
+    if (channelInput.endsWith('@newsletter')) {
+      channelJid = channelInput;
+    } else {
+      const cleanUrl = channelInput.split('?')[0].replace(/\/+$/, '');
+      const pathParts = cleanUrl.split('/');
+      
+      let inviteCode = null;
+      for (const part of pathParts) {
+        if (/^[a-zA-Z0-9]{20,28}$/.test(part)) {
+          inviteCode = part;
+          break;
+        }
+      }
+
+      if (inviteCode && typeof sock.newsletterMetadata === 'function') {
+        try {
+          const meta = await Promise.race([
+            sock.newsletterMetadata('invite', inviteCode),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
+          ]);
+          if (meta?.id) {
+            channelJid = meta.id.includes('@newsletter') ? meta.id : `${meta.id}@newsletter`;
+          }
+        } catch (e) {
+          console.error("Safe caught newsletterMetadata error:", e.message);
+        }
+      }
+    }
+
+    if (!channelJid) {
+      await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+      return await sock.sendMessage(targetChat, {
+        text: '❌ *Channel එක සොයාගත නොහැකි විය!*\n\n• Channel Invite Link එක නිවැරදිදැයි බලන්න.\n• Bot අනිවාර්යයෙන් එම Channel එකේ *Admin* විය යුතුය.\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*',
+        contextInfo: channelContext
+      }, { quoted: msg });
+    }
+
+    let statusMsg = await sock.sendMessage(targetChat, { 
+      text: `⚡ *Searching Track:* _${songQuery}_\n📢 Channel එකට සූදානම් කරමින් පවතී...` 
     }, { quoted: msg }).catch(() => null);
 
     try {
-      let videoUrl = rawInput;
-      let videoTitle = rawInput;
-      let duration = '03:20';
-      let author = 'YouTube Music';
+      let videoUrl = songQuery;
+      let videoTitle = songQuery;
       let thumb = 'https://files.catbox.moe/a58add.jpeg';
+      let timestampStr = "03:20";
 
-      const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(rawInput);
+      const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(songQuery);
 
       if (!isYtUrl) {
-        if (!yts) throw new Error('yt-search library is missing.');
-        const searchResults = await yts(rawInput);
-        if (!searchResults?.videos?.length) {
-          throw new Error('Song not found on YouTube!');
-        }
-
-        const video = searchResults.videos[0];
-        videoUrl = video.url;
-        videoTitle = video.title || rawInput;
-        duration = video.timestamp || duration;
-        author = video.author?.name || author;
-        thumb = video.thumbnail || thumb;
+        if (!yts) throw new Error('yt-search library missing.');
+        const res = await yts(songQuery);
+        if (!res?.videos?.length) throw new Error('සින්දුව YouTube හි සොයාගත නොහැකි විය!');
+        videoUrl = res.videos[0].url;
+        videoTitle = res.videos[0].title || songQuery;
+        thumb = res.videos[0].thumbnail || thumb;
+        timestampStr = res.videos[0].timestamp || (res.videos[0].duration ? res.videos[0].duration.timestamp : "03:20");
       }
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { 
-          text: `⚡ *Downloading Audio:* _${videoTitle}_\n📥 Sending audio track...`, 
+          text: `⚡ *Processing:* _${videoTitle}_\n📥 Channel එකට යවමින් පවතී...`, 
           edit: statusMsg.key 
         }).catch(() => {});
       }
 
-      // Stream Link එක ලබාගැනීම
-      const songData = await fetchAudioStream(videoUrl);
+      const songData = await fetchVoiceAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Compact Song Card
-      const songCard = 
-`*🎧 HESHAN-MD AUDIO PLAYER*
-━━━━━━━━━━━━━━━━━━━━━
-• *Track*    : ${cleanTitle.length > 28 ? cleanTitle.slice(0, 25) + '...' : cleanTitle}
-• *Artist*   : ${author.length > 24 ? author.slice(0, 21) + '...' : author}
-• *Length*   : ${duration}
-━━━━━━━━━━━━━━━━━━━━━
-🔗 *Pair Site :* https://heshan.devofc.top
+      // 🎨 1. Photo Card Design
+      const cardCaption = 
+`🎶 ❝ ${cleanTitle} ❞
 
-> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
+0:00 ⊲⊲  ▐ ▌  ⊳⊳ ${timestampStr}
+━━━━━⬤───────
 
-      // 1. Send Card Image (මෙහි පමණක් Channel Context එක ඇත)
-      await sock.sendMessage(targetChat, {
+\`\`\`Use Headphones For Best Experience.... 🎧🎵\`\`\`
+
+> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`.trim();
+
+      // Card Image Post කිරීම
+      await sock.sendMessage(channelJid, {
         image: { url: songData.thumbnail || thumb },
-        caption: songCard,
-        contextInfo: channelContext
-      }, { quoted: msg }).catch(() => {});
+        caption: cardCaption
+      });
 
-      // 2. Direct Stream Audio Dispatch (Audio එකට Channel Context නෑ)
-      await sock.sendMessage(targetChat, {
+      await new Promise(r => setTimeout(r, 2000));
+
+      // Direct Stream මඟින් Audio එක Channel එකට යැවීම
+      await sock.sendMessage(channelJid, {
         audio: { url: songData.downloadUrl },
         mimetype: 'audio/mp4',
-        fileName: `${cleanTitle}.mp3`,
-        ptt: false
-      }, { quoted: msg });
+        fileName: `${cleanTitle}.mp3`
+      });
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
@@ -177,16 +223,20 @@ module.exports = {
 
       await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
-    } catch (err) {
-      console.error('Song Command Error:', err.message);
+      await sock.sendMessage(targetChat, {
+        text: `✅ *Track Uploaded Successfully!*\n\n• *Track:* ${cleanTitle}\n• *Duration:* ${timestampStr}\n• *Channel ID:* \`${channelJid}\`\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
+        contextInfo: channelContext
+      }, { quoted: msg });
 
+    } catch (err) {
+      console.error('Channel audio send error:', err.message);
       if (statusMsg?.key) {
-        sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+        await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
       await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
 
-      await sock.sendMessage(targetChat, { 
-        text: `❌ *Error:* ${err.message || 'Unable to download song.'}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`,
+      await sock.sendMessage(targetChat, {
+        text: `❌ *Error:* ${err.message || 'සින්දුව යැවීමට නොහැකි විය.'}\n\n*(Bot අනිවාර්යයෙන් Channel එකේ Admin විය යුතුය)*\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
     }
