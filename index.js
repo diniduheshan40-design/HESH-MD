@@ -15,7 +15,8 @@ const {
   delay,
   Browsers,
   makeCacheableSignalKeyStore,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  downloadContentFromMessage
 } = require('@whiskeysockets/baileys');
 
 // 🟢 Global Process Crash Guards
@@ -39,7 +40,7 @@ const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
-// ⚡ Global Newsletter Forward Context Injection (Header + "View channel" Badge)
+// ⚡ Global Newsletter Forward Context Injection
 const channelContext = {
   contextInfo: {
     forwardingScore: 999,
@@ -63,6 +64,7 @@ const OWNER_NUMBERS = [
   '72787431583987',
   '72787431583987@lid'
 ];
+global.owner = OWNER_NUMBERS;
 
 const DEFAULT_SETTINGS = {
   workMode: 'public',
@@ -82,15 +84,18 @@ const DEFAULT_SETTINGS = {
 };
 
 // ============================================================================
-// 🧠 RUNTIME STATE
+// 🧠 RUNTIME STATE & IN-MEMORY MESSAGE STORE (ANTI-DELETE)
 // ============================================================================
 
-const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 200 });
+const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 300 });
 const activeSessions = {};
 global.activeSessions = activeSessions;
 const isStarting = {};
 const reconnectAttempts = {};
 const commands = new Map();
+
+// Anti-Delete In-Memory Message Vault (Holds up to 3000 recent messages)
+const messageVault = new NodeCache({ stdTTL: 86400, checkperiod: 600, maxKeys: 3000 });
 
 // ============================================================================
 // 🗄️ DATABASE SCHEMA & HELPERS
@@ -121,22 +126,26 @@ function createSettingsModel() {
 const SettingsModel = createSettingsModel();
 
 function clearSettingsCache(num) {
-  if (num) settingsCache.del(num);
+  if (num) {
+    const clean = num.replace(/\D/g, '');
+    settingsCache.del(clean);
+  }
 }
 global.clearSettingsCache = clearSettingsCache;
 
 async function getBotSettings(botNum) {
   if (!botNum) return { ...DEFAULT_SETTINGS };
-  const cached = settingsCache.get(botNum);
+  const cleanNum = botNum.replace(/\D/g, '');
+  const cached = settingsCache.get(cleanNum);
   if (cached) return cached;
 
   try {
-    let settings = await SettingsModel.findById(botNum).lean();
+    let settings = await SettingsModel.findById(cleanNum).lean();
     if (!settings) {
-      const created = await SettingsModel.create({ _id: botNum, ...DEFAULT_SETTINGS });
+      const created = await SettingsModel.create({ _id: cleanNum, ...DEFAULT_SETTINGS });
       settings = created.toObject();
     }
-    settingsCache.set(botNum, settings);
+    settingsCache.set(cleanNum, settings);
     return settings;
   } catch (e) {
     return { ...DEFAULT_SETTINGS };
@@ -611,7 +620,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION
+// 🔌 SOCKET CREATION (ANTI-FLICKER & STABLE TIMEOUTS)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -625,18 +634,18 @@ async function createBaileysSocket(phoneNumber) {
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
     printQRInTerminal: false,
-    browser: Browsers.macOS('Safari'),
+    browser: Browsers.macOS('Desktop'),
     msgRetryCounterCache,
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
-    fireInitQueries: true,
+    fireInitQueries: false, // Prevents reconnect spam & ping conflicts
     generateHighQualityLinkPreview: false,
     connectTimeoutMs: 60000,
-    defaultQueryTimeoutMs: 30000,
-    keepAliveIntervalMs: 10000,
-    markOnlineOnConnect: true,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 25000, // 25s prevents disconnect loop on Render
+    markOnlineOnConnect: false, // Prevents toggling offline/online status instantly
     emitOwnEvents: false,
-    shouldIgnoreJid: () => false
+    shouldIgnoreJid: (jid) => jid?.endsWith('@broadcast') && jid !== 'status@broadcast'
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -653,6 +662,7 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
 
   try {
     sock.ev.removeAllListeners();
+    sock.ws?.removeAllListeners();
     sock.ws?.close();
   } catch (e) {}
 
@@ -665,14 +675,16 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
     return;
   }
 
+  if (isStarting[phoneNumber]) return;
+
   reconnectAttempts[phoneNumber] = (reconnectAttempts[phoneNumber] || 0) + 1;
-  let delayTime = 6000;
+  let delayTime = 7000;
 
   if (statusCode === 440) {
-    delayTime = Math.min(reconnectAttempts[phoneNumber] * 12000, 45000);
-    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting ${Math.round(delayTime / 1000)}s before retry...`);
+    delayTime = 15000;
+    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting 15s before reconnect...`);
   } else if (reconnectAttempts[phoneNumber] > 5) {
-    delayTime = 25000;
+    delayTime = 30000;
   }
 
   setTimeout(() => {
@@ -751,6 +763,16 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
   reconnectAttempts[phoneNumber] = 0;
+  
+  // Set online presence based on settings
+  getBotSettings(phoneNumber).then(st => {
+    if (st.alwaysOnline === 'on') {
+      sock.sendPresenceUpdate('available').catch(() => {});
+    } else if (st.alwaysOnline === 'offline') {
+      sock.sendPresenceUpdate('unavailable').catch(() => {});
+    }
+  });
+
   autoFollowChannelAndJoinGroup(sock, phoneNumber);
   setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
 }
@@ -767,7 +789,7 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 }
 
 // ============================================================================
-// 💬 MESSAGE HANDLING HELPERS
+// 💬 MESSAGE HANDLING & ANTI-DELETE ENGINE
 // ============================================================================
 
 async function reactToChannelPost(sock, msg, chatJid) {
@@ -797,9 +819,13 @@ async function handleStatusBroadcast(sock, msg, settings) {
   try {
     await sock.readMessages([msg.key]);
     if (settings.statusReact && msg.key.participant) {
+      let emoji = settings.statusReactEmoji || '💚';
+      if (emoji === 'random') {
+        emoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
+      }
       await sock.sendMessage(
         'status@broadcast',
-        { react: { text: settings.statusReactEmoji || '💐', key: msg.key } },
+        { react: { text: emoji, key: msg.key } },
         { statusJidList: [msg.key.participant] }
       );
     }
@@ -893,10 +919,14 @@ function buildSafeReply(sock, chatJid, msg) {
 function isSettingsMenuOption(cleanInput) {
   return (
     /^([1-9]|1[0-2])(\.[1-4])?$/.test(cleanInput) ||
+    cleanInput.startsWith('4 ') ||
     cleanInput.startsWith('6 ') ||
     cleanInput.startsWith('pin ') ||
     cleanInput.startsWith('set ') ||
-    cleanInput.startsWith('antisend ')
+    cleanInput.startsWith('antisend ') ||
+    cleanInput.startsWith('antidel ') ||
+    cleanInput === 'react green' ||
+    cleanInput === 'react random'
   );
 }
 
@@ -912,6 +942,7 @@ function extractQuotedCaption(quotedMsgObj) {
 
 function isQuotedFromSettingsMenu(quotedCaption) {
   return (
+    quotedCaption.includes('HESHAN-MD SYSTEM SETTINGS') ||
     quotedCaption.includes('SYSTEM SETTINGS') ||
     quotedCaption.includes('WORK MODE') ||
     quotedCaption.includes('FAKE ACTION') ||
@@ -933,8 +964,8 @@ async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply
   const cmdFunc = getCommandExecutor(settingsCmd);
   if (!cmdFunc) return false;
 
-  clearSettingsCache(myBotNum);
   await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
+  clearSettingsCache(myBotNum);
   return true;
 }
 
@@ -946,6 +977,79 @@ async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply
 
   await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
   return true;
+}
+
+// 🛡️ ANTI-DELETE REAL-TIME PROCESSOR
+async function handleAntiDelete(sock, deletedMsgKey, botNum) {
+  try {
+    const settings = await getBotSettings(botNum);
+    if (!settings.antiDeleteEnabled) return;
+
+    const msgId = deletedMsgKey?.id;
+    if (!msgId) return;
+
+    const saved = messageVault.get(msgId);
+    if (!saved || !saved.message) return;
+
+    const isGroup = saved.chatJid.endsWith('@g.us');
+    const scope = settings.antiDeleteType || 'all';
+
+    if (scope === 'inbox' && isGroup) return;
+    if (scope === 'group' && !isGroup) return;
+
+    const targetDest = settings.antiDeleteDest === 'from' ? saved.chatJid : `${botNum}@s.whatsapp.net`;
+    const sender = saved.sender.split('@')[0];
+    const timeStr = new Date(saved.timestamp * 1000).toLocaleTimeString();
+
+    const banner = `🛡️ *[ ANTI-DELETE DETECTED ]* 🛡️\n` +
+      `━━━━━━━━━━━━━━━━━━━━━\n` +
+      `• *From*   : @${sender}\n` +
+      `• *Chat*   : ${isGroup ? 'Group' : 'Inbox'}\n` +
+      `• *Time*   : ${timeStr}\n` +
+      `━━━━━━━━━━━━━━━━━━━━━`;
+
+    const raw = unwrapMessageContent(saved.message);
+
+    if (raw.conversation || raw.extendedTextMessage) {
+      const text = raw.conversation || raw.extendedTextMessage.text;
+      await sock.sendMessage(targetDest, {
+        text: `${banner}\n\n*Deleted Message :*\n${text}`,
+        mentions: [saved.sender],
+        ...global.channelContext
+      });
+    } else if (raw.imageMessage) {
+      const stream = await downloadContentFromMessage(raw.imageMessage, 'image');
+      let buffer = Buffer.from([]);
+      for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+      await sock.sendMessage(targetDest, {
+        image: buffer,
+        caption: `${banner}\n\n*Caption :* ${raw.imageMessage.caption || 'None'}`,
+        mentions: [saved.sender],
+        ...global.channelContext
+      });
+    } else if (raw.videoMessage) {
+      const stream = await downloadContentFromMessage(raw.videoMessage, 'video');
+      let buffer = Buffer.from([]);
+      for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+      await sock.sendMessage(targetDest, {
+        video: buffer,
+        caption: `${banner}\n\n*Caption :* ${raw.videoMessage.caption || 'None'}`,
+        mentions: [saved.sender],
+        ...global.channelContext
+      });
+    } else if (raw.audioMessage) {
+      const stream = await downloadContentFromMessage(raw.audioMessage, 'audio');
+      let buffer = Buffer.from([]);
+      for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
+      await sock.sendMessage(targetDest, {
+        audio: buffer,
+        mimetype: raw.audioMessage.mimetype || 'audio/mp4',
+        ptt: Boolean(raw.audioMessage.ptt)
+      });
+    }
+  } catch (err) {
+    console.error('Anti-Delete Execution Error:', err.message);
+  }
 }
 
 async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum) {
@@ -974,8 +1078,8 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   try {
     const cmdFunc = getCommandExecutor(targetCmd);
     if (cmdFunc) {
-      if (isSettingsCmd) clearSettingsCache(myBotNum);
       await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized, isGroup });
+      if (isSettingsCmd) clearSettingsCache(myBotNum);
     }
   } catch (err) {
     console.error(`Command [${commandName}] execution error:`, err?.message);
@@ -992,10 +1096,30 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const chatJid = msg.key?.remoteJid;
   if (!chatJid) return;
 
-  const rawMsg = unwrapMessageContent(msg.message);
-  const text = extractMessageText(rawMsg);
+  const isGroup = chatJid.endsWith('@g.us');
+  const myBotJid = sock.user?.id || '';
+  const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
 
-  // 🛡️ Loop Protection Fix:
+  // 🛡️ Save to Anti-Delete Vault
+  if (msg.key?.id && !msg.key.fromMe && chatJid !== 'status@broadcast') {
+    const sender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
+    messageVault.set(msg.key.id, {
+      chatJid,
+      sender,
+      message: msg.message,
+      timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000)
+    });
+  }
+
+  // Handle Protocol Revoke (Message Deletion)
+  const rawMsg = unwrapMessageContent(msg.message);
+  if (rawMsg?.protocolMessage?.type === 0 || rawMsg?.protocolMessage?.type === 'REVOKE') {
+    const deletedKey = rawMsg.protocolMessage.key;
+    await handleAntiDelete(sock, deletedKey, myBotNum);
+    return;
+  }
+
+  const text = extractMessageText(rawMsg);
   if (!text || msg.message.reactionMessage) return;
 
   const cleanInput = text.toLowerCase().trim();
@@ -1007,14 +1131,10 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   if (msg.key.fromMe && !isPrefixCommand && !isNumericMenuReply && !isSpecialAction) return;
 
   const isChannel = chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter');
-
   if (isChannel) {
     reactToChannelPost(sock, msg, chatJid);
   }
 
-  const isGroup = chatJid.endsWith('@g.us');
-  const myBotJid = sock.user?.id || '';
-  const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
   const settings = await getBotSettings(myBotNum);
 
   if (!isChannel) {
@@ -1039,7 +1159,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 
   const safeReply = buildSafeReply(sock, chatJid, msg);
 
-  // 🎯 Channel .setchannel Command Handler
   if (isChannel) {
     if (text.startsWith('.setchannel') || text.startsWith('!setchannel') || text.startsWith('#setchannel')) {
       const setCmd = findCommand('setchannel');
@@ -1057,40 +1176,47 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
   const quotedMsgObj = quotedContext?.quotedMessage;
 
-  // 🎵 Interactive Music Menu Reply Handler (1: Audio, 2: Document, 3: Voice Note)
+  // 🎵 Interactive Fast Audio Streamer
   const quotedMsgId = quotedContext?.stanzaId;
   if (quotedMsgId && global.songSessions?.has(quotedMsgId) && ['1', '2', '3'].includes(cleanInput)) {
     const session = global.songSessions.get(quotedMsgId);
     global.songSessions.delete(quotedMsgId);
 
-    await sock.sendMessage(chatJid, { react: { text: "⬇️", key: msg.key } }).catch(() => {});
+    await sock.sendMessage(chatJid, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
     try {
-      const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(session.videoUrl)}&quality=320kbps&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`;
-      const res = await axios.get(apiUrl, { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(session.videoUrl)}&quality=128kbps&api_key=chama_api_ec9848130d1aea209f08fb85e0b4720f`;
+      const res = await axios.get(apiUrl, { timeout: 20000 });
       const dlUrl = res.data?.data?.download_url || res.data?.data?.direct_url;
 
       if (!dlUrl) throw new Error('Download link generation failed.');
 
+      // Stream fast directly into buffer
+      const audioStream = await axios.get(dlUrl, {
+        responseType: 'arraybuffer',
+        timeout: 45000,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      const audioBuffer = Buffer.from(audioStream.data);
+
+      await sock.sendMessage(chatJid, { react: { text: "⬆️", key: msg.key } }).catch(() => {});
+
       if (cleanInput === '1') {
-        // [1] Playable Audio MP3
         await sock.sendMessage(chatJid, {
-          audio: { url: dlUrl },
+          audio: audioBuffer,
           mimetype: 'audio/mp4',
           fileName: `${session.title}.mp3`,
           ptt: false
         }, { quoted: msg });
       } else if (cleanInput === '2') {
-        // [2] Document HQ File
         await sock.sendMessage(chatJid, {
-          document: { url: dlUrl },
+          document: audioBuffer,
           mimetype: 'audio/mpeg',
           fileName: `${session.title}.mp3`
         }, { quoted: msg });
       } else if (cleanInput === '3') {
-        // [3] Voice Note (PTT Waveform)
         await sock.sendMessage(chatJid, {
-          audio: { url: dlUrl },
+          audio: audioBuffer,
           mimetype: 'audio/ogg; codecs=opus',
           ptt: true
         }, { quoted: msg });
@@ -1106,7 +1232,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // 🎯 ViewOnce Quick Emoji Save Handler
+  // 🎯 ViewOnce Quick Emoji Save
   const TRIGGER_EMOJIS = ['❤️', '🥺', '😚', '🌚', '😼', '😂', '🫡', '🥱', '🙌', '🖤', '👍', '🤣', '🥰', '🫢', '🤭', '🫣', 'vv'];
   if (quotedMsgObj && TRIGGER_EMOJIS.includes(cleanInput)) {
     const saveCmd = findCommand('save', 'vv');
@@ -1119,7 +1245,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  const settingsOption = isSettingsMenuOption(cleanInput);
   const quotedCaption = extractQuotedCaption(quotedMsgObj);
   const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
   const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
@@ -1137,7 +1262,8 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  if (settingsOption && isAuthorized && fromSettingsMenu && !fromMainMenu) {
+  // Settings Menu Single/Sub-Option Replies (e.g. 1.1, 2, 11.2, 4.2)
+  if (isAuthorized && (fromSettingsMenu || isSettingsMenuOption(cleanInput)) && !fromMainMenu) {
     const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
     if (handled) return;
   }
@@ -1197,6 +1323,7 @@ function stopAndRemoveSession(num) {
   if (!activeSessions[num]) return;
   try {
     activeSessions[num].ev.removeAllListeners();
+    activeSessions[num].ws?.removeAllListeners();
     activeSessions[num].ws?.close();
   } catch (e) {}
   delete activeSessions[num];
@@ -1210,11 +1337,7 @@ function registerResetAllRoute(app) {
         await mongoose.connection.db.collection('auths').deleteMany({});
       }
       Object.keys(activeSessions).forEach(num => {
-        try {
-          activeSessions[num].ev.removeAllListeners();
-          activeSessions[num].ws?.close();
-        } catch (e) {}
-        delete activeSessions[num];
+        stopAndRemoveSession(num);
       });
       settingsCache.flushAll();
       res.json({ success: true, message: 'All sessions successfully wiped!' });
@@ -1263,11 +1386,11 @@ function registerPairRoute(app) {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         printQRInTerminal: false,
-        browser: Browsers.macOS('Safari'),
-        connectTimeoutMs: 30000,
-        defaultQueryTimeoutMs: 25000,
-        keepAliveIntervalMs: 10000,
-        markOnlineOnConnect: true,
+        browser: Browsers.macOS('Desktop'),
+        connectTimeoutMs: 35000,
+        defaultQueryTimeoutMs: 30000,
+        keepAliveIntervalMs: 25000,
+        markOnlineOnConnect: false,
         emitOwnEvents: false
       });
 
@@ -1288,7 +1411,7 @@ function registerPairRoute(app) {
         }
       });
 
-      await delay(2000);
+      await delay(2500);
 
       if (!pairSock.authState.creds.registered) {
         let code = await pairSock.requestPairingCode(num);
@@ -1341,7 +1464,7 @@ async function reconnectAllSavedSessions() {
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
-      await delay(10000);
+      await delay(8000);
     }
   } catch (e) {
     console.error('Error reconnecting sessions:', e.message);
