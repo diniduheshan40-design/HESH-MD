@@ -1,9 +1,5 @@
 // commands/csong.js
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { exec } = require('child_process');
 
 let yts;
 try {
@@ -12,68 +8,19 @@ try {
   yts = null;
 }
 
-// 🟢 Heroku + Linux FFmpeg Path Resolver
-function getFfmpegPath() {
-  try {
-    const staticPath = require('ffmpeg-static');
-    if (staticPath && fs.existsSync(staticPath)) {
-      try { fs.chmodSync(staticPath, 0o777); } catch (e) {}
-      return staticPath;
-    }
-  } catch (e) {}
-  return 'ffmpeg';
-}
-
-const ffmpegBinary = getFfmpegPath();
-
-// 🟢 High-Quality Opus/OGG Converter (Fallback to MP3 if failed)
-function convertToOpus(inputBuffer) {
-  return new Promise((resolve) => {
-    const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
-    const tmpIn = path.join(os.tmpdir(), `in_${uniqueId}.mp3`);
-    const tmpOut = path.join(os.tmpdir(), `out_${uniqueId}.ogg`);
-
-    try {
-      fs.writeFileSync(tmpIn, inputBuffer);
-    } catch (e) {
-      return resolve({ buffer: inputBuffer, isOgg: false });
-    }
-
-    const cmd = `"${ffmpegBinary}" -y -i "${tmpIn}" -vn -c:a libopus -b:a 128k -ar 48000 "${tmpOut}"`;
-
-    exec(cmd, (err) => {
-      try { if (fs.existsSync(tmpIn)) fs.unlinkSync(tmpIn); } catch (e) {}
-      if (err) {
-        return resolve({ buffer: inputBuffer, isOgg: false });
-      }
-
-      try {
-        if (fs.existsSync(tmpOut)) {
-          const opusBuffer = fs.readFileSync(tmpOut);
-          try { fs.unlinkSync(tmpOut); } catch (e) {}
-          if (opusBuffer && opusBuffer.length > 1000) {
-            return resolve({ buffer: opusBuffer, isOgg: true });
-          }
-        }
-      } catch (e) {}
-      resolve({ buffer: inputBuffer, isOgg: false });
-    });
-  });
-}
-
 function extractYouTubeId(url) {
   const match = String(url).match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
   return match ? match[1] : null;
 }
 
-// ⚡ Ultra-fast Multi-Engine Audio Stream Fetcher
+// ⚡ Multi-Engine MP3 Stream Fetcher
 async function fetchVoiceAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
   // Engine 1: Siputzx API
   try {
     const res = await axios.get(`https://api.siputzx.my.id/api/d/youtube/mp3?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 25000,
+      timeout: 20000,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
     const dlUrl = res.data?.data?.dl;
@@ -89,7 +36,7 @@ async function fetchVoiceAudioStream(videoUrl) {
   // Engine 2: Gifted Tech API
   try {
     const res2 = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 25000,
+      timeout: 20000,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
     const dlUrl2 = res2.data?.result?.download_url || res2.data?.result?.dl_url;
@@ -105,7 +52,7 @@ async function fetchVoiceAudioStream(videoUrl) {
   // Engine 3: BK9 API
   try {
     const res3 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 25000
+      timeout: 20000
     });
     const dlUrl3 = res3.data?.BK9?.BK8;
     if (dlUrl3) {
@@ -117,14 +64,14 @@ async function fetchVoiceAudioStream(videoUrl) {
     }
   } catch (e) {}
 
-  throw new Error("ගීතය Download කර ගැනීමට නොහැකි විය. වෙනත් නමකින් හෝ YouTube Link එකකින් උත්සාහ කරන්න.");
+  throw new Error("ගීතය Download කර ගැනීමට නොහැකි විය. වෙනත් නමකින් උත්සාහ කරන්න.");
 }
 
 module.exports = {
   name: 'csong',
   alias: ['channelsong', 'cplay', 'chsong'],
   category: 'channel',
-  desc: 'Download and post playable Audio & Card directly into any WhatsApp Channel',
+  desc: 'Download and post Audio & Card directly into any WhatsApp Channel',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -145,7 +92,7 @@ module.exports = {
 
     const rawInput = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
 
-    // 🎯 Channel URL සහ Query එක වෙන් කර ගැනීම
+    // 🎯 Input Split (Comma හෝ Space)
     let channelInput = '';
     let songQuery = '';
 
@@ -164,46 +111,60 @@ module.exports = {
     if (!channelInput || !songQuery) {
       return await sock.sendMessage(targetChat, {
         text: `*🎧 HESHAN-MD CHANNEL MUSIC*\n\n` +
-              `> 💡 *භාවිතය:* \`.csong <channel_link>,<song_name/yt_link>\`\n\n` +
-              `> 📌 *උදා:* \`.csong https://whatsapp.com/channel/0029VbAAjtcC1FuCIiYc8z3T/625,මා දිහා\`\n\n` +
+              `> 💡 *භාවිතය:* \`.csong <channel_link>,<song_name>\`\n\n` +
+              `> 📌 *උදා:* \`.csong https://whatsapp.com/channel/0029VbAAjtcC1FuCIiYc8z3T,මා දිහා\`\n\n` +
               `*⚡ ʜᴇꜱʜᴀɴ ᴍᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
-    sock.sendMessage(targetChat, { react: { text: "🎙️", key: msg.key } }).catch(() => {});
+    await sock.sendMessage(targetChat, { react: { text: "🎙️", key: msg.key } }).catch(() => {});
 
-    // 🔍 Channel Invite Code එක / Post ID එකෙන් තොරව පිරිසිදුව ලබා ගැනීම
+    // 🛡️ 1. Safe Channel Extraction (Never Crash)
     let channelJid = null;
+
     if (channelInput.endsWith('@newsletter')) {
       channelJid = channelInput;
     } else {
-      // https://whatsapp.com/channel/0029VbAAjtcC1FuCIiYc8z3T/625 ආකෘතියෙන් 0029... කොටස පමණක් ලබා ගැනීම
-      const inviteCodeMatch = channelInput.match(/(?:whatsapp\.com\/channel\/|chat\.whatsapp\.com\/)([a-zA-Z0-9]{20,28})/i);
-      const inviteCode = inviteCodeMatch ? inviteCodeMatch[1] : null;
+      // Post ID (/626 හෝ වෙනත්) අයින් කර Invite Code එක පමණක් වෙන් කර ගැනීම
+      const cleanUrl = channelInput.split('?')[0].replace(/\/+$/, '');
+      const pathParts = cleanUrl.split('/');
+      
+      // whatsapp.com/channel/0029Vb.../626 ආවොත් 0029... කොටස ගැනීම
+      let inviteCode = null;
+      for (const part of pathParts) {
+        if (/^[a-zA-Z0-9]{20,28}$/.test(part)) {
+          inviteCode = part;
+          break;
+        }
+      }
 
       if (inviteCode && typeof sock.newsletterMetadata === 'function') {
         try {
-          const meta = await sock.newsletterMetadata('invite', inviteCode);
+          const meta = await Promise.race([
+            sock.newsletterMetadata('invite', inviteCode),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
+          ]);
           if (meta?.id) {
             channelJid = meta.id.includes('@newsletter') ? meta.id : `${meta.id}@newsletter`;
           }
         } catch (e) {
-          console.error("Newsletter metadata error:", e.message);
+          console.error("Safe caught newsletterMetadata error:", e.message);
         }
       }
     }
 
+    // Channel එක හොයාගන්න බැරි නම් Bot restart නොවී කෙලින්ම Message එක යවා නවත්වයි
     if (!channelJid) {
-      sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+      await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       return await sock.sendMessage(targetChat, {
-        text: '❌ වලංගු නොවන Channel Link එකක් හෝ Channel එක සොයාගත නොහැකි විය!\n\n*(සටහන: Bot එම Channel එකේ Admin කෙනෙක් විය යුතුය)*',
+        text: '❌ *Channel එක සොයාගත නොහැකි විය!*\n\n• කරුණාකර Channel Invite Link එක නිවැරදිදැයි බලන්න.\n• Bot අනිවාර්යයෙන්ම එම Channel එකේ *Admin* කෙනෙක් විය යුතුය.\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*',
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
-    let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Searching Track:* _${songQuery}_\n📢 Channel එකට සූදානම් කරමින් පවතී...`
+    let statusMsg = await sock.sendMessage(targetChat, { 
+      text: `⚡ *Searching Track:* _${songQuery}_\n📢 Channel එකට සූදානම් කරමින් පවතී...` 
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -222,23 +183,11 @@ module.exports = {
         videoTitle = res.videos[0].title || songQuery;
         thumb = res.videos[0].thumbnail || thumb;
         timestampStr = res.videos[0].timestamp || (res.videos[0].duration ? res.videos[0].duration.timestamp : "03:20");
-      } else if (yts) {
-        try {
-          const ytId = extractYouTubeId(videoUrl);
-          if (ytId) {
-            const searchResults = await yts({ videoId: ytId });
-            if (searchResults && searchResults.title) {
-              videoTitle = searchResults.title;
-              thumb = searchResults.thumbnail || thumb;
-              timestampStr = searchResults.timestamp || (searchResults.duration ? searchResults.duration.timestamp : "03:20");
-            }
-          }
-        } catch (e) {}
       }
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { 
-          text: `⚡ *Downloading Audio:* _${videoTitle}_\n📥 Audio stream එක ලබාගනිමින් පවතී...`, 
+          text: `⚡ *Downloading Audio:* _${videoTitle}_\n📥 බාගත වෙමින් පවතී...`, 
           edit: statusMsg.key 
         }).catch(() => {});
       }
@@ -246,17 +195,17 @@ module.exports = {
       const songData = await fetchVoiceAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Thumbnail Image එක Buffer එකක් කරගැනීම
+      // Thumbnail Image Buffer
       let thumbBuffer;
       try {
         const thumbRes = await axios.get(songData.thumbnail || thumb, { responseType: 'arraybuffer', timeout: 15000 });
         thumbBuffer = Buffer.from(thumbRes.data);
       } catch (e) {
-        const fallbackThumb = await axios.get('https://files.catbox.moe/a58add.jpeg', { responseType: 'arraybuffer' });
-        thumbBuffer = Buffer.from(fallbackThumb.data);
+        const fallback = await axios.get('https://files.catbox.moe/a58add.jpeg', { responseType: 'arraybuffer' });
+        thumbBuffer = Buffer.from(fallback.data);
       }
 
-      // Audio stream එක Download කිරීම
+      // Audio stream download
       const audioStream = await axios.get(songData.downloadUrl, {
         responseType: 'arraybuffer',
         timeout: 60000,
@@ -265,17 +214,17 @@ module.exports = {
       const rawAudioBuffer = Buffer.from(audioStream.data);
 
       if (!rawAudioBuffer || rawAudioBuffer.length < 5000) {
-        throw new Error("බාගත කල Audio ගොනුව දෝෂ සහිතයි.");
+        throw new Error("Audio ගොනුව ලබාගැනීම අසාර්ථකයි.");
       }
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { 
-          text: `⚡ *Uploading to Channel:* _${cleanTitle}_\n⚙️ Channel එකට Post කරමින් පවතී...`, 
+          text: `⚡ *Uploading to Channel:* _${cleanTitle}_\n⚙️ Channel එකට Post වෙමින් පවතී...`, 
           edit: statusMsg.key 
         }).catch(() => {});
       }
 
-      // 🎨 1. Photo Card Design
+      // 🎨 1. Photo Card
       const cardCaption = 
 `🎶 ❝ ${cleanTitle} ❞
 
@@ -286,44 +235,41 @@ module.exports = {
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`.trim();
 
-      // 🖼️ STEP 1: Image Card එක Channel එකට යැවීම
+      // Card එක Post කිරීම
       await sock.sendMessage(channelJid, {
         image: thumbBuffer,
         caption: cardCaption
       });
 
-      // Channel rate-limit delay
       await new Promise(r => setTimeout(r, 2000));
 
-      // 🎧 STEP 2: Playable Audio එක Channel එකට යැවීම (Channels support audio/mp4 / audio/mpeg best)
+      // Audio එක Post කිරීම
       await sock.sendMessage(channelJid, {
         audio: rawAudioBuffer,
         mimetype: 'audio/mp4',
-        ptt: false,
         fileName: `${cleanTitle}.mp3`
       });
 
       if (statusMsg?.key) {
-        sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+        await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
+      await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
-      // පරිශීලකයාට Confirmation මැසේජ් එක
       await sock.sendMessage(targetChat, {
-        text: `✅ *Track & Card Uploaded Successfully!*\n\n• *Track:* ${cleanTitle}\n• *Duration:* ${timestampStr}\n• *Channel ID:* \`${channelJid}\`\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
+        text: `✅ *Track Uploaded Successfully!*\n\n• *Track:* ${cleanTitle}\n• *Duration:* ${timestampStr}\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg });
 
     } catch (err) {
-      console.error('Channel audio send error:', err);
+      console.error('Channel audio send error:', err.message);
       if (statusMsg?.key) {
-        sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
+        await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
-      sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+      await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
 
       await sock.sendMessage(targetChat, {
-        text: `❌ *Error:* ${err.message || 'සින්දුව යැවීමට නොහැකි විය.'}\n\n*(සටහන: ඔබ ලබාදුන් Link එකේ Bot අනිවාර්යයෙන්ම Channel Admin කෙනෙක් විය යුතුය)*\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
+        text: `❌ *Error:* ${err.message || 'සින්දුව යැවීමට නොහැකි විය.'}\n\n*(Bot අනිවාර්යයෙන් Channel එකේ Admin විය යුතුය)*\n\n> ⚡ *ʜᴇꜱʜᴀɴ ᴍᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
     }
