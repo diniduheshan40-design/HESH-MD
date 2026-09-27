@@ -34,7 +34,7 @@ module.exports = {
     if (!rawInput) {
       await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
       return await sock.sendMessage(targetChat, { 
-        text: `*⚡ HESHAN AUDIO BEATS ⚡*\n\n> 💡 කරුණාකර සින්දුවේ නම ඇතුළත් කරන්න.\n> 📌 උදා: *.song Lelena*`,
+        text: `*⚡ HESHAN AUDIO BEATS ⚡*\n\n> 💡 කරුණාකර සින්දුවේ නම හෝ YouTube Link එක ඇතුළත් කරන්න.\n> 📌 උදා: *.song Lelena*`,
         contextInfo: channelContext
       }, { quoted: msg });
     }
@@ -45,7 +45,7 @@ module.exports = {
       let videoUrl = rawInput;
       let videoTitle = rawInput;
       let duration = '03:45';
-      let author = 'YouTube Artist';
+      let author = 'YouTube Music';
       let views = '1.2M';
       let ago = 'Recent';
       let thumb = 'https://files.catbox.moe/a58add.jpeg';
@@ -53,7 +53,7 @@ module.exports = {
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(rawInput);
 
       if (!isYtUrl) {
-        if (!yts) throw new Error('yt-search missing.');
+        if (!yts) throw new Error('yt-search missing. Please install yt-search: npm i yt-search');
         const searchResults = await yts(rawInput);
         if (!searchResults?.videos?.length) {
           throw new Error('Song not found on YouTube!');
@@ -95,6 +95,7 @@ module.exports = {
 │  [3]  ▸ 🎙️  Voice (PTT)
 │
 └────────────────────────┘
+> 💡 *පණිවිඩයට 1, 2 හෝ 3 ලෙස Reply කරන්න.*
 > ⚡ ʜᴇꜱʜᴀɴ.ᴅᴇᴠᴏꜰᴄ.ᴛᴏᴘ • ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ`.trim();
 
       const sentMsg = await sock.sendMessage(targetChat, {
@@ -105,7 +106,6 @@ module.exports = {
 
       await sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
 
-      // 🛡️ Fail-Proof Session Storage (Message ID + TargetChat JID දෙකටම Store කරයි)
       const sessionPayload = {
         videoUrl,
         title: cleanTitle,
