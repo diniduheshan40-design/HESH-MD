@@ -1,5 +1,8 @@
 // commands/song.js
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 let yts = null;
 try {
@@ -12,14 +15,14 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ Ultra-Fast Working Download Link Engine
-async function fetchAudioStream(videoUrl) {
+// ⚡ Heroku-Safe Working Stream Engines
+async function fetchAudioLink(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // Engine 1: Dark Yasiya API
+  // Engine 1: Dark Yasiya (High speed direct cdn)
   try {
     const res1 = await axios.get(`https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 8000,
+      timeout: 10000,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
     const dlUrl1 = res1.data?.result?.dl_link || res1.data?.result?.download;
@@ -35,7 +38,7 @@ async function fetchAudioStream(videoUrl) {
   // Engine 2: BK9 API
   try {
     const res2 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 8000
+      timeout: 10000
     });
     const dlUrl2 = res2.data?.BK9?.BK8;
     if (dlUrl2) {
@@ -47,29 +50,14 @@ async function fetchAudioStream(videoUrl) {
     }
   } catch (e) {}
 
-  // Engine 3: NexOracle API
-  try {
-    const res3 = await axios.get(`https://api.nexoracle.com/downloader/yt-audio?apikey=free_key@maher_apis&url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 8000
-    });
-    const dlUrl3 = res3.data?.result?.url || res3.data?.result?.audio;
-    if (dlUrl3) {
-      return {
-        downloadUrl: dlUrl3,
-        title: res3.data?.result?.title || 'YouTube Audio',
-        thumbnail: res3.data?.result?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
-      };
-    }
-  } catch (e) {}
-
-  throw new Error('Failed to retrieve download link.');
+  throw new Error('All download engines are currently offline.');
 }
 
 module.exports = {
   name: 'song',
   alias: ['play', 'sing', 'mp3', 'ytmp3'],
   category: 'download',
-  desc: 'Download YouTube audio directly',
+  desc: 'Download YouTube audio directly on Heroku',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -104,8 +92,10 @@ module.exports = {
     await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
 
     let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Searching Track:* _${rawInput}_\n⏳ Processing audio...`
+      text: `⚡ *Searching Track:* _${rawInput}_\n⏳ Searching audio on YouTube...`
     }, { quoted: msg }).catch(() => null);
+
+    let tempFile = null;
 
     try {
       let videoUrl = rawInput;
@@ -131,31 +121,70 @@ module.exports = {
         thumb = video.thumbnail || thumb;
       }
 
-      const songData = await fetchAudioStream(videoUrl);
+      if (statusMsg?.key) {
+        await sock.sendMessage(targetChat, { 
+          text: `⚡ *Downloading Audio:* _${videoTitle}_\n📥 Sending audio track...`, 
+          edit: statusMsg.key 
+        }).catch(() => {});
+      }
+
+      const songData = await fetchAudioLink(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
+      // 🛡️ HEROKU SAFE FILE STREAM (RAM එක පිරීම සම්පූර්ණයෙන් වළක්වයි)
+      tempFile = path.join(os.tmpdir(), `hesh_${Date.now()}.mp3`);
+      const fileStream = fs.createWriteStream(tempFile);
+
+      const downloadRes = await axios({
+        method: 'GET',
+        url: songData.downloadUrl,
+        responseType: 'stream',
+        timeout: 25000,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+
+      downloadRes.data.pipe(fileStream);
+
+      await new Promise((resolve, reject) => {
+        fileStream.on('finish', resolve);
+        fileStream.on('error', reject);
+      });
+
       const songCard = 
-`┏━━━❮ 🎧 *HESHAN AUDIO PLAYER* ❯━━━┓
-┃
-┃ ◈ *Track*    : ${cleanTitle.length > 26 ? cleanTitle.slice(0, 23) + '...' : cleanTitle}
-┃ ◈ *Artist*   : ${author.length > 22 ? author.slice(0, 19) + '...' : author}
-┃ ◈ *Duration* : ${duration}
-┃ ◈ *Quality*  : 128kbps (MP3)
-┃
-┣━━━━━━━━━━━━━━━━━━━━━
-┃ 📥 *Direct Download Link:*
-┃ ${songData.downloadUrl}
-┗━━━━━━━━━━━━━━━━━━━━━┛
+`*🎧 HESHAN-MD AUDIO PLAYER*
+━━━━━━━━━━━━━━━━━━━━━
+• *Track*    : ${cleanTitle.length > 28 ? cleanTitle.slice(0, 25) + '...' : cleanTitle}
+• *Artist*   : ${author.length > 24 ? author.slice(0, 21) + '...' : author}
+• *Length*   : ${duration}
+━━━━━━━━━━━━━━━━━━━━━
 🔗 *Pair Site :* https://heshan.devofc.top
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // Card එක Direct Download Link එක සමඟ ක්ෂණිකව යැවීම
+      // 1. Card Image (Channel context එක සහිතව)
       await sock.sendMessage(targetChat, {
         image: { url: songData.thumbnail || thumb },
         caption: songCard,
         contextInfo: channelContext
+      }, { quoted: msg }).catch(() => {});
+
+      // 2. Audio ගොනුව File Stream මඟින් යැවීම (ContextInfo රහිතව - Heroku Deadlock Bypass)
+      const audioBuffer = fs.readFileSync(tempFile);
+      await sock.sendMessage(targetChat, {
+        audio: audioBuffer,
+        mimetype: 'audio/mp4',
+        fileName: `${cleanTitle}.mp3`,
+        ptt: false
       }, { quoted: msg });
+
+      // ගොනුව යවා අවසන් වූ සැනින් RAM එක හා Disk එක නිදහස් කිරීම
+      try {
+        if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+      } catch (e) {}
+
+      if (global.gc) {
+        global.gc();
+      }
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
@@ -165,6 +194,10 @@ module.exports = {
 
     } catch (err) {
       console.error('Song Command Error:', err.message);
+
+      try {
+        if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+      } catch (e) {}
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
