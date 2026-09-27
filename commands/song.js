@@ -14,14 +14,17 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ 100% Working Fast Audio Stream Fetcher
+// ⚡ Fast Audio Fetcher
 async function fetchAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // 🥇 Primary Engine: Chamindu Official MP3 API
+  // 🥇 Primary Engine: Chamindu API
   try {
     const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=${CHAMINDU_API_KEY}`;
-    const res = await axios.get(apiUrl, { timeout: 20000 });
+    const res = await axios.get(apiUrl, { 
+      timeout: 15000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
     const data = res.data?.data || res.data?.result;
     const dlUrl = data?.download_url || data?.direct_url;
 
@@ -32,14 +35,12 @@ async function fetchAudioStream(videoUrl) {
         thumbnail: data?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
-  } catch (e) {
-    console.error('Chamindu API failed, attempting fallback...', e?.message);
-  }
+  } catch (e) {}
 
   // 🥈 Fallback Engine: BK9 API
   try {
     const res2 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 15000
+      timeout: 12000
     });
     const dlUrl2 = res2.data?.BK9?.BK8;
     if (dlUrl2) {
@@ -51,7 +52,7 @@ async function fetchAudioStream(videoUrl) {
     }
   } catch (e) {}
 
-  throw new Error('Failed to retrieve download link from API.');
+  throw new Error('Failed to retrieve download link.');
 }
 
 module.exports = {
@@ -122,29 +123,13 @@ module.exports = {
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { 
-          text: `⚡ *Downloading Audio:* _${videoTitle}_\n📥 Fetching stream from Chamindu API...`, 
+          text: `⚡ *Downloading Audio:* _${videoTitle}_\n📥 Sending audio track...`, 
           edit: statusMsg.key 
         }).catch(() => {});
       }
 
-      // 1. Chamindu API එකෙන් Direct SaveTube CDN URL එක ලබා ගැනීම
       const songData = await fetchAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
-
-      // 2. Audio ගොනුව Buffer එකක් ලෙස කෙලින්ම ලබා ගැනීම (Timeout 40s)
-      const audioRes = await axios.get(songData.downloadUrl, {
-        responseType: 'arraybuffer',
-        timeout: 40000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      });
-
-      const audioBuffer = Buffer.from(audioRes.data);
-
-      if (!audioBuffer || audioBuffer.length < 5000) {
-        throw new Error('Downloaded audio stream is invalid.');
-      }
 
       const songCard = 
 `*🎧 HESHAN-MD AUDIO PLAYER*
@@ -157,25 +142,23 @@ module.exports = {
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // 3. Thumbnail Card එක යැවීම (Channel Context සහිතයි)
+      // 1. Send Card Image (Channel context එක සහිතයි)
       await sock.sendMessage(targetChat, {
         image: { url: songData.thumbnail || thumb },
         caption: songCard,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
 
-      // 4. Audio එක WhatsApp එකට Playable MP3 එකක් ලෙස යැවීම (Channel Header රහිතයි)
-      await sock.sendMessage(targetChat, {
-        audio: audioBuffer,
-        mimetype: 'audio/mpeg',
-        fileName: `${cleanTitle}.mp3`,
-        ptt: false
-      }, { quoted: msg });
-
-      // Garbage collection මඟින් RAM එක ක්ෂණිකව නිදහස් කිරීම
-      if (global.gc) {
-        global.gc();
-      }
+      // 2. Direct Audio Stream Dispatch (Timeout 25s)
+      await Promise.race([
+        sock.sendMessage(targetChat, {
+          audio: { url: songData.downloadUrl },
+          mimetype: 'audio/mp4',
+          fileName: `${cleanTitle}.mp3`,
+          ptt: false
+        }, { quoted: msg }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('WhatsApp upload timed out')), 25000))
+      ]);
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
