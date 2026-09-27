@@ -84,7 +84,7 @@ const DEFAULT_SETTINGS = {
 };
 
 // ============================================================================
-// 🧠 RUNTIME STATE & IN-MEMORY MESSAGE STORE (ANTI-DELETE)
+// 🧠 RUNTIME STATE & IN-MEMORY MESSAGE STORE
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 300 });
@@ -94,7 +94,6 @@ const isStarting = {};
 const reconnectAttempts = {};
 const commands = new Map();
 
-// Anti-Delete In-Memory Message Vault (Holds up to 3000 recent messages)
 const messageVault = new NodeCache({ stdTTL: 86400, checkperiod: 600, maxKeys: 3000 });
 
 // ============================================================================
@@ -233,13 +232,7 @@ function renderPortalHtml(botName) {
           --text-dim: #a89498;
         }
 
-        * {
-          box-sizing: border-box;
-          margin: 0;
-          padding: 0;
-          -webkit-tap-highlight-color: transparent;
-        }
-
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
         body {
           background-color: var(--bg-black);
           background-image: 
@@ -255,23 +248,7 @@ function renderPortalHtml(botName) {
           padding: 20px;
           overflow-x: hidden;
         }
-
-        .portal-container {
-          width: 100%;
-          max-width: 430px;
-          position: relative;
-        }
-
-        .portal-container::after {
-          content: '';
-          position: absolute;
-          inset: -2px;
-          background: radial-gradient(circle, var(--crimson-glow) 0%, transparent 70%);
-          filter: blur(40px);
-          z-index: -1;
-          opacity: 0.6;
-        }
-
+        .portal-container { width: 100%; max-width: 430px; position: relative; }
         .portal-card {
           background: var(--panel-card);
           backdrop-filter: blur(30px) saturate(180%);
@@ -280,55 +257,9 @@ function renderPortalHtml(botName) {
           border-radius: 28px;
           padding: 44px 32px;
           text-align: center;
-          box-shadow: 
-            0 30px 80px rgba(0, 0, 0, 0.85),
-            0 0 35px rgba(255, 0, 60, 0.2),
-            inset 0 0 1px 1px rgba(255, 255, 255, 0.1);
+          box-shadow: 0 30px 80px rgba(0, 0, 0, 0.85), 0 0 35px rgba(255, 0, 60, 0.2);
           position: relative;
-          overflow: hidden;
         }
-
-        .portal-card::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 3px;
-          background: linear-gradient(90deg, transparent, var(--neon-red), transparent);
-          box-shadow: 0 0 15px var(--neon-red);
-        }
-
-        .status-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          background: rgba(255, 0, 60, 0.1);
-          border: 1px solid rgba(255, 0, 60, 0.35);
-          padding: 6px 16px;
-          border-radius: 99px;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 2px;
-          color: #ff4d6d;
-          text-transform: uppercase;
-          margin-bottom: 22px;
-        }
-
-        .status-dot {
-          width: 7px;
-          height: 7px;
-          background: var(--neon-red);
-          border-radius: 50%;
-          box-shadow: 0 0 12px var(--neon-red);
-          animation: pulse 1.8s infinite;
-        }
-
-        @keyframes pulse {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.3); opacity: 0.5; }
-        }
-
         .brand-title {
           font-size: 32px;
           font-weight: 900;
@@ -339,19 +270,8 @@ function renderPortalHtml(botName) {
           -webkit-text-fill-color: transparent;
           margin-bottom: 6px;
         }
-
-        .brand-subtitle {
-          color: var(--text-dim);
-          font-size: 13.5px;
-          margin-bottom: 32px;
-          font-weight: 500;
-        }
-
-        .field-group {
-          margin-bottom: 20px;
-          position: relative;
-        }
-
+        .brand-subtitle { color: var(--text-dim); font-size: 13.5px; margin-bottom: 32px; }
+        .field-group { margin-bottom: 20px; position: relative; }
         .phone-field {
           width: 100%;
           padding: 18px 22px;
@@ -361,24 +281,10 @@ function renderPortalHtml(botName) {
           color: #ffffff;
           font-size: 18px;
           font-weight: 700;
-          letter-spacing: 1px;
           text-align: center;
           outline: none;
-          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
-
-        .phone-field::placeholder {
-          color: rgba(255, 255, 255, 0.22);
-          font-weight: 400;
-          letter-spacing: 0;
-        }
-
-        .phone-field:focus {
-          border-color: var(--neon-red);
-          background: rgba(18, 2, 6, 0.95);
-          box-shadow: 0 0 30px rgba(255, 0, 60, 0.35);
-        }
-
+        .phone-field:focus { border-color: var(--neon-red); }
         .btn-generate {
           width: 100%;
           padding: 18px;
@@ -388,225 +294,56 @@ function renderPortalHtml(botName) {
           color: #ffffff;
           font-size: 15px;
           font-weight: 800;
-          letter-spacing: 1px;
-          text-transform: uppercase;
           cursor: pointer;
-          position: relative;
-          overflow: hidden;
-          transition: all 0.3s ease;
-          box-shadow: 0 10px 30px rgba(255, 0, 60, 0.4);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          min-height: 58px;
         }
-
-        .btn-generate:hover:not(:disabled) {
-          transform: translateY(-2px);
-          box-shadow: 0 15px 40px rgba(255, 0, 60, 0.6);
-          filter: brightness(1.1);
-        }
-
-        .btn-generate:disabled {
-          opacity: 0.85;
-          cursor: not-allowed;
-        }
-
-        .spinner {
-          display: none;
-          width: 22px;
-          height: 22px;
-          border: 3px solid rgba(255, 255, 255, 0.25);
-          border-top-color: #ffffff;
-          border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-
-        .code-panel {
-          display: none;
-          margin-top: 26px;
-          animation: glowIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-
-        @keyframes glowIn {
-          from { opacity: 0; transform: scale(0.92) translateY(10px); }
-          to { opacity: 1; transform: scale(1) translateY(0); }
-        }
-
-        .code-badge {
-          font-size: 11px;
-          font-weight: 700;
-          color: var(--text-dim);
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          margin-bottom: 8px;
-        }
-
+        .code-panel { display: none; margin-top: 26px; }
         .code-display {
           font-family: 'JetBrains Mono', monospace;
           font-size: 34px;
           font-weight: 800;
-          letter-spacing: 6px;
           color: #ffffff;
           background: rgba(255, 0, 60, 0.12);
           border: 2px dashed rgba(255, 0, 60, 0.55);
           border-radius: 18px;
           padding: 18px;
           cursor: pointer;
-          position: relative;
-          box-shadow: 0 0 35px rgba(255, 0, 60, 0.25);
-          transition: all 0.25s ease;
-        }
-
-        .code-hint {
-          font-size: 12px;
-          color: var(--text-dim);
-          margin-top: 10px;
-        }
-
-        .toast {
-          position: fixed;
-          top: 24px;
-          left: 50%;
-          transform: translateX(-50%) translateY(-100px);
-          background: rgba(18, 3, 6, 0.95);
-          border: 1px solid var(--neon-red);
-          box-shadow: 0 10px 40px rgba(255, 0, 60, 0.5);
-          color: #ffffff;
-          padding: 12px 24px;
-          border-radius: 50px;
-          font-size: 13.5px;
-          font-weight: 700;
-          backdrop-filter: blur(20px);
-          z-index: 9999;
-          transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          opacity: 0;
-          pointer-events: none;
-        }
-
-        .toast.show {
-          transform: translateX(-50%) translateY(0);
-          opacity: 1;
-        }
-
-        .footer {
-          margin-top: 30px;
-          font-size: 11px;
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          color: rgba(255, 255, 255, 0.25);
-          font-weight: 600;
         }
       </style>
     </head>
     <body>
-      <div id="toast" class="toast">
-        <span>⚡</span>
-        <span id="toastMsg">Code Copied Automatically!</span>
-      </div>
-
       <div class="portal-container">
         <div class="portal-card">
-          <div class="status-pill">
-            <span class="status-dot"></span> System Ready
-          </div>
           <h1 class="brand-title">${botName}</h1>
           <p class="brand-subtitle">Enter WhatsApp number with country code</p>
-
           <div class="field-group">
             <input type="tel" id="phone" class="phone-field" placeholder="e.g. 9471xxxxxxx" autofocus />
           </div>
-
-          <button id="genBtn" class="btn-generate" onclick="generatePairCode()">
-            <span class="spinner" id="btnSpinner"></span>
-            <span id="btnText">GENERATE PAIR CODE</span>
-          </button>
-
+          <button id="genBtn" class="btn-generate" onclick="generatePairCode()">GENERATE PAIR CODE</button>
           <div class="code-panel" id="codePanel">
-            <div class="code-badge">Pairing Code (Click to Copy)</div>
-            <div class="code-display" id="codeDisplay" onclick="copyCodeManually()"></div>
-            <div class="code-hint">Code automatically copied to clipboard!</div>
+            <div class="code-display" id="codeDisplay"></div>
           </div>
-
-          <p class="footer">Heshan MD • Ultra Engine</p>
         </div>
       </div>
-
       <script>
-        function showToast(text) {
-          const toast = document.getElementById('toast');
-          const toastMsg = document.getElementById('toastMsg');
-          toastMsg.innerText = text;
-          toast.classList.add('show');
-          setTimeout(() => { toast.classList.remove('show'); }, 3500);
-        }
-
         async function generatePairCode() {
-          const phoneInput = document.getElementById('phone');
-          const cleanPhone = phoneInput.value.replace(/[^0-9]/g, '');
-          
-          if (!cleanPhone || cleanPhone.length < 10) {
-            showToast('⚠️ කරුණාකර නිවැරදි Country Code සහිත අංකය ඇතුළත් කරන්න!');
-            return;
-          }
-
+          const cleanPhone = document.getElementById('phone').value.replace(/[^0-9]/g, '');
+          if (!cleanPhone || cleanPhone.length < 10) return alert('Enter valid number with country code!');
           const btn = document.getElementById('genBtn');
-          const btnText = document.getElementById('btnText');
-          const spinner = document.getElementById('btnSpinner');
-          const panel = document.getElementById('codePanel');
-          const display = document.getElementById('codeDisplay');
-
+          btn.innerText = 'GENERATING...';
           btn.disabled = true;
-          spinner.style.display = 'block';
-          btnText.innerText = 'GENERATING...';
-          panel.style.display = 'none';
-
           try {
             const res = await fetch('/pair?num=' + cleanPhone);
             const data = await res.json();
-
             if (data.code) {
-              display.innerText = data.code;
-              panel.style.display = 'block';
-
-              if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(data.code).catch(() => {});
-              }
-              showToast('✅ Code Copied: ' + data.code);
+              document.getElementById('codeDisplay').innerText = data.code;
+              document.getElementById('codePanel').style.display = 'block';
+              if (navigator.clipboard) navigator.clipboard.writeText(data.code).catch(()=>{});
             } else {
-              showToast(data.error || 'Connection rate-limited. Please wait 15 seconds.');
+              alert(data.error || 'Rate limited. Wait a few seconds.');
             }
-          } catch(e) {
-            showToast('Server error! Please refresh and retry.');
-          } finally {
-            btn.disabled = false;
-            spinner.style.display = 'none';
-            btnText.innerText = 'GENERATE PAIR CODE';
-          }
+          } catch(e) { alert('Server error'); }
+          finally { btn.innerText = 'GENERATE PAIR CODE'; btn.disabled = false; }
         }
-
-        function copyCodeManually() {
-          const code = document.getElementById('codeDisplay').innerText;
-          if (code) {
-            navigator.clipboard.writeText(code).then(() => {
-              showToast('✅ Copied to clipboard: ' + code);
-            }).catch(() => {
-              showToast('✅ Pair Code: ' + code);
-            });
-          }
-        }
-
-        document.getElementById('phone').addEventListener('keypress', function(e) {
-          if (e.key === 'Enter') generatePairCode();
-        });
       </script>
     </body>
     </html>
@@ -620,7 +357,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION (ANTI-FLICKER & STABLE TIMEOUTS)
+// 🔌 SOCKET CREATION (CRASH-PROOF & LEAN)
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -682,7 +419,6 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
 
   if (statusCode === 440) {
     delayTime = 15000;
-    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting 15s before reconnect...`);
   } else if (reconnectAttempts[phoneNumber] > 5) {
     delayTime = 30000;
   }
@@ -692,88 +428,9 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   }, delayTime);
 }
 
-async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
-  await delay(2500);
-  try {
-    const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
-    if (typeof sock.newsletterMetadata === 'function' && typeof sock.newsletterFollow === 'function') {
-      const channelMeta = await sock.newsletterMetadata('invite', inviteCode);
-      if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
-    }
-  } catch (e) {}
-
-  try {
-    const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X';
-    if (typeof sock.groupAcceptInvite === 'function') {
-      await sock.groupAcceptInvite(groupInviteCode);
-    }
-  } catch (e) {}
-}
-
-function buildConnectedMessage(botNum) {
-  return `*✦ ${BOT_NAME} CONNECTED ✦*
-━━━━━━━━━━━━━━━━━━━━━
-• *Number*    : +${botNum}
-• *Engine*    : HESHAN-MD V2
-• *Features*  : Auto Status | Anti-Delete
-• *State*     : Online (24/7 Cloud)
-━━━━━━━━━━━━━━━━━━━━━
-> Type *.menu* to explore all commands.`.trim();
-}
-
-async function sendFirstConnectAlerts(sock, phoneNumber) {
-  try {
-    const botNum = sock.user?.id
-      ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '')
-      : phoneNumber.replace(/[^0-9]/g, '');
-
-    const botJid = `${botNum}@s.whatsapp.net`;
-    const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
-
-    const currentSettings = await getBotSettings(botNum);
-    if (currentSettings.isFirstConnectDone) return;
-
-    const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
-    const connectedMsg = buildConnectedMessage(botNum);
-
-    const connectPayload = {
-      image: { url: sessionLogo },
-      caption: connectedMsg,
-      ...global.channelContext
-    };
-
-    await sock.sendMessage(botJid, connectPayload).catch(() => {
-      sock.sendMessage(botJid, { text: connectedMsg, ...global.channelContext }).catch(() => {});
-    });
-
-    if (!botNum.includes(REAL_OWNER_NUMBER)) {
-      const alertMsg = `*🔔 ALERT : NEW SESSION CONNECTED*
-━━━━━━━━━━━━━━━━━━━━━
-• *Number* : +${botNum}
-• *System* : Initialized successfully
-━━━━━━━━━━━━━━━━━━━━━`;
-      await sock.sendMessage(creatorJid, { text: alertMsg, ...global.channelContext }).catch(() => {});
-    }
-
-    await SettingsModel.findByIdAndUpdate(botNum, { isFirstConnectDone: true }, { upsert: true });
-    clearSettingsCache(botNum);
-  } catch (e) {}
-}
-
 function handleConnectionOpen(sock, phoneNumber) {
   console.log(`✅ BOT CONNECTED: ${phoneNumber}`);
   reconnectAttempts[phoneNumber] = 0;
-  
-  getBotSettings(phoneNumber).then(st => {
-    if (st.alwaysOnline === 'on') {
-      sock.sendPresenceUpdate('available').catch(() => {});
-    } else if (st.alwaysOnline === 'offline') {
-      sock.sendPresenceUpdate('unavailable').catch(() => {});
-    }
-  });
-
-  autoFollowChannelAndJoinGroup(sock, phoneNumber);
-  setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
 }
 
 function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
@@ -791,57 +448,14 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 // 💬 MESSAGE HANDLING & ANTI-DELETE ENGINE
 // ============================================================================
 
-async function reactToChannelPost(sock, msg, chatJid) {
-  try {
-    const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-    await delay(Math.floor(Math.random() * 3000) + 1200);
-
-    const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
-    if (typeof sock.newsletterReactMessage === 'function' && serverId) {
-      await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
-    } else {
-      await sock.sendMessage(chatJid, { react: { text: randomEmoji, key: msg.key } });
-    }
-  } catch (err) {}
-}
-
-async function simulateAutoPresence(sock, chatJid, settings) {
-  if (!settings.autoPresence || settings.autoPresence === 'off') return;
-  try {
-    const type = settings.autoPresence === 'recording' ? 'recording' : 'composing';
-    await sock.sendPresenceUpdate(type, chatJid);
-  } catch (err) {}
-}
-
-async function handleStatusBroadcast(sock, msg, settings) {
-  if (!settings.autoStatusSeen) return;
-  try {
-    await sock.readMessages([msg.key]);
-    if (settings.statusReact && msg.key.participant) {
-      let emoji = settings.statusReactEmoji || '💚';
-      if (emoji === 'random') {
-        emoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-      }
-      await sock.sendMessage(
-        'status@broadcast',
-        { react: { text: emoji, key: msg.key } },
-        { statusJidList: [msg.key.participant] }
-      );
-    }
-  } catch (e) {}
-}
-
 function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
   if (msg.key.fromMe) return myBotJid;
-  if (isGroup) {
-    return msg.key?.participant || msg.participant || '';
-  }
+  if (isGroup) return msg.key?.participant || msg.participant || '';
   return chatJid;
 }
 
 async function resolveLidToRealJid(sock, originalSender) {
-  if (!originalSender) return '';
-  if (!originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
+  if (!originalSender || !originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
     return originalSender;
   }
   try {
@@ -866,16 +480,6 @@ function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
   return isOwner || msg.key.fromMe || (Boolean(myBotNum) && cleanSenderNum === myBotNum);
 }
 
-function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
-  if (isAuthorized) return false;
-  const mode = String(workMode || 'public').toLowerCase().trim();
-  if (mode === 'public') return false;
-  if (mode === 'private' || mode === 'self') return true;
-  if ((mode === 'groups' || mode === 'group') && !isGroup) return true;
-  if (mode === 'inbox' && isGroup) return true;
-  return false;
-}
-
 function unwrapMessageContent(message) {
   return (
     message?.ephemeralMessage?.message ||
@@ -892,8 +496,6 @@ function extractMessageText(rawMsg) {
     rawMsg?.extendedTextMessage?.text ||
     rawMsg?.imageMessage?.caption ||
     rawMsg?.videoMessage?.caption ||
-    rawMsg?.buttonsResponseMessage?.selectedButtonId ||
-    rawMsg?.templateButtonReplyMessage?.selectedId ||
     ''
   ).trim();
 }
@@ -901,32 +503,13 @@ function extractMessageText(rawMsg) {
 function buildSafeReply(sock, chatJid, msg) {
   return async (content) => {
     let replyPayload = typeof content === 'string' ? { text: content } : { ...content };
-    
-    replyPayload.contextInfo = {
-      ...(replyPayload.contextInfo || {}),
-      ...(global.channelContext?.contextInfo || {})
-    };
-
+    replyPayload.contextInfo = { ...(replyPayload.contextInfo || {}), ...(global.channelContext?.contextInfo || {}) };
     try {
       return await sock.sendMessage(chatJid, replyPayload, { quoted: msg });
     } catch (e) {
       return await sock.sendMessage(chatJid, replyPayload);
     }
   };
-}
-
-function isSettingsMenuOption(cleanInput) {
-  return (
-    /^([1-9]|1[0-2])(\.[1-4])?$/.test(cleanInput) ||
-    cleanInput.startsWith('4 ') ||
-    cleanInput.startsWith('6 ') ||
-    cleanInput.startsWith('pin ') ||
-    cleanInput.startsWith('set ') ||
-    cleanInput.startsWith('antisend ') ||
-    cleanInput.startsWith('antidel ') ||
-    cleanInput === 'react green' ||
-    cleanInput === 'react random'
-  );
 }
 
 function extractQuotedCaption(quotedMsgObj) {
@@ -937,153 +520,6 @@ function extractQuotedCaption(quotedMsgObj) {
     quotedMsgObj?.extendedTextMessage?.text ||
     ''
   );
-}
-
-function isQuotedFromSettingsMenu(quotedCaption) {
-  return (
-    quotedCaption.includes('HESHAN-MD SYSTEM SETTINGS') ||
-    quotedCaption.includes('SYSTEM SETTINGS') ||
-    quotedCaption.includes('WORK MODE') ||
-    quotedCaption.includes('FAKE ACTION') ||
-    quotedCaption.includes('ANTI-DELETE')
-  );
-}
-
-function isQuotedFromMainMenu(quotedCaption) {
-  return (
-    quotedCaption.includes('COMMAND CATEGORIES') ||
-    quotedCaption.includes('DOWNLOAD MENU') ||
-    (quotedCaption.includes('USER PROFILE') && quotedCaption.includes('Prefix'))
-  );
-}
-
-async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum) {
-  const settingsCmd = findCommand('settings', 'setting', 'set');
-  if (!settingsCmd) return false;
-  const cmdFunc = getCommandExecutor(settingsCmd);
-  if (!cmdFunc) return false;
-
-  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-  clearSettingsCache(myBotNum);
-  return true;
-}
-
-async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized) {
-  const statusCmd = findCommand('save', 'status');
-  if (!statusCmd) return false;
-  const cmdFunc = getCommandExecutor(statusCmd);
-  if (!cmdFunc) return false;
-
-  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-  return true;
-}
-
-// 🛡️ ANTI-DELETE REAL-TIME PROCESSOR
-async function handleAntiDelete(sock, deletedMsgKey, botNum) {
-  try {
-    const settings = await getBotSettings(botNum);
-    if (!settings.antiDeleteEnabled) return;
-
-    const msgId = deletedMsgKey?.id;
-    if (!msgId) return;
-
-    const saved = messageVault.get(msgId);
-    if (!saved || !saved.message) return;
-
-    const isGroup = saved.chatJid.endsWith('@g.us');
-    const scope = settings.antiDeleteType || 'all';
-
-    if (scope === 'inbox' && isGroup) return;
-    if (scope === 'group' && !isGroup) return;
-
-    const targetDest = settings.antiDeleteDest === 'from' ? saved.chatJid : `${botNum}@s.whatsapp.net`;
-    const sender = saved.sender.split('@')[0];
-    const timeStr = new Date(saved.timestamp * 1000).toLocaleTimeString();
-
-    const banner = `🛡️ *[ ANTI-DELETE DETECTED ]* 🛡️\n` +
-      `━━━━━━━━━━━━━━━━━━━━━\n` +
-      `• *From*   : @${sender}\n` +
-      `• *Chat*   : ${isGroup ? 'Group' : 'Inbox'}\n` +
-      `• *Time*   : ${timeStr}\n` +
-      `━━━━━━━━━━━━━━━━━━━━━`;
-
-    const raw = unwrapMessageContent(saved.message);
-
-    if (raw.conversation || raw.extendedTextMessage) {
-      const text = raw.conversation || raw.extendedTextMessage.text;
-      await sock.sendMessage(targetDest, {
-        text: `${banner}\n\n*Deleted Message :*\n${text}`,
-        mentions: [saved.sender],
-        ...global.channelContext
-      });
-    } else if (raw.imageMessage) {
-      const stream = await downloadContentFromMessage(raw.imageMessage, 'image');
-      let buffer = Buffer.from([]);
-      for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
-      await sock.sendMessage(targetDest, {
-        image: buffer,
-        caption: `${banner}\n\n*Caption :* ${raw.imageMessage.caption || 'None'}`,
-        mentions: [saved.sender],
-        ...global.channelContext
-      });
-    } else if (raw.videoMessage) {
-      const stream = await downloadContentFromMessage(raw.videoMessage, 'video');
-      let buffer = Buffer.from([]);
-      for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
-      await sock.sendMessage(targetDest, {
-        video: buffer,
-        caption: `${banner}\n\n*Caption :* ${raw.videoMessage.caption || 'None'}`,
-        mentions: [saved.sender],
-        ...global.channelContext
-      });
-    } else if (raw.audioMessage) {
-      const stream = await downloadContentFromMessage(raw.audioMessage, 'audio');
-      let buffer = Buffer.from([]);
-      for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
-      await sock.sendMessage(targetDest, {
-        audio: buffer,
-        mimetype: raw.audioMessage.mimetype || 'audio/mp4',
-        ptt: Boolean(raw.audioMessage.ptt)
-      });
-    }
-  } catch (err) {
-    console.error('Anti-Delete Execution Error:', err.message);
-  }
-}
-
-async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum) {
-  const prefixMatch = text.match(/^[./!#]/);
-  if (!prefixMatch) return false;
-
-  const prefix = prefixMatch[0];
-  const args = text.slice(prefix.length).trim().split(/ +/);
-  const commandName = args.shift().toLowerCase();
-
-  const isSettingsCmd = ['setting', 'settings', 'set', 'config'].includes(commandName);
-
-  if (isSettingsCmd && !isAuthorized) {
-    await safeReply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
-    return true;
-  }
-
-  if (shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
-    return true;
-  }
-
-  let targetCmd = commands.get(commandName);
-  if (!targetCmd && isSettingsCmd) targetCmd = findCommand('settings', 'setting', 'set');
-  if (!targetCmd) return false;
-
-  try {
-    const cmdFunc = getCommandExecutor(targetCmd);
-    if (cmdFunc) {
-      await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized, isGroup });
-      if (isSettingsCmd) clearSettingsCache(myBotNum);
-    }
-  } catch (err) {
-    console.error(`Command [${commandName}] execution error:`, err?.message);
-  }
-  return true;
 }
 
 // ============================================================================
@@ -1099,228 +535,169 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const myBotJid = sock.user?.id || '';
   const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
 
-  // 🛡️ Save to Anti-Delete Vault
-  if (msg.key?.id && !msg.key.fromMe && chatJid !== 'status@broadcast') {
-    const sender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
-    messageVault.set(msg.key.id, {
-      chatJid,
-      sender,
-      message: msg.message,
-      timestamp: msg.messageTimestamp || Math.floor(Date.now() / 1000)
-    });
-  }
-
-  // Handle Protocol Revoke (Message Deletion)
   const rawMsg = unwrapMessageContent(msg.message);
-  if (rawMsg?.protocolMessage?.type === 0 || rawMsg?.protocolMessage?.type === 'REVOKE') {
-    const deletedKey = rawMsg.protocolMessage.key;
-    await handleAntiDelete(sock, deletedKey, myBotNum);
-    return;
-  }
-
   const text = extractMessageText(rawMsg);
   if (!text || msg.message.reactionMessage) return;
 
   const cleanInput = text.toLowerCase().trim();
-  const isPrefixCommand = /^[./!#]/.test(text.trim());
-  const isNumericMenuReply = /^[1-4]$/.test(cleanInput);
-  const statusKeywords = ['oni', 'ඕනි', 'ඕනෙ', 'dapan', 'දාපන්', 'ewanna', 'එවන්න', 'save', 'status'];
-  const isSpecialAction = isSettingsMenuOption(cleanInput) || statusKeywords.includes(cleanInput);
-
-  if (msg.key.fromMe && !isPrefixCommand && !isNumericMenuReply && !isSpecialAction) return;
-
-  const isChannel = chatJid === UPDATE_CHANNEL_JID || chatJid.endsWith('@newsletter');
-  if (isChannel) {
-    reactToChannelPost(sock, msg, chatJid);
-  }
-
-  const settings = await getBotSettings(myBotNum);
-
-  if (!isChannel) {
-    if (settings.autoChatRead && !msg.key.fromMe) {
-      sock.readMessages([msg.key]).catch(() => {});
-    }
-    if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
-  }
-
-  if (chatJid === 'status@broadcast') {
-    await handleStatusBroadcast(sock, msg, settings);
-    return;
-  }
-
-  const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
-  const resolvedSender = await resolveLidToRealJid(sock, originalSender);
-  const isOwner = checkIsOwner(originalSender, resolvedSender);
-
-  const cleanSenderNum = (resolvedSender || originalSender || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
-  const currentMode = settings.workMode || 'public';
-
   const safeReply = buildSafeReply(sock, chatJid, msg);
-
-  if (isChannel) {
-    if (text.startsWith('.setchannel') || text.startsWith('!setchannel') || text.startsWith('#setchannel')) {
-      const setCmd = findCommand('setchannel');
-      if (setCmd) {
-        const cmdFunc = getCommandExecutor(setCmd);
-        const args = text.trim().split(/ +/).slice(1);
-        if (cmdFunc) {
-          await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: true, isChannel: true });
-        }
-      }
-    }
-    return;
-  }
 
   const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
   const quotedMsgObj = quotedContext?.quotedMessage;
-
-  // 🎵 Interactive Music Menu Reply Handler (Chamindu High-Speed API)
+  const quotedCaption = extractQuotedCaption(quotedMsgObj);
   const quotedMsgId = quotedContext?.stanzaId;
-  const hasSession = (quotedMsgId && global.songSessions?.has(quotedMsgId)) || global.songSessions?.has(chatJid);
 
-  if (hasSession && ['1', '2', '3'].includes(cleanInput)) {
+  // 🛡️ Track Song Card Replying
+  const isSongCardReply = quotedCaption.includes('TRACK INFO') || 
+                          quotedCaption.includes('SELECT FORMAT') || 
+                          quotedCaption.includes('HESHAN AUDIO BEATS') ||
+                          quotedCaption.includes('AUDIO (MP3)');
+
+  const hasSongSession = isSongCardReply || 
+                         (quotedMsgId && global.songSessions?.has(quotedMsgId)) || 
+                         global.songSessions?.has(chatJid);
+
+  // ============================================================================
+  // 🎵 1. CRASH-PROOF STREAMING SONG DOWNLOADER (NO RAM BUFFER OVERLOAD)
+  // ============================================================================
+  if (hasSongSession && ['1', '2', '3'].includes(cleanInput)) {
     const session = (quotedMsgId && global.songSessions.get(quotedMsgId)) || global.songSessions.get(chatJid);
-    
-    if (quotedMsgId) global.songSessions.delete(quotedMsgId);
-    global.songSessions.delete(chatJid);
 
-    await sock.sendMessage(chatJid, { react: { text: "⏳", key: msg.key } }).catch(() => {});
+    if (session && session.videoUrl) {
+      if (quotedMsgId) global.songSessions.delete(quotedMsgId);
+      global.songSessions.delete(chatJid);
 
-    try {
-      const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
-      const targetUrl = encodeURIComponent(session.videoUrl);
-      const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${targetUrl}&quality=320kbps&format=mp3&api_key=${apiKey}`;
+      await sock.sendMessage(chatJid, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
-      const res = await axios.get(apiUrl, { 
-        timeout: 25000,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
+      try {
+        const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
+        const targetUrl = encodeURIComponent(session.videoUrl);
+        const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${targetUrl}&quality=320kbps&format=mp3&api_key=${apiKey}`;
 
-      const dlUrl = res.data?.download_url || 
-                    res.data?.direct_url || 
-                    res.data?.data?.download_url || 
-                    res.data?.data?.direct_url;
+        const res = await axios.get(apiUrl, { timeout: 20000, headers: { 'User-Agent': 'Mozilla/5.0' } });
 
-      if (!dlUrl) {
-        throw new Error('Direct download link generation failed.');
-      }
+        const dlUrl = res.data?.download_url || 
+                      res.data?.direct_url || 
+                      res.data?.data?.download_url || 
+                      res.data?.data?.direct_url;
 
-      await sock.sendMessage(chatJid, { react: { text: "⬇️", key: msg.key } }).catch(() => {});
-
-      const audioStream = await axios.get(dlUrl, {
-        responseType: 'arraybuffer',
-        timeout: 60000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'Referer': 'https://savetube.me/'
+        if (!dlUrl) {
+          throw new Error('Download URL not found in API response.');
         }
-      });
 
-      const audioBuffer = Buffer.from(audioStream.data);
-      const songTitle = session.title || res.data?.title || res.data?.data?.title || 'Song';
+        await sock.sendMessage(chatJid, { react: { text: "⬇️", key: msg.key } }).catch(() => {});
 
-      await sock.sendMessage(chatJid, { react: { text: "⬆️", key: msg.key } }).catch(() => {});
+        const songTitle = session.title || res.data?.title || res.data?.data?.title || 'Song';
 
-      if (cleanInput === '1') {
-        // [1] Playable Audio MP3
-        await sock.sendMessage(chatJid, {
-          audio: audioBuffer,
-          mimetype: 'audio/mp4',
-          fileName: `${songTitle}.mp3`,
-          ptt: false,
-          contextInfo: {
-            externalAdReply: {
-              title: songTitle,
-              body: 'HESHAN-MD AUDIO ENGINE',
-              thumbnailUrl: session.thumb || res.data?.thumbnail,
-              sourceUrl: session.videoUrl,
-              mediaType: 2,
-              renderLargerThumbnail: true
+        // ⚠️ RAM Overload Fix: Stream directly via URL to Baileys without loading into Node Buffer
+        if (cleanInput === '1') {
+          // [1] Playable Audio MP3
+          await sock.sendMessage(chatJid, {
+            audio: { url: dlUrl },
+            mimetype: 'audio/mp4',
+            fileName: `${songTitle}.mp3`,
+            ptt: false,
+            contextInfo: {
+              externalAdReply: {
+                title: songTitle,
+                body: 'HESHAN-MD AUDIO ENGINE',
+                thumbnailUrl: session.thumb || res.data?.thumbnail,
+                sourceUrl: session.videoUrl,
+                mediaType: 2,
+                renderLargerThumbnail: true
+              }
             }
-          }
-        }, { quoted: msg });
-      } else if (cleanInput === '2') {
-        // [2] Document HQ File
-        await sock.sendMessage(chatJid, {
-          document: audioBuffer,
-          mimetype: 'audio/mpeg',
-          fileName: `${songTitle}.mp3`,
+          }, { quoted: msg });
+        } else if (cleanInput === '2') {
+          // [2] Document File
+          await sock.sendMessage(chatJid, {
+            document: { url: dlUrl },
+            mimetype: 'audio/mpeg',
+            fileName: `${songTitle}.mp3`,
+            contextInfo: global.channelContext?.contextInfo
+          }, { quoted: msg });
+        } else if (cleanInput === '3') {
+          // [3] Voice Note
+          await sock.sendMessage(chatJid, {
+            audio: { url: dlUrl },
+            mimetype: 'audio/ogg; codecs=opus',
+            ptt: true
+          }, { quoted: msg });
+        }
+
+        await sock.sendMessage(chatJid, { react: { text: "✅", key: msg.key } }).catch(() => {});
+        return;
+      } catch (e) {
+        console.error('Song Stream Error:', e?.message || e);
+        await sock.sendMessage(chatJid, { react: { text: "❌", key: msg.key } }).catch(() => {});
+        await sock.sendMessage(chatJid, { 
+          text: `❌ *ගීතය ලබාගැනීමේදී දෝෂයක් මතු විය!* (${e?.message || 'Server Timeout'})`,
           contextInfo: global.channelContext?.contextInfo
         }, { quoted: msg });
-      } else if (cleanInput === '3') {
-        // [3] Voice Note (PTT Waveform)
-        await sock.sendMessage(chatJid, {
-          audio: audioBuffer,
-          mimetype: 'audio/ogg; codecs=opus',
-          ptt: true
-        }, { quoted: msg });
-      }
-
-      await sock.sendMessage(chatJid, { react: { text: "✅", key: msg.key } }).catch(() => {});
-      return;
-    } catch (e) {
-      console.error('Interactive Menu Download Error:', e?.message);
-      await sock.sendMessage(chatJid, { react: { text: "❌", key: msg.key } }).catch(() => {});
-      await sock.sendMessage(chatJid, { 
-        text: `❌ *ගීතය බාගත කිරීමේදී දෝෂයක් මතු විය!* (${e?.message || 'Server Timeout'})`,
-        contextInfo: global.channelContext?.contextInfo
-      }, { quoted: msg });
-      return;
-    }
-  }
-
-  // 🎯 ViewOnce Quick Emoji Save
-  const TRIGGER_EMOJIS = ['❤️', '🥺', '😚', '🌚', '😼', '😂', '🫡', '🥱', '🙌', '🖤', '👍', '🤣', '🥰', '🫢', '🤭', '🫣', 'vv'];
-  if (quotedMsgObj && TRIGGER_EMOJIS.includes(cleanInput)) {
-    const saveCmd = findCommand('save', 'vv');
-    if (saveCmd) {
-      const cmdFunc = getCommandExecutor(saveCmd);
-      if (cmdFunc) {
-        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized, isGroup });
         return;
       }
     }
   }
 
-  const quotedCaption = extractQuotedCaption(quotedMsgObj);
-  const fromSettingsMenu = isQuotedFromSettingsMenu(quotedCaption);
-  const fromMainMenu = isQuotedFromMainMenu(quotedCaption);
+  // ============================================================================
+  // ⚙️ 2. SETTINGS MENU EXECUTOR
+  // ============================================================================
+  const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
+  const resolvedSender = await resolveLidToRealJid(sock, originalSender);
+  const isOwner = checkIsOwner(originalSender, resolvedSender);
+  const cleanSenderNum = (resolvedSender || originalSender || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
 
-  if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
-    if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
-      const menuCmd = findCommand('menu', 'help', 'list');
-      if (menuCmd) {
-        const cmdFunc = getCommandExecutor(menuCmd);
-        if (cmdFunc) {
-          await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized, isGroup });
-          return;
-        }
+  const isSettingsCmdPattern = cleanInput.startsWith('set ') || 
+                               cleanInput.startsWith('pin ') || 
+                               cleanInput.startsWith('antisend ') || 
+                               cleanInput.startsWith('antidel ') ||
+                               /^([1-9]|1[0-2])\.[1-4]$/.test(cleanInput);
+
+  const fromSettingsMenu = quotedCaption.includes('HESHAN-MD SYSTEM SETTINGS') || quotedCaption.includes('SYSTEM SETTINGS');
+
+  if (isAuthorized && !isSongCardReply && (fromSettingsMenu || isSettingsCmdPattern)) {
+    const settingsCmd = findCommand('settings', 'setting', 'set');
+    if (settingsCmd) {
+      const cmdFunc = getCommandExecutor(settingsCmd);
+      if (cmdFunc) {
+        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
+        clearSettingsCache(myBotNum);
+        return;
       }
     }
   }
 
-  if (isAuthorized && (fromSettingsMenu || isSettingsMenuOption(cleanInput)) && !fromMainMenu) {
-    const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
-    if (handled) return;
+  // ============================================================================
+  // ⚡ 3. STANDARD PREFIX COMMANDS (.song, .menu, etc.)
+  // ============================================================================
+  const prefixMatch = text.match(/^[./!#]/);
+  if (!prefixMatch) return;
+
+  const prefix = prefixMatch[0];
+  const args = text.slice(prefix.length).trim().split(/ +/);
+  const commandName = args.shift().toLowerCase();
+
+  let targetCmd = commands.get(commandName);
+  if (!targetCmd && ['setting', 'settings', 'set', 'config'].includes(commandName)) {
+    targetCmd = findCommand('settings', 'setting', 'set');
   }
 
-  const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
-
-  if (quotedMsgObj && (isQuotedFromStatus || statusKeywords.includes(cleanInput))) {
-    if (statusKeywords.includes(cleanInput)) {
-      const handled = await handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized);
-      if (handled) return;
+  if (targetCmd) {
+    const cmdFunc = getCommandExecutor(targetCmd);
+    if (cmdFunc) {
+      try {
+        await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: isAuthorized, isGroup });
+      } catch (err) {
+        console.error(`Command [${commandName}] execution error:`, err?.message);
+      }
     }
   }
-
-  await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
 }
 
 function registerMessageUpsertHandler(sock, phoneNumber) {
   sock.ev.removeAllListeners('messages.upsert');
-  
-  sock.ev.on('messages.upsert', ({ messages, type }) => {
+  sock.ev.on('messages.upsert', ({ messages }) => {
     if (!messages || !messages.length) return;
     for (const msg of messages) {
       processSingleMessage(sock, msg, phoneNumber).catch(() => {});
@@ -1329,7 +706,7 @@ function registerMessageUpsertHandler(sock, phoneNumber) {
 }
 
 // ============================================================================
-// 🚀 MAIN WHATSAPP INITIALIZER
+// 🚀 INITIALIZATION
 // ============================================================================
 
 async function initWhatsApp(phoneNumber) {
@@ -1352,10 +729,6 @@ async function initWhatsApp(phoneNumber) {
   }
 }
 
-// ============================================================================
-// 🌐 HTTP ROUTES & ULTRA-STABLE PAIRING ENGINE
-// ============================================================================
-
 function stopAndRemoveSession(num) {
   if (!activeSessions[num]) return;
   try {
@@ -1364,40 +737,6 @@ function stopAndRemoveSession(num) {
     activeSessions[num].ws?.close();
   } catch (e) {}
   delete activeSessions[num];
-}
-
-function registerResetAllRoute(app) {
-  app.get('/reset', async (req, res) => {
-    try {
-      await Auth.deleteMany({});
-      if (mongoose.connection.db) {
-        await mongoose.connection.db.collection('auths').deleteMany({});
-      }
-      Object.keys(activeSessions).forEach(num => {
-        stopAndRemoveSession(num);
-      });
-      settingsCache.flushAll();
-      res.json({ success: true, message: 'All sessions successfully wiped!' });
-    } catch (err) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-}
-
-function registerResetSingleNumberRoute(app) {
-  app.get('/reset-num', async (req, res) => {
-    let num = req.query.num;
-    if (!num) return res.status(400).json({ error: 'Number required' });
-    num = num.replace(/[^0-9]/g, '');
-
-    try {
-      stopAndRemoveSession(num);
-      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
-      return res.json({ success: true, message: `Session cleared for ${num}` });
-    } catch (err) {
-      return res.status(500).json({ error: err.message });
-    }
-  });
 }
 
 function registerPairRoute(app) {
@@ -1469,35 +808,20 @@ function registerPairRoute(app) {
 
 function registerAllHttpRoutes(app) {
   registerPortalRoute(app);
-  registerResetAllRoute(app);
-  registerResetSingleNumberRoute(app);
   registerPairRoute(app);
 }
-
-// ============================================================================
-// 🔁 KEEP-ALIVE (WAKE SERVER EVERY 2 MINUTES)
-// ============================================================================
 
 function startKeepAlivePing() {
   const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
   if (!keepAliveUrl) return;
-
   setInterval(async () => {
-    try {
-      await fetch(keepAliveUrl);
-    } catch (e) {}
+    try { await fetch(keepAliveUrl); } catch (e) {}
   }, 2 * 60 * 1000);
 }
-
-// ============================================================================
-// 🍃 STARTUP
-// ============================================================================
 
 async function reconnectAllSavedSessions() {
   try {
     const sessions = await Auth.find({ _id: /-creds$/ }).lean();
-    console.log(`🔍 Found ${sessions.length} saved sessions in Database.`);
-
     for (const session of sessions) {
       const pNumber = session._id.split('-creds')[0];
       await initWhatsApp(pNumber);
