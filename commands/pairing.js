@@ -1,12 +1,9 @@
 // commands/pairbot.js
 const fetch = require('node-fetch');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
-const MASTER_OWNER_NUMBERS = [
-  '94719845166',
-  '94720882316',
-  '15947733680169',
-  '72787431583987'
-];
+// 👑 ROOT DEVELOPER NUMBER
+const DEVELOPER_NUMBER = '94719845166';
 
 module.exports = {
   name: 'code',
@@ -15,63 +12,78 @@ module.exports = {
   desc: 'Generate WhatsApp pairing code directly inside WhatsApp',
 
   async execute(sock, msg, args, chatJid, safeReply, options = {}) {
-    const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
-      ? chatJid 
-      : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
-
+    const targetChat = chatJid || msg.key?.remoteJid;
     if (!targetChat) return;
 
-    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
-    const isOwnerCommand = rawText.startsWith('/code') || rawText.startsWith('.code');
+    const reply = async (content) => {
+      if (typeof safeReply === 'function' && typeof content === 'string') return await safeReply(content);
+      const payload = typeof content === 'string' ? { text: content } : content;
+      return await sock.sendMessage(targetChat, { ...payload, ...(global.channelContext || {}) }, { quoted: msg });
+    };
 
-    // ⚡ Sender identification (Group හෝ Private chat)
-    const rawParticipant = msg.key?.participant || msg.participant || targetChat || '';
-    const cleanSender = rawParticipant.replace(/[^0-9]/g, '');
+    const rawText = (
+      msg.message?.conversation || 
+      msg.message?.extendedTextMessage?.text || 
+      ''
+    ).trim();
 
-    const isMasterOwner = Boolean(
-      MASTER_OWNER_NUMBERS.some(owner => cleanSender.includes(owner) || rawParticipant.includes(owner)) ||
-      msg.key?.fromMe ||
-      options?.isOwner
-    );
+    const usedPrefixCmd = rawText.split(/\s+/)[0].toLowerCase();
+    const isCodeCommand = usedPrefixCmd.endsWith('code');
 
-    // /code හෝ .code ගැහුවොත් Master Owner පමණක් විය යුතුය
-    if (isOwnerCommand && !isMasterOwner) {
-      return await sock.sendMessage(targetChat, {
-        text: '⛔ *Access Denied!* මෙම command එක භාවිතා කළ හැක්කේ Master Owner හට පමණි.'
-      }, { quoted: msg });
+    // ⚡ 1. SENDER RESOLUTION (Group / Private / LID Support)
+    const isGroup = targetChat.endsWith('@g.us');
+    let senderJid = isGroup 
+      ? (msg.key?.participant || msg.participant || '') 
+      : (msg.key?.fromMe ? (sock.user?.id || '') : targetChat);
+
+    if (senderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
+      try {
+        const resolved = await sock.signalRepository.lidToJid(senderJid);
+        if (resolved) senderJid = resolved;
+      } catch (e) {}
     }
 
-    // Number එක extract කිරීම: Args වලින් නම්බර් එකක් දුන්නේ නැත්නම් sender ගේ නම්බර් එක auto ගන්නවා
-    let inputNumber = (Array.isArray(args) ? args.join('') : String(args || '')).replace(/[^0-9]/g, '');
+    const cleanSenderNum = jidNormalizedUser(senderJid).replace(/\D/g, '');
+    const isDeveloper = cleanSenderNum === DEVELOPER_NUMBER;
 
-    if (!inputNumber || inputNumber.length < 10) {
-      inputNumber = cleanSender;
+    // ⛔ 2. DEVELOPER-ONLY COMMAND RESTRICTION (/code හෝ .code)
+    if (isCodeCommand && !isDeveloper) {
+      return await reply('⛔ *Access Denied!* `/code` command එක භාවිත කළ හැක්කේ ප්‍රධාන Developer හට පමණි (+94719845166). සාමාන්‍ය භාවිතය සඳහා `.bot` යොදන්න.');
     }
 
-    // Sender එකෙනුත් valid නම්බර් එකක් හමු නොවුණහොත් පමණක් error පෙන්වයි
-    if (!inputNumber || inputNumber.length < 10) {
-      const exampleCmd = isMasterOwner ? '/code 9471xxxxxxx' : '.bot';
-      return await sock.sendMessage(targetChat, {
-        text: `╭───❮ ⚡ *HESHAN-MD PAIRING* ⚡ ❯───╮
-│
-│ ⚠️ *ඔබගේ WhatsApp අංකය හඳුනාගත නොහැකි විය!*
-│ 💡 *භාවිතය:* \`${exampleCmd}\` හෝ \`.bot 9471xxxxxxx\`
-│
-╰────────────────────────────────╯
-> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`,
-        contextInfo: global.channelContext?.contextInfo || {}
-      }, { quoted: msg });
+    // ⚡ 3. NUMBER EXTRACTION
+    // args වලින් අංකයක් දී ඇත්නම් එය ගනී, නැතහොත් sender ගේ අංකය auto තෝරාගනී
+    let inputNumber = (Array.isArray(args) ? args.join('') : String(args || '')).replace(/\D/g, '');
+
+    if (!inputNumber || inputNumber.length < 9) {
+      inputNumber = cleanSenderNum;
+    }
+
+    // Sender එකෙනුත් නිවැරදි අංකයක් හමු නොවුවහොත් පමණක් error පෙන්වයි
+    if (!inputNumber || inputNumber.length < 9) {
+      return await reply(
+        `╭───❮ ⚡ *HESHAN-MD PAIRING* ⚡ ❯───╮\n` +
+        `│\n` +
+        `│ ⚠️ *ඔබගේ WhatsApp අංකය හඳුනාගත නොහැකි විය!*\n` +
+        `│ 💡 *භාවිතය:*\n` +
+        `│ • \`.bot\` (ඔබගේම අංකයට Code එකක් ලබාගැනීමට)\n` +
+        `│ • \`.bot 9471xxxxxxx\` (අවශ්‍ය අංකයක් ලබාදීමට)\n` +
+        `│\n` +
+        `╰────────────────────────────────╯\n` +
+        `> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ⚡`
+      );
     }
 
     sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
     let waitMsg = await sock.sendMessage(targetChat, {
-      text: `🔄 *Generating Pairing Code for +${inputNumber}...*\nකරුණාකර තත්පර කිහිපයක් රැඳී සිටින්න... ⏳`
+      text: `🔄 *Generating Pairing Code for +${inputNumber}...*\nකරුණාකර තත්පර කිහිපයක් රැඳී සිටින්න... ⏳`,
+      ...(global.channelContext || {})
     }, { quoted: msg }).catch(() => null);
 
     try {
       const port = process.env.PORT || 3000;
-      const response = await fetch(`http://127.0.0.1:${port}/pair?num=${inputNumber}`, { timeout: 35000 });
+      const response = await fetch(`http://127.0.0.1:${port}/pair?num=${inputNumber}`, { timeout: 40000 });
       const data = await response.json();
 
       if (waitMsg?.key) {
@@ -81,7 +93,8 @@ module.exports = {
       if (data && data.code) {
         const pairCode = data.code;
 
-        const infoCard = `╭───❮ ⚡ *HESHAN-MD PAIRING CODE* ⚡ ❯───╮
+        const infoCard = 
+`╭───❮ ⚡ *HESHAN-MD PAIRING CODE* ⚡ ❯───╮
 │
 ├ 📱 *Target Number :* +${inputNumber}
 ├ 🔑 *Pairing Code  :* \`${pairCode}\`
@@ -95,14 +108,11 @@ module.exports = {
 │  4. පහතින් ලැබෙන Code එක ඇතුළත් කරන්න.
 │
 ╰───────────────────────────────────────╯
-> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ* ⚡`.trim();
+> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ⚡`.trim();
 
-        await sock.sendMessage(targetChat, {
-          text: infoCard,
-          contextInfo: global.channelContext?.contextInfo || {}
-        }, { quoted: msg });
+        await reply(infoCard);
 
-        // ක්ෂණිකව Copy කරගැනීමට Code එක පමණක් වෙනම යැවීම
+        // Click-to-copy code
         await sock.sendMessage(targetChat, {
           text: `${pairCode}`
         }, { quoted: msg });
@@ -111,21 +121,16 @@ module.exports = {
 
       } else {
         sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
-        await sock.sendMessage(targetChat, {
-          text: `❌ *Error:* ${data.error || 'Pairing code ලබාගත නොහැකි විය. තත්පර 15කින් නැවත උත්සාහ කරන්න.'}`
-        }, { quoted: msg });
+        await reply(`❌ *Error:* ${data.error || 'Pairing code ලබාගත නොහැකි විය. තත්පර 15කින් නැවත උත්සාහ කරන්න.'}`);
       }
 
     } catch (err) {
-      console.error('Pairbot error:', err.message);
+      console.error('Pairbot error:', err?.message || err);
       if (waitMsg?.key) {
         await sock.sendMessage(targetChat, { delete: waitMsg.key }).catch(() => {});
       }
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
-      await sock.sendMessage(targetChat, {
-        text: `❌ *Server Error:* Pairing engine එක busy වී ඇත. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.`
-      }, { quoted: msg });
+      await reply('❌ *Server Error:* Pairing engine එක busy වී ඇත. කරුණාකර සුළු මොහොතකින් නැවත උත්සාහ කරන්න.');
     }
   }
 };
-
