@@ -1,12 +1,15 @@
 // commands/song.js
 const axios = require('axios');
 
-let yts;
+let giftedDls = null;
+try {
+  giftedDls = require('gifted-dls');
+} catch (e) {}
+
+let yts = null;
 try {
   yts = require('yt-search');
-} catch (e) {
-  yts = null;
-}
+} catch (e) {}
 
 function extractYouTubeId(url) {
   const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/;
@@ -14,52 +17,68 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ Direct High-Speed Download URL Fetcher (Multi-Engine)
+// ⚡ 100% Working Multi-Engine Audio Stream Fetcher
 async function fetchAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // 🥇 Engine 1: Gifted Tech (Unlimited & Fast)
+  // 🥇 Engine 1: Native gifted-dls package (Direct engine in your package.json)
+  if (giftedDls && typeof giftedDls.giftedytmp3 === 'function') {
+    try {
+      const res = await giftedDls.giftedytmp3(videoUrl);
+      const dlUrl = res?.result?.download_url || res?.download_url || res?.result?.dl_url;
+      if (dlUrl) {
+        return {
+          downloadUrl: dlUrl,
+          title: res?.result?.title || res?.title || 'YouTube Audio',
+          thumbnail: res?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        };
+      }
+    } catch (e) {}
+  }
+
+  // 🥈 Engine 2: Okatsu API (Working High-Speed YouTube MP3)
   try {
-    const res1 = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`, {
+    const res2 = await axios.get(`https://api.okatsu.my.id/api/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
       timeout: 12000,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
-    const dlUrl1 = res1.data?.result?.download_url || res1.data?.result?.dl_url;
-    if (dlUrl1) {
-      return {
-        downloadUrl: dlUrl1,
-        title: res1.data?.result?.title || 'YouTube Audio',
-        thumbnail: res1.data?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
-      };
-    }
-  } catch (e) {}
-
-  // 🥈 Engine 2: David Cyril API
-  try {
-    const res2 = await axios.get(`https://api.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 12000
-    });
-    const dlUrl2 = res2.data?.result?.download_url;
+    const dlUrl2 = res2.data?.data?.download || res2.data?.result?.download;
     if (dlUrl2) {
       return {
         downloadUrl: dlUrl2,
-        title: res2.data?.result?.title || 'YouTube Audio',
-        thumbnail: res2.data?.result?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res2.data?.data?.title || res2.data?.result?.title || 'YouTube Audio',
+        thumbnail: res2.data?.data?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
 
-  // 🥉 Engine 3: BK9 API
+  // 🥉 Engine 3: NexOracle Multi-Stream Engine
   try {
-    const res3 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, { 
-      timeout: 12000 
+    const res3 = await axios.get(`https://api.nexoracle.com/downloader/yt-audio?apikey=free_key@maher_apis&url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 12000
     });
-    const dlUrl3 = res3.data?.BK9?.BK8;
+    const dlUrl3 = res3.data?.result?.url || res3.data?.result?.audio;
     if (dlUrl3) {
       return {
         downloadUrl: dlUrl3,
-        title: res3.data?.BK9?.title || 'YouTube Audio',
-        thumbnail: res3.data?.BK9?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res3.data?.result?.title || 'YouTube Audio',
+        thumbnail: res3.data?.result?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+      };
+    }
+  } catch (e) {}
+
+  // 🏅 Engine 4: Siputzx Fast Endpoint
+  try {
+    const res4 = await axios.get(`https://api.siputzx.my.id/api/d/youtube/mp3?url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 12000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    const dlUrl4 = res4.data?.data?.dl;
+    if (dlUrl4) {
+      return {
+        downloadUrl: dlUrl4,
+        title: res4.data?.data?.title || 'YouTube Audio',
+        thumbnail: res4.data?.data?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
