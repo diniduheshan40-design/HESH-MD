@@ -16,7 +16,8 @@ const {
   Browsers,
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion,
-  downloadContentFromMessage
+  downloadContentFromMessage,
+  jidNormalizedUser
 } = require('@whiskeysockets/baileys');
 
 // 🟢 Global Process Crash Guards
@@ -40,7 +41,6 @@ const BOT_CHANNEL_NAME = '✗ ʜᴇꜱʜᴀɴ ᴏꜰᴄ ✨';
 const CHANNEL_REACTIONS = ['🥰', '👍', '❤️', '😗', '😯', '🪄', '✨'];
 const DEFAULT_BACKUP_LOGO = 'https://files.catbox.moe/a58add.jpeg';
 
-// ⚡ Global Newsletter Forward Context Injection
 const channelContext = {
   contextInfo: {
     forwardingScore: 999,
@@ -60,9 +60,7 @@ const OWNER_NUMBERS = [
   '94719845166',
   '94720882316',
   '15947733680169',
-  '15947733680169@lid',
-  '72787431583987',
-  '72787431583987@lid'
+  '72787431583987'
 ];
 global.owner = OWNER_NUMBERS;
 
@@ -84,7 +82,7 @@ const DEFAULT_SETTINGS = {
 };
 
 // ============================================================================
-// 🧠 RUNTIME STATE & IN-MEMORY MESSAGE STORE (ANTI-DELETE)
+// 🧠 RUNTIME STATE & IN-MEMORY MESSAGE STORE
 // ============================================================================
 
 const settingsCache = new NodeCache({ stdTTL: 300, checkperiod: 60, maxKeys: 300 });
@@ -93,8 +91,6 @@ global.activeSessions = activeSessions;
 const isStarting = {};
 const reconnectAttempts = {};
 const commands = new Map();
-
-// Anti-Delete In-Memory Message Vault
 const messageVault = new NodeCache({ stdTTL: 86400, checkperiod: 600, maxKeys: 3000 });
 
 // ============================================================================
@@ -171,6 +167,7 @@ function registerCommandAliases(cmd, cmdName) {
 
 function loadCommandFile(cmdDir, file) {
   try {
+    delete require.cache[require.resolve(path.join(cmdDir, file))];
     let cmd = require(path.join(cmdDir, file));
     if (cmd.default) cmd = cmd.default;
     const cmdName = file.replace('.js', '').toLowerCase();
@@ -187,6 +184,7 @@ function loadAllCommands() {
   for (const file of cmdFiles) {
     loadCommandFile(cmdDir, file);
   }
+  console.log(`📦 Loaded ${commands.size} commands & aliases.`);
 }
 
 function findCommand(...names) {
@@ -223,29 +221,21 @@ function renderPortalHtml(botName) {
       <style>
         :root {
           --bg-black: #060203;
-          --panel-card: rgba(18, 5, 8, 0.78);
+          --panel-card: rgba(18, 5, 8, 0.82);
           --neon-red: #ff003c;
           --deep-red: #990024;
           --crimson-glow: rgba(255, 0, 60, 0.45);
-          --card-border: rgba(255, 0, 60, 0.28);
-          --input-bg: rgba(10, 2, 4, 0.85);
+          --card-border: rgba(255, 0, 60, 0.32);
+          --input-bg: rgba(10, 2, 4, 0.88);
           --text-bright: #ffffff;
           --text-dim: #a89498;
         }
-
-        * {
-          box-sizing: border-box;
-          margin: 0;
-          padding: 0;
-          -webkit-tap-highlight-color: transparent;
-        }
-
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
           background-color: var(--bg-black);
           background-image: 
-            radial-gradient(circle at 50% 0%, rgba(255, 0, 60, 0.22) 0%, transparent 55%),
-            radial-gradient(circle at 100% 100%, rgba(153, 0, 36, 0.18) 0%, transparent 50%),
-            radial-gradient(circle at 0% 100%, rgba(255, 0, 60, 0.12) 0%, transparent 45%);
+            radial-gradient(circle at 50% 0%, rgba(255, 0, 60, 0.25) 0%, transparent 60%),
+            radial-gradient(circle at 100% 100%, rgba(153, 0, 36, 0.2) 0%, transparent 50%);
           color: var(--text-bright);
           font-family: 'Outfit', sans-serif;
           min-height: 100vh;
@@ -253,127 +243,41 @@ function renderPortalHtml(botName) {
           align-items: center;
           justify-content: center;
           padding: 20px;
-          overflow-x: hidden;
         }
-
-        .portal-container {
-          width: 100%;
-          max-width: 430px;
-          position: relative;
-        }
-
-        .portal-container::after {
-          content: '';
-          position: absolute;
-          inset: -2px;
-          background: radial-gradient(circle, var(--crimson-glow) 0%, transparent 70%);
-          filter: blur(40px);
-          z-index: -1;
-          opacity: 0.6;
-        }
-
+        .portal-container { width: 100%; max-width: 430px; position: relative; }
         .portal-card {
           background: var(--panel-card);
-          backdrop-filter: blur(30px) saturate(180%);
-          -webkit-backdrop-filter: blur(30px) saturate(180%);
+          backdrop-filter: blur(30px);
           border: 1px solid var(--card-border);
           border-radius: 28px;
           padding: 44px 32px;
           text-align: center;
-          box-shadow: 
-            0 30px 80px rgba(0, 0, 0, 0.85),
-            0 0 35px rgba(255, 0, 60, 0.2),
-            inset 0 0 1px 1px rgba(255, 255, 255, 0.1);
-          position: relative;
-          overflow: hidden;
+          box-shadow: 0 30px 80px rgba(0, 0, 0, 0.9), 0 0 35px rgba(255, 0, 60, 0.25);
         }
-
-        .portal-card::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 3px;
-          background: linear-gradient(90deg, transparent, var(--neon-red), transparent);
-          box-shadow: 0 0 15px var(--neon-red);
-        }
-
         .brand-title {
-          font-size: 32px;
-          font-weight: 900;
-          letter-spacing: -0.5px;
-          text-transform: uppercase;
+          font-size: 32px; font-weight: 900; text-transform: uppercase;
           background: linear-gradient(135deg, #ffffff 30%, #ff8097 70%, var(--neon-red) 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
+          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
           margin-bottom: 6px;
         }
-
-        .brand-subtitle {
-          color: var(--text-dim);
-          font-size: 13.5px;
-          margin-bottom: 32px;
-          font-weight: 500;
-        }
-
-        .field-group {
-          margin-bottom: 20px;
-          position: relative;
-        }
-
+        .brand-subtitle { color: var(--text-dim); font-size: 13.5px; margin-bottom: 30px; }
         .phone-field {
-          width: 100%;
-          padding: 18px 22px;
-          background: var(--input-bg);
-          border: 1.5px solid var(--card-border);
-          border-radius: 18px;
-          color: #ffffff;
-          font-size: 18px;
-          font-weight: 700;
-          letter-spacing: 1px;
-          text-align: center;
-          outline: none;
-          transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          width: 100%; padding: 18px 22px; background: var(--input-bg);
+          border: 1.5px solid var(--card-border); border-radius: 18px;
+          color: #ffffff; font-size: 18px; font-weight: 700; text-align: center;
+          outline: none; margin-bottom: 20px; transition: 0.3s;
         }
-
-        .phone-field:focus {
-          border-color: var(--neon-red);
-          background: rgba(18, 2, 6, 0.95);
-          box-shadow: 0 0 30px rgba(255, 0, 60, 0.35);
-        }
-
+        .phone-field:focus { border-color: var(--neon-red); box-shadow: 0 0 25px rgba(255, 0, 60, 0.4); }
         .btn-generate {
-          width: 100%;
-          padding: 18px;
-          border: none;
-          border-radius: 18px;
+          width: 100%; padding: 18px; border: none; border-radius: 18px;
           background: linear-gradient(135deg, var(--deep-red) 0%, var(--neon-red) 100%);
-          color: #ffffff;
-          font-size: 15px;
-          font-weight: 800;
-          letter-spacing: 1px;
-          text-transform: uppercase;
-          cursor: pointer;
-          min-height: 58px;
+          color: #fff; font-size: 15px; font-weight: 800; cursor: pointer; text-transform: uppercase;
         }
-
-        .code-panel {
-          display: none;
-          margin-top: 26px;
-        }
-
+        .code-panel { display: none; margin-top: 25px; }
         .code-display {
-          font-family: 'JetBrains Mono', monospace;
-          font-size: 34px;
-          font-weight: 800;
-          letter-spacing: 6px;
-          color: #ffffff;
-          background: rgba(255, 0, 60, 0.12);
-          border: 2px dashed rgba(255, 0, 60, 0.55);
-          border-radius: 18px;
-          padding: 18px;
-          cursor: pointer;
+          font-family: 'JetBrains Mono', monospace; font-size: 32px; font-weight: 800;
+          letter-spacing: 5px; color: #fff; background: rgba(255, 0, 60, 0.15);
+          border: 2px dashed rgba(255, 0, 60, 0.6); border-radius: 18px; padding: 18px;
         }
       </style>
     </head>
@@ -381,10 +285,8 @@ function renderPortalHtml(botName) {
       <div class="portal-container">
         <div class="portal-card">
           <h1 class="brand-title">${botName}</h1>
-          <p class="brand-subtitle">Enter WhatsApp number with country code</p>
-          <div class="field-group">
-            <input type="tel" id="phone" class="phone-field" placeholder="e.g. 9471xxxxxxx" autofocus />
-          </div>
+          <p class="brand-subtitle">Enter WhatsApp Number with Country Code</p>
+          <input type="tel" id="phone" class="phone-field" placeholder="e.g. 9471xxxxxxx" autofocus />
           <button id="genBtn" class="btn-generate" onclick="generatePairCode()">GENERATE PAIR CODE</button>
           <div class="code-panel" id="codePanel">
             <div class="code-display" id="codeDisplay"></div>
@@ -423,7 +325,7 @@ function registerPortalRoute(app) {
 }
 
 // ============================================================================
-// 🔌 SOCKET CREATION (ANTI-FLICKER & STABLE TIMEOUTS)
+// 🔌 SOCKET CREATION
 // ============================================================================
 
 async function createBaileysSocket(phoneNumber) {
@@ -485,7 +387,6 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
 
   if (statusCode === 440) {
     delayTime = 15000;
-    console.log(`⏳ [${phoneNumber}] Session Conflict (440). Waiting 15s before reconnect...`);
   } else if (reconnectAttempts[phoneNumber] > 5) {
     delayTime = 30000;
   }
@@ -495,7 +396,7 @@ async function handleConnectionClose(sock, phoneNumber, lastDisconnect, clearSes
   }, delayTime);
 }
 
-async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
+async function autoFollowChannelAndJoinGroup(sock) {
   await delay(2500);
   try {
     const inviteCode = '0029VbAQYhXDZ4Lfo9K5gh1V';
@@ -504,21 +405,14 @@ async function autoFollowChannelAndJoinGroup(sock, phoneNumber) {
       if (channelMeta?.id) await sock.newsletterFollow(channelMeta.id);
     }
   } catch (e) {}
-
-  try {
-    const groupInviteCode = 'FMqBhms8cQnAVSgJoADR5X';
-    if (typeof sock.groupAcceptInvite === 'function') {
-      await sock.groupAcceptInvite(groupInviteCode);
-    }
-  } catch (e) {}
 }
 
 function buildConnectedMessage(botNum) {
   return `*✦ ${BOT_NAME} CONNECTED ✦*
 ━━━━━━━━━━━━━━━━━━━━━
 • *Number*    : +${botNum}
-• *Engine*    : HESHAN-MD V2
-• *Features*  : Auto Status | Anti-Delete
+• *Engine*    : HESHAN-MD V2.1
+• *Features*  : Auto Status | Anti-Delete | Fast DL
 • *State*     : Online (24/7 Cloud)
 ━━━━━━━━━━━━━━━━━━━━━
 > Type *.menu* to explore all commands.`.trim();
@@ -527,8 +421,8 @@ function buildConnectedMessage(botNum) {
 async function sendFirstConnectAlerts(sock, phoneNumber) {
   try {
     const botNum = sock.user?.id
-      ? sock.user.id.split(':')[0].replace(/[^0-9]/g, '')
-      : phoneNumber.replace(/[^0-9]/g, '');
+      ? jidNormalizedUser(sock.user.id).replace(/\D/g, '')
+      : phoneNumber.replace(/\D/g, '');
 
     const botJid = `${botNum}@s.whatsapp.net`;
     const creatorJid = `${REAL_OWNER_NUMBER}@s.whatsapp.net`;
@@ -539,22 +433,16 @@ async function sendFirstConnectAlerts(sock, phoneNumber) {
     const sessionLogo = currentSettings.botLogo || DEFAULT_BACKUP_LOGO;
     const connectedMsg = buildConnectedMessage(botNum);
 
-    const connectPayload = {
+    await sock.sendMessage(botJid, {
       image: { url: sessionLogo },
       caption: connectedMsg,
       ...global.channelContext
-    };
-
-    await sock.sendMessage(botJid, connectPayload).catch(() => {
+    }).catch(() => {
       sock.sendMessage(botJid, { text: connectedMsg, ...global.channelContext }).catch(() => {});
     });
 
     if (!botNum.includes(REAL_OWNER_NUMBER)) {
-      const alertMsg = `*🔔 ALERT : NEW SESSION CONNECTED*
-━━━━━━━━━━━━━━━━━━━━━
-• *Number* : +${botNum}
-• *System* : Initialized successfully
-━━━━━━━━━━━━━━━━━━━━━`;
+      const alertMsg = `*🔔 ALERT : NEW SESSION CONNECTED*\n━━━━━━━━━━━━━━━━━━━━━\n• *Number* : +${botNum}\n━━━━━━━━━━━━━━━━━━━━━`;
       await sock.sendMessage(creatorJid, { text: alertMsg, ...global.channelContext }).catch(() => {});
     }
 
@@ -568,14 +456,11 @@ function handleConnectionOpen(sock, phoneNumber) {
   reconnectAttempts[phoneNumber] = 0;
   
   getBotSettings(phoneNumber).then(st => {
-    if (st.alwaysOnline === 'on') {
-      sock.sendPresenceUpdate('available').catch(() => {});
-    } else if (st.alwaysOnline === 'offline') {
-      sock.sendPresenceUpdate('unavailable').catch(() => {});
-    }
+    if (st.alwaysOnline === 'on') sock.sendPresenceUpdate('available').catch(() => {});
+    else if (st.alwaysOnline === 'offline') sock.sendPresenceUpdate('unavailable').catch(() => {});
   });
 
-  autoFollowChannelAndJoinGroup(sock, phoneNumber);
+  autoFollowChannelAndJoinGroup(sock);
   setTimeout(() => sendFirstConnectAlerts(sock, phoneNumber), 3000);
 }
 
@@ -597,8 +482,7 @@ function registerConnectionUpdateHandler(sock, phoneNumber, clearSessionData) {
 async function reactToChannelPost(sock, msg, chatJid) {
   try {
     const randomEmoji = CHANNEL_REACTIONS[Math.floor(Math.random() * CHANNEL_REACTIONS.length)];
-    await delay(Math.floor(Math.random() * 3000) + 1200);
-
+    await delay(1500);
     const serverId = msg.message?.newsletterAdminInviteMessage?.newsletterJid || msg.key?.server_id || msg.key?.id;
     if (typeof sock.newsletterReactMessage === 'function' && serverId) {
       await sock.newsletterReactMessage(chatJid, serverId, randomEmoji);
@@ -634,35 +518,14 @@ async function handleStatusBroadcast(sock, msg, settings) {
   } catch (e) {}
 }
 
-function resolveOriginalSender(msg, chatJid, isGroup, myBotJid) {
-  if (msg.key.fromMe) return myBotJid;
-  if (isGroup) {
-    return msg.key?.participant || msg.participant || '';
-  }
-  return chatJid;
-}
-
-async function resolveLidToRealJid(sock, originalSender) {
-  if (!originalSender) return '';
-  if (!originalSender.endsWith('@lid') || !sock.signalRepository?.lidToJid) {
-    return originalSender;
-  }
-  try {
-    const resolved = await sock.signalRepository.lidToJid(originalSender);
-    return resolved || originalSender;
-  } catch (e) {
-    return originalSender;
-  }
+function cleanDigits(str) {
+  return String(str || '').replace(/\D/g, '');
 }
 
 function isOwnerJid(jid) {
   if (!jid) return false;
-  const str = String(jid).toLowerCase();
-  return OWNER_NUMBERS.some(owner => str.includes(owner.toLowerCase()));
-}
-
-function checkIsOwner(originalSender, resolvedSender) {
-  return isOwnerJid(originalSender) || isOwnerJid(resolvedSender);
+  const num = cleanDigits(jid);
+  return OWNER_NUMBERS.some(owner => num === cleanDigits(owner));
 }
 
 function checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum) {
@@ -680,10 +543,12 @@ function shouldSkipDueToWorkMode(isAuthorized, isGroup, workMode) {
 }
 
 function unwrapMessageContent(message) {
+  if (!message) return null;
   return (
     message?.ephemeralMessage?.message ||
     message?.viewOnceMessage?.message ||
     message?.viewOnceMessageV2?.message ||
+    message?.viewOnceMessageV2Extension?.message ||
     message?.documentWithCaptionMessage?.message ||
     message
   );
@@ -697,6 +562,7 @@ function extractMessageText(rawMsg) {
     rawMsg?.videoMessage?.caption ||
     rawMsg?.buttonsResponseMessage?.selectedButtonId ||
     rawMsg?.templateButtonReplyMessage?.selectedId ||
+    rawMsg?.listResponseMessage?.singleSelectReply?.selectedRowId ||
     ''
   ).trim();
 }
@@ -724,32 +590,16 @@ function extractQuotedStanzaId(rawMsg) {
 function buildSafeReply(sock, chatJid, msg) {
   return async (content) => {
     let replyPayload = typeof content === 'string' ? { text: content } : { ...content };
-    
     replyPayload.contextInfo = {
       ...(replyPayload.contextInfo || {}),
       ...(global.channelContext?.contextInfo || {})
     };
-
     try {
       return await sock.sendMessage(chatJid, replyPayload, { quoted: msg });
     } catch (e) {
       return await sock.sendMessage(chatJid, replyPayload);
     }
   };
-}
-
-function isSettingsMenuOption(cleanInput) {
-  return (
-    /^([1-9]|1[0-2])(\.[1-4])?$/.test(cleanInput) ||
-    cleanInput.startsWith('4 ') ||
-    cleanInput.startsWith('6 ') ||
-    cleanInput.startsWith('pin ') ||
-    cleanInput.startsWith('set ') ||
-    cleanInput.startsWith('antisend ') ||
-    cleanInput.startsWith('antidel ') ||
-    cleanInput === 'react green' ||
-    cleanInput === 'react random'
-  );
 }
 
 function isQuotedFromSettingsMenu(quotedCaption) {
@@ -770,28 +620,6 @@ function isQuotedFromMainMenu(quotedCaption) {
   );
 }
 
-async function handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum) {
-  const settingsCmd = findCommand('settings', 'setting', 'set');
-  if (!settingsCmd) return false;
-  const cmdFunc = getCommandExecutor(settingsCmd);
-  if (!cmdFunc) return false;
-
-  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-  clearSettingsCache(myBotNum);
-  return true;
-}
-
-async function handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized) {
-  const statusCmd = findCommand('save', 'status');
-  if (!statusCmd) return false;
-  const cmdFunc = getCommandExecutor(statusCmd);
-  if (!cmdFunc) return false;
-
-  await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
-  return true;
-}
-
-// 🛡️ ANTI-DELETE REAL-TIME PROCESSOR
 async function handleAntiDelete(sock, deletedMsgKey, botNum) {
   try {
     const settings = await getBotSettings(botNum);
@@ -899,6 +727,39 @@ async function handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthor
   return true;
 }
 
+// Helper: YouTube Audio Stream Fetcher with Multiple Fallbacks
+async function fetchAudioStreamBuffer(videoUrl) {
+  const targetUrl = encodeURIComponent(videoUrl);
+  
+  // Endpoint 1: Primary API
+  try {
+    const res = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${targetUrl}`, { timeout: 15000 });
+    const dl = res.data?.result?.download_url || res.data?.download_url;
+    if (dl) {
+      const audio = await axios.get(dl, { responseType: 'arraybuffer', timeout: 45000 });
+      return { buffer: Buffer.from(audio.data), title: res.data?.result?.title || 'Song' };
+    }
+  } catch (e) {}
+
+  // Endpoint 2: Secondary Chamindu API
+  try {
+    const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
+    const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${targetUrl}&quality=320kbps&format=mp3&api_key=${apiKey}`;
+    const res = await axios.get(apiUrl, { timeout: 20000 });
+    const dlUrl = res.data?.download_url || res.data?.direct_url || res.data?.data?.download_url;
+    if (dlUrl) {
+      const streamRes = await axios.get(dlUrl, {
+        responseType: 'arraybuffer',
+        timeout: 45000,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      return { buffer: Buffer.from(streamRes.data), title: res.data?.title || 'Song' };
+    }
+  } catch (e) {}
+
+  throw new Error('All download servers are busy. Please try again!');
+}
+
 // ============================================================================
 // 💬 SINGLE MESSAGE PROCESSOR
 // ============================================================================
@@ -909,12 +770,14 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   if (!chatJid) return;
 
   const isGroup = chatJid.endsWith('@g.us');
-  const myBotJid = sock.user?.id || '';
-  const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') || phoneNumber.replace(/[^0-9]/g, '');
+  const myBotJid = jidNormalizedUser(sock.user?.id || '');
+  const myBotNum = cleanDigits(myBotJid) || cleanDigits(phoneNumber);
 
-  // 🛡️ Save to Anti-Delete Vault
+  const rawMsg = unwrapMessageContent(msg.message);
+
+  // Save to Anti-Delete Vault
   if (msg.key?.id && !msg.key.fromMe && chatJid !== 'status@broadcast') {
-    const sender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
+    const sender = isGroup ? (msg.key?.participant || msg.participant || '') : chatJid;
     messageVault.set(msg.key.id, {
       chatJid,
       sender,
@@ -923,11 +786,9 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     });
   }
 
-  // Handle Protocol Revoke (Message Deletion)
-  const rawMsg = unwrapMessageContent(msg.message);
+  // Handle Revoke
   if (rawMsg?.protocolMessage?.type === 0 || rawMsg?.protocolMessage?.type === 'REVOKE') {
-    const deletedKey = rawMsg.protocolMessage.key;
-    await handleAntiDelete(sock, deletedKey, myBotNum);
+    await handleAntiDelete(sock, rawMsg.protocolMessage.key, myBotNum);
     return;
   }
 
@@ -938,7 +799,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const quotedText = extractQuotedText(rawMsg);
   const quotedMsgId = extractQuotedStanzaId(rawMsg);
 
-  // 🛡️ CRITICAL FIX: Self Messages (fromMe) ignore නොවී 1, 2, 3 selection එකට ඉඩ දීම
   const isNumericSelection = ['1', '2', '3'].includes(cleanInput);
   const isPrefixCommand = /^[./!#]/.test(text.trim());
 
@@ -954,9 +814,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
   const settings = await getBotSettings(myBotNum);
 
   if (!isChannel) {
-    if (settings.autoChatRead && !msg.key.fromMe) {
-      sock.readMessages([msg.key]).catch(() => {});
-    }
+    if (settings.autoChatRead && !msg.key.fromMe) sock.readMessages([msg.key]).catch(() => {});
     if (!msg.key.fromMe) simulateAutoPresence(sock, chatJid, settings);
   }
 
@@ -965,31 +823,15 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     return;
   }
 
-  const originalSender = resolveOriginalSender(msg, chatJid, isGroup, myBotJid);
-  const resolvedSender = await resolveLidToRealJid(sock, originalSender);
-  const isOwner = checkIsOwner(originalSender, resolvedSender);
-
-  const cleanSenderNum = (resolvedSender || originalSender || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const originalSender = isGroup ? (msg.key?.participant || msg.participant || '') : chatJid;
+  const cleanSenderNum = cleanDigits(originalSender);
+  const isOwner = isOwnerJid(originalSender) || isOwnerJid(cleanSenderNum);
   const isAuthorized = checkIsAuthorizedToControl(isOwner, msg, myBotNum, cleanSenderNum);
   const currentMode = settings.workMode || 'public';
 
   const safeReply = buildSafeReply(sock, chatJid, msg);
 
-  if (isChannel) {
-    if (text.startsWith('.setchannel') || text.startsWith('!setchannel') || text.startsWith('#setchannel')) {
-      const setCmd = findCommand('setchannel');
-      if (setCmd) {
-        const cmdFunc = getCommandExecutor(setCmd);
-        const args = text.trim().split(/ +/).slice(1);
-        if (cmdFunc) {
-          await cmdFunc(sock, msg, args, chatJid, safeReply, { isOwner: true, isChannel: true });
-        }
-      }
-    }
-    return;
-  }
-
-  // 🔎 Track Song Session
+  // 🎵 Interactive Song Sender
   const isSongCard = quotedText.includes('TRACK INFO') || 
                      quotedText.includes('SELECT FORMAT') || 
                      quotedText.includes('HESHAN AUDIO BEATS') ||
@@ -999,9 +841,6 @@ async function processSingleMessage(sock, msg, phoneNumber) {
                          (quotedMsgId && global.songSessions?.has(quotedMsgId)) || 
                          global.songSessions?.has(chatJid);
 
-  // ============================================================================
-  // 🎵 1. INSTANT INTERACTIVE SONG SENDER (Buffer Download Stream)
-  // ============================================================================
   if ((isSongCard || hasSongSession) && isNumericSelection) {
     const session = (quotedMsgId && global.songSessions?.get(quotedMsgId)) || global.songSessions?.get(chatJid);
 
@@ -1012,39 +851,14 @@ async function processSingleMessage(sock, msg, phoneNumber) {
       await sock.sendMessage(chatJid, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
       try {
-        const apiKey = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
-        const targetUrl = encodeURIComponent(session.videoUrl);
-        const apiUrl = `https://api.chamindu.site/api/v1/youtube/download?url=${targetUrl}&quality=320kbps&format=mp3&api_key=${apiKey}`;
-
-        const res = await axios.get(apiUrl, { timeout: 25000, headers: { 'User-Agent': 'Mozilla/5.0' } });
-
-        const dlUrl = res.data?.download_url || 
-                      res.data?.direct_url || 
-                      res.data?.data?.download_url || 
-                      res.data?.data?.direct_url;
-
-        if (!dlUrl) throw new Error('Download URL Missing!');
-
-        await sock.sendMessage(chatJid, { react: { text: "⬇️", key: msg.key } }).catch(() => {});
-
-        // ⚡ SaveTube CDN එකෙන් ArrayBuffer හරහා Stream කිරීම
-        const streamRes = await axios.get(dlUrl, {
-          responseType: 'arraybuffer',
-          timeout: 60000,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-            'Referer': 'https://savetube.me/'
-          }
-        });
-        const audioBuffer = Buffer.from(streamRes.data);
-        const songTitle = session.title || res.data?.title || res.data?.data?.title || 'Song';
+        const { buffer, title } = await fetchAudioStreamBuffer(session.videoUrl);
+        const songTitle = session.title || title;
 
         await sock.sendMessage(chatJid, { react: { text: "⬆️", key: msg.key } }).catch(() => {});
 
         if (cleanInput === '1') {
-          // Playable Audio
           await sock.sendMessage(chatJid, {
-            audio: audioBuffer,
+            audio: buffer,
             mimetype: 'audio/mp4',
             fileName: `${songTitle}.mp3`,
             ptt: false,
@@ -1052,7 +866,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
               externalAdReply: {
                 title: songTitle,
                 body: 'HESHAN-MD AUDIO ENGINE',
-                thumbnailUrl: session.thumb || res.data?.thumbnail,
+                thumbnailUrl: session.thumb || DEFAULT_BACKUP_LOGO,
                 sourceUrl: session.videoUrl,
                 mediaType: 2,
                 renderLargerThumbnail: true
@@ -1060,17 +874,15 @@ async function processSingleMessage(sock, msg, phoneNumber) {
             }
           }, { quoted: msg });
         } else if (cleanInput === '2') {
-          // Document HQ File
           await sock.sendMessage(chatJid, {
-            document: audioBuffer,
+            document: buffer,
             mimetype: 'audio/mpeg',
             fileName: `${songTitle}.mp3`,
             contextInfo: global.channelContext?.contextInfo
           }, { quoted: msg });
         } else if (cleanInput === '3') {
-          // Voice Note
           await sock.sendMessage(chatJid, {
-            audio: audioBuffer,
+            audio: buffer,
             mimetype: 'audio/ogg; codecs=opus',
             ptt: true
           }, { quoted: msg });
@@ -1081,10 +893,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
       } catch (e) {
         console.error('Song Download Error:', e?.message || e);
         await sock.sendMessage(chatJid, { react: { text: "❌", key: msg.key } }).catch(() => {});
-        await sock.sendMessage(chatJid, { 
-          text: `❌ *ගීතය ලබාගැනීමේදී දෝෂයක් මතු විය!* (${e?.message || 'Server Timeout'})`,
-          contextInfo: global.channelContext?.contextInfo
-        }, { quoted: msg });
+        await safeReply(`❌ *ගීතය ලබාගැනීමේදී දෝෂයක් මතු විය!* (${e?.message || 'Server Timeout'})`);
         return;
       }
     }
@@ -1092,8 +901,7 @@ async function processSingleMessage(sock, msg, phoneNumber) {
 
   // 🎯 ViewOnce Quick Emoji Save
   const TRIGGER_EMOJIS = ['❤️', '🥺', '😚', '🌚', '😼', '😂', '🫡', '🥱', '🙌', '🖤', '👍', '🤣', '🥰', '🫢', '🤭', '🫣', 'vv'];
-  const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
-  const quotedMsgObj = quotedContext?.quotedMessage;
+  const quotedMsgObj = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
 
   if (quotedMsgObj && TRIGGER_EMOJIS.includes(cleanInput)) {
     const saveCmd = findCommand('save', 'vv');
@@ -1106,9 +914,8 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  const fromSettingsMenu = isQuotedFromSettingsMenu(quotedText);
+  // Main Menu Numbers
   const fromMainMenu = isQuotedFromMainMenu(quotedText);
-
   if (quotedMsgObj && fromMainMenu && ['1', '2', '3', '4'].includes(cleanInput)) {
     if (!shouldSkipDueToWorkMode(isAuthorized, isGroup, currentMode)) {
       const menuCmd = findCommand('menu', 'help', 'list');
@@ -1122,7 +929,8 @@ async function processSingleMessage(sock, msg, phoneNumber) {
     }
   }
 
-  // Settings Sub-commands or direct reply
+  // Settings Replied
+  const fromSettingsMenu = isQuotedFromSettingsMenu(quotedText);
   const isDirectSettingsCmd = cleanInput.startsWith('set ') || 
                               cleanInput.startsWith('pin ') || 
                               cleanInput.startsWith('antisend ') || 
@@ -1130,15 +938,30 @@ async function processSingleMessage(sock, msg, phoneNumber) {
                               /^([1-9]|1[0-2])\.[1-4]$/.test(cleanInput);
 
   if (isAuthorized && !isSongCard && (fromSettingsMenu || isDirectSettingsCmd) && !fromMainMenu) {
-    const handled = await handleSettingsMenuReply(sock, msg, cleanInput, chatJid, safeReply, isAuthorized, myBotNum);
-    if (handled) return;
+    const settingsCmd = findCommand('settings', 'setting', 'set');
+    if (settingsCmd) {
+      const cmdFunc = getCommandExecutor(settingsCmd);
+      if (cmdFunc) {
+        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
+        clearSettingsCache(myBotNum);
+        return;
+      }
+    }
   }
 
+  // Status Save Keywords
+  const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
   const isQuotedFromStatus = quotedContext?.remoteJid === 'status@broadcast' || quotedContext?.participant?.includes('@broadcast');
 
   if (quotedMsgObj && (isQuotedFromStatus || ['oni', 'ඕනි', 'save', 'status'].includes(cleanInput))) {
-    const handled = await handleStatusSaveKeyword(sock, msg, cleanInput, chatJid, safeReply, isAuthorized);
-    if (handled) return;
+    const statusCmd = findCommand('save', 'status');
+    if (statusCmd) {
+      const cmdFunc = getCommandExecutor(statusCmd);
+      if (cmdFunc) {
+        await cmdFunc(sock, msg, [cleanInput], chatJid, safeReply, { isOwner: isAuthorized });
+        return;
+      }
+    }
   }
 
   await handlePrefixCommand(sock, msg, text, chatJid, safeReply, isAuthorized, isGroup, isOwner, currentMode, myBotNum);
@@ -1195,9 +1018,7 @@ function registerResetAllRoute(app) {
       if (mongoose.connection.db) {
         await mongoose.connection.db.collection('auths').deleteMany({});
       }
-      Object.keys(activeSessions).forEach(num => {
-        stopAndRemoveSession(num);
-      });
+      Object.keys(activeSessions).forEach(num => stopAndRemoveSession(num));
       settingsCache.flushAll();
       res.json({ success: true, message: 'All sessions successfully wiped!' });
     } catch (err) {
@@ -1210,7 +1031,7 @@ function registerResetSingleNumberRoute(app) {
   app.get('/reset-num', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Number required' });
-    num = num.replace(/[^0-9]/g, '');
+    num = cleanDigits(num);
 
     try {
       stopAndRemoveSession(num);
@@ -1226,7 +1047,7 @@ function registerPairRoute(app) {
   app.get('/pair', async (req, res) => {
     let num = req.query.num;
     if (!num) return res.status(400).json({ error: 'Number required' });
-    num = num.replace(/[^0-9]/g, '');
+    num = cleanDigits(num);
 
     stopAndRemoveSession(num);
     await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
@@ -1236,24 +1057,8 @@ function registerPairRoute(app) {
     let pairSock = null;
 
     try {
-      const { state, saveCreds } = await useMongoDBAuthState(num);
-      const logger = pino({ level: 'silent' });
-      const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307] }));
-
-      pairSock = makeWASocket({
-        version,
-        auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
-        logger,
-        printQRInTerminal: false,
-        browser: Browsers.macOS('Desktop'),
-        connectTimeoutMs: 35000,
-        defaultQueryTimeoutMs: 30000,
-        keepAliveIntervalMs: 25000,
-        markOnlineOnConnect: false,
-        emitOwnEvents: false
-      });
-
-      pairSock.ev.on('creds.update', saveCreds);
+      const { sock } = await createBaileysSocket(num);
+      pairSock = sock;
 
       pairSock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
@@ -1296,10 +1101,6 @@ function registerAllHttpRoutes(app) {
   registerPairRoute(app);
 }
 
-// ============================================================================
-// 🔁 KEEP-ALIVE
-// ============================================================================
-
 function startKeepAlivePing() {
   const keepAliveUrl = process.env.RENDER_EXTERNAL_URL;
   if (!keepAliveUrl) return;
@@ -1310,10 +1111,6 @@ function startKeepAlivePing() {
     } catch (e) {}
   }, 2 * 60 * 1000);
 }
-
-// ============================================================================
-// 🍃 STARTUP
-// ============================================================================
 
 async function reconnectAllSavedSessions() {
   try {
