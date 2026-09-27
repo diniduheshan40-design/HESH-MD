@@ -1,4 +1,7 @@
-// commands/song.js
+// ============================================================================
+// 🎵 HESHAN-MD INTERACTIVE SONG CARD (commands/song.js)
+// ============================================================================
+
 let yts = null;
 try {
   yts = require('yt-search');
@@ -8,9 +11,9 @@ global.songSessions = global.songSessions || new Map();
 
 module.exports = {
   name: 'song',
-  alias: ['play', 'sing', 'mp3', 'ytmp3'],
+  alias: ['play', 'sing', 'mp3', 'ytmp3', 'music'],
   category: 'download',
-  desc: 'Cyber Pulse Audio Downloader',
+  desc: 'Cyber Pulse Audio Downloader with Selection Menu',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -46,14 +49,14 @@ module.exports = {
       let videoTitle = rawInput;
       let duration = '03:45';
       let author = 'YouTube Music';
-      let views = '1.2M';
+      let views = 'Popular';
       let ago = 'Recent';
       let thumb = 'https://files.catbox.moe/a58add.jpeg';
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(rawInput);
 
       if (!isYtUrl) {
-        if (!yts) throw new Error('yt-search missing. Install with: npm i yt-search');
+        if (!yts) throw new Error('yt-search missing. Install: npm i yt-search');
         const searchResults = await yts(rawInput);
         if (!searchResults?.videos?.length) {
           throw new Error('සින්දුව YouTube හි සොයාගත නොහැකි විය!');
@@ -65,8 +68,23 @@ module.exports = {
         duration = video.timestamp || duration;
         author = video.author?.name || author;
         ago = video.ago || ago;
-        views = video.views ? (video.views > 1000000 ? (video.views / 1000000).toFixed(1) + 'M' : (video.views / 1000).toFixed(0) + 'K') : 'Trending';
+        views = video.views ? (video.views > 1000000 ? (video.views / 1000000).toFixed(1) + 'M' : (video.views / 1000).toFixed(0) + 'K') : views;
         thumb = video.thumbnail || thumb;
+      } else {
+        if (yts) {
+          try {
+            const videoIdMatch = rawInput.match(/(?:v=|\/)([0-9A-Za-z_-]{11}).*/);
+            if (videoIdMatch && videoIdMatch[1]) {
+              const videoData = await yts({ videoId: videoIdMatch[1] });
+              if (videoData) {
+                videoTitle = videoData.title || videoTitle;
+                duration = videoData.timestamp || duration;
+                author = videoData.author?.name || author;
+                thumb = videoData.thumbnail || thumb;
+              }
+            }
+          } catch (e) {}
+        }
       }
 
       let cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
