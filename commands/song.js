@@ -12,14 +12,14 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ Fast & Direct Audio URL Fetcher
+// ⚡ Ultra-Fast Working Download Link Engine
 async function fetchAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // 🥇 Engine 1: Dark Yasiya API
+  // Engine 1: Dark Yasiya API
   try {
     const res1 = await axios.get(`https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 10000,
+      timeout: 8000,
       headers: { 'User-Agent': 'Mozilla/5.0' }
     });
     const dlUrl1 = res1.data?.result?.dl_link || res1.data?.result?.download;
@@ -32,32 +32,32 @@ async function fetchAudioStream(videoUrl) {
     }
   } catch (e) {}
 
-  // 🥈 Engine 2: NexOracle API
+  // Engine 2: BK9 API
   try {
-    const res2 = await axios.get(`https://api.nexoracle.com/downloader/yt-audio?apikey=free_key@maher_apis&url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 10000
+    const res2 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 8000
     });
-    const dlUrl2 = res2.data?.result?.url || res2.data?.result?.audio;
+    const dlUrl2 = res2.data?.BK9?.BK8;
     if (dlUrl2) {
       return {
         downloadUrl: dlUrl2,
-        title: res2.data?.result?.title || 'YouTube Audio',
-        thumbnail: res2.data?.result?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res2.data?.BK9?.title || 'YouTube Audio',
+        thumbnail: res2.data?.BK9?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
 
-  // 🥉 Engine 3: BK9 API
+  // Engine 3: NexOracle API
   try {
-    const res3 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 10000
+    const res3 = await axios.get(`https://api.nexoracle.com/downloader/yt-audio?apikey=free_key@maher_apis&url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 8000
     });
-    const dlUrl3 = res3.data?.BK9?.BK8;
+    const dlUrl3 = res3.data?.result?.url || res3.data?.result?.audio;
     if (dlUrl3) {
       return {
         downloadUrl: dlUrl3,
-        title: res3.data?.BK9?.title || 'YouTube Audio',
-        thumbnail: res3.data?.BK9?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        title: res3.data?.result?.title || 'YouTube Audio',
+        thumbnail: res3.data?.result?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
   } catch (e) {}
@@ -104,7 +104,7 @@ module.exports = {
     await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
 
     let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Searching Track:* _${rawInput}_\n⏳ Searching audio on YouTube...`
+      text: `⚡ *Searching Track:* _${rawInput}_\n⏳ Processing audio...`
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -131,39 +131,30 @@ module.exports = {
         thumb = video.thumbnail || thumb;
       }
 
-      if (statusMsg?.key) {
-        await sock.sendMessage(targetChat, { 
-          text: `⚡ *Downloading Audio:* _${videoTitle}_\n📥 Sending audio track...`, 
-          edit: statusMsg.key 
-        }).catch(() => {});
-      }
-
       const songData = await fetchAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
       const songCard = 
-`*🎧 HESHAN-MD AUDIO PLAYER*
-━━━━━━━━━━━━━━━━━━━━━
-• *Track*    : ${cleanTitle.length > 28 ? cleanTitle.slice(0, 25) + '...' : cleanTitle}
-• *Artist*   : ${author.length > 24 ? author.slice(0, 21) + '...' : author}
-• *Length*   : ${duration}
-━━━━━━━━━━━━━━━━━━━━━
+`┏━━━❮ 🎧 *HESHAN AUDIO PLAYER* ❯━━━┓
+┃
+┃ ◈ *Track*    : ${cleanTitle.length > 26 ? cleanTitle.slice(0, 23) + '...' : cleanTitle}
+┃ ◈ *Artist*   : ${author.length > 22 ? author.slice(0, 19) + '...' : author}
+┃ ◈ *Duration* : ${duration}
+┃ ◈ *Quality*  : 128kbps (MP3)
+┃
+┣━━━━━━━━━━━━━━━━━━━━━
+┃ 📥 *Direct Download Link:*
+┃ ${songData.downloadUrl}
+┗━━━━━━━━━━━━━━━━━━━━━┛
 🔗 *Pair Site :* https://heshan.devofc.top
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // 1. Send Card Image (Channel Context සහිතයි)
+      // Card එක Direct Download Link එක සමඟ ක්ෂණිකව යැවීම
       await sock.sendMessage(targetChat, {
         image: { url: songData.thumbnail || thumb },
         caption: songCard,
         contextInfo: channelContext
-      }, { quoted: msg }).catch(() => {});
-
-      // 2. Send Audio File as Document (WhatsApp Media Transcoding Bypass - Never Hangs)
-      await sock.sendMessage(targetChat, {
-        document: { url: songData.downloadUrl },
-        mimetype: 'audio/mpeg',
-        fileName: `${cleanTitle}.mp3`
       }, { quoted: msg });
 
       if (statusMsg?.key) {
