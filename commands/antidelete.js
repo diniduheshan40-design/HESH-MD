@@ -1,11 +1,10 @@
 // commands/antidelete.js
 const NodeCache = require('node-cache');
-const { WAMessageStubType } = require('@whiskeysockets/baileys');
+const { WAMessageStubType, downloadContentFromMessage, jidNormalizedUser } = require('@whiskeysockets/baileys');
 const mongoose = require('mongoose');
 
-// Cache එකක් (පැය 2ක TTL)
 const messageCache = new NodeCache({ stdTTL: 7200, checkperiod: 300, maxKeys: 15000 });
-let isListenerActive = false;
+const registeredSockets = new WeakSet();
 
 function getSettingsModel() {
   try {
@@ -17,31 +16,101 @@ function getSettingsModel() {
 }
 
 function unwrapMessageContent(message) {
+  if (!message) return null;
   return (
     message?.ephemeralMessage?.message ||
     message?.viewOnceMessage?.message ||
     message?.viewOnceMessageV2?.message ||
+    message?.viewOnceMessageV2Extension?.message ||
     message?.documentWithCaptionMessage?.message ||
     message
   );
 }
 
-// Background Listener එක setup කිරීම
-function setupAntiDeleteListener(sock) {
-  if (isListenerActive) return;
-  isListenerActive = true;
+async function streamToBuffer(stream) {
+  let buffer = Buffer.from([]);
+  for await (const chunk of stream) {
+    buffer = Buffer.concat([buffer, chunk]);
+  }
+  return buffer;
+}
 
-  // 1. එන මැසේජ් cache කර තබා ගැනීම
+// Media types download & send helper
+async function forwardDeletedMedia(sock, targetJid, rawContent, alertText, sender) {
+  const channelInfo = global.channelContext || {};
+
+  if (rawContent.conversation || rawContent.extendedTextMessage) {
+    const text = rawContent.conversation || rawContent.extendedTextMessage.text || '';
+    return await sock.sendMessage(targetJid, {
+      text: `${alertText}\n\n💬 *Deleted Text:*\n${text}`,
+      mentions: [sender],
+      ...channelInfo
+    });
+  }
+
+  if (rawContent.imageMessage) {
+    const stream = await downloadContentFromMessage(rawContent.imageMessage, 'image');
+    const buffer = await streamToBuffer(stream);
+    return await sock.sendMessage(targetJid, {
+      image: buffer,
+      caption: `${alertText}\n\n🖼️ *Caption:* ${rawContent.imageMessage.caption || 'None'}`,
+      mentions: [sender],
+      ...channelInfo
+    });
+  }
+
+  if (rawContent.videoMessage) {
+    const stream = await downloadContentFromMessage(rawContent.videoMessage, 'video');
+    const buffer = await streamToBuffer(stream);
+    return await sock.sendMessage(targetJid, {
+      video: buffer,
+      caption: `${alertText}\n\n🎥 *Caption:* ${rawContent.videoMessage.caption || 'None'}`,
+      mentions: [sender],
+      ...channelInfo
+    });
+  }
+
+  if (rawContent.audioMessage) {
+    const stream = await downloadContentFromMessage(rawContent.audioMessage, 'audio');
+    const buffer = await streamToBuffer(stream);
+    await sock.sendMessage(targetJid, { text: alertText, mentions: [sender], ...channelInfo });
+    return await sock.sendMessage(targetJid, {
+      audio: buffer,
+      mimetype: rawContent.audioMessage.mimetype || 'audio/mp4',
+      ptt: Boolean(rawContent.audioMessage.ptt)
+    });
+  }
+
+  if (rawContent.stickerMessage) {
+    const stream = await downloadContentFromMessage(rawContent.stickerMessage, 'sticker');
+    const buffer = await streamToBuffer(stream);
+    await sock.sendMessage(targetJid, { text: alertText, mentions: [sender], ...channelInfo });
+    return await sock.sendMessage(targetJid, { sticker: buffer });
+  }
+
+  // Fallback for docs / other files
+  return await sock.sendMessage(targetJid, {
+    text: `${alertText}\n\n⚠️ *(Unsupported media or document type was deleted)*`,
+    mentions: [sender],
+    ...channelInfo
+  });
+}
+
+function setupAntiDeleteListener(sock) {
+  if (!sock || !sock.ev || registeredSockets.has(sock)) return;
+  registeredSockets.add(sock);
+
+  // 1. Message caching
   sock.ev.on('messages.upsert', ({ messages }) => {
     if (!messages || !messages.length) return;
     for (const msg of messages) {
       if (msg.key && msg.key.id && msg.key.remoteJid !== 'status@broadcast') {
-        messageCache.set(msg.key.id, JSON.parse(JSON.stringify(msg)));
+        messageCache.set(msg.key.id, msg);
       }
     }
   });
 
-  // 2. මැසේජ් එකක් Revoke වූ විට හසුකර ගැනීම
+  // 2. Catch deleted message
   sock.ev.on('messages.update', async (updates) => {
     for (const update of updates) {
       try {
@@ -58,15 +127,15 @@ function setupAntiDeleteListener(sock) {
         const cachedMsg = messageCache.get(deletedKey.id);
         if (!cachedMsg || !cachedMsg.message) continue;
 
-        const myBotJid = sock.user?.id || '';
-        const myBotNum = myBotJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        const myBotJid = jidNormalizedUser(sock.user?.id || '');
+        const myBotNum = myBotJid.replace(/\D/g, '');
 
+        const Model = getSettingsModel();
         let settings = null;
         if (typeof global.getBotSettings === 'function') {
           settings = await global.getBotSettings(myBotNum);
-        } else {
-          const Model = getSettingsModel();
-          if (Model) settings = await Model.findById(myBotNum).lean();
+        } else if (Model) {
+          settings = await Model.findById(myBotNum).lean();
         }
 
         if (!settings || !settings.antiDeleteEnabled) continue;
@@ -77,12 +146,12 @@ function setupAntiDeleteListener(sock) {
         if (settings.antiDeleteType === 'inbox' && isGroup) continue;
         if (settings.antiDeleteType === 'group' && !isGroup) continue;
 
-        const sender = cachedMsg.key.participant || cachedMsg.key.remoteJid;
+        const sender = cachedMsg.key.participant || cachedMsg.participant || cachedMsg.key.remoteJid;
         const senderClean = sender.split('@')[0].split(':')[0];
 
-        let targetJid = (settings.antiDeleteDest === 'from') 
+        const targetJid = (settings.antiDeleteDest === 'from') 
           ? chatJid 
-          : myBotJid.split(':')[0] + '@s.whatsapp.net';
+          : `${myBotNum}@s.whatsapp.net`;
 
         const alertText = 
           `*🛡️ ANTI-DELETE DETECTED 🛡️*\n` +
@@ -90,32 +159,11 @@ function setupAntiDeleteListener(sock) {
           `👤 *Sender:* @${senderClean}\n` +
           `📍 *Chat:* ${isGroup ? 'Group Chat' : 'Inbox (Private)'}\n` +
           `⏰ *Time:* ${new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Colombo' })}\n` +
-          `━━━━━━━━━━━━━━━━━━━━━\n` +
-          `> *Deleted Message Content:*`;
+          `━━━━━━━━━━━━━━━━━━━━━`;
 
-        // Alert Message
-        await sock.sendMessage(targetJid, {
-          text: alertText,
-          mentions: [sender],
-          ...(global.channelContext || {})
-        });
-
-        // Deleted Message Body
         const rawContent = unwrapMessageContent(cachedMsg.message);
-        if (rawContent.conversation || rawContent.extendedTextMessage) {
-          const bodyText = rawContent.conversation || rawContent.extendedTextMessage?.text || '';
-          await sock.sendMessage(targetJid, {
-            text: `💬 *Deleted Text:*\n\n${bodyText}`
-          });
-        } else {
-          try {
-            await sock.sendMessage(targetJid, {
-              forward: cachedMsg,
-              ...(global.channelContext || {})
-            });
-          } catch (e) {
-            await sock.sendMessage(targetJid, rawContent);
-          }
+        if (rawContent) {
+          await forwardDeletedMedia(sock, targetJid, rawContent, alertText, sender);
         }
 
       } catch (err) {
@@ -127,16 +175,16 @@ function setupAntiDeleteListener(sock) {
 
 module.exports = {
   name: 'antidelete',
-  alias: ['antidel'],
+  alias: ['antidel', 'antid'],
   category: 'owner',
-  init: setupAntiDeleteListener, // Connection එක හැදුණු ගමන් listener එක run වීමට
+  init: setupAntiDeleteListener,
 
   async execute(sock, msg, args = [], chatJid, safeReply, options = {}) {
     setupAntiDeleteListener(sock);
 
     const targetChat = chatJid || msg.key?.remoteJid;
-    const rawBotId = sock.user?.id || '';
-    const myBotNum = rawBotId.split(':')[0].split('@')[0].replace(/\D/g, '');
+    const myBotJid = jidNormalizedUser(sock.user?.id || '');
+    const myBotNum = myBotJid.replace(/\D/g, '');
 
     const reply = async (text) => {
       if (typeof safeReply === 'function') return await safeReply(text);
@@ -199,4 +247,3 @@ module.exports = {
     return reply('❌ Invalid argument. Type `.antidel` for help.');
   }
 };
-
