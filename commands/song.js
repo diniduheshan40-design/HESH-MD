@@ -53,10 +53,10 @@ module.exports = {
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(rawInput);
 
       if (!isYtUrl) {
-        if (!yts) throw new Error('yt-search missing. Please install yt-search: npm i yt-search');
+        if (!yts) throw new Error('yt-search missing. Install with: npm i yt-search');
         const searchResults = await yts(rawInput);
         if (!searchResults?.videos?.length) {
-          throw new Error('Song not found on YouTube!');
+          throw new Error('සින්දුව YouTube හි සොයාගත නොහැකි විය!');
         }
 
         const video = searchResults.videos[0];
@@ -95,7 +95,7 @@ module.exports = {
 │  [3]  ▸ 🎙️  Voice (PTT)
 │
 └────────────────────────┘
-> 💡 *පණිවිඩයට 1, 2 හෝ 3 ලෙස Reply කරන්න.*
+> 💡 *මෙම පණිවිඩයට 1, 2 හෝ 3 ලෙස Reply කරන්න.*
 > ⚡ ʜᴇꜱʜᴀɴ.ᴅᴇᴠᴏꜰᴄ.ᴛᴏᴘ • ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ`.trim();
 
       const sentMsg = await sock.sendMessage(targetChat, {
@@ -129,7 +129,7 @@ module.exports = {
       console.error('Song Search Error:', err?.message || err);
       await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       await sock.sendMessage(targetChat, { 
-        text: `❌ *Error:* ${err.message || 'Unable to find song.'}`,
+        text: `❌ *දෝෂයකි:* ${err.message || 'සින්දුව සෙවීමේදී දෝෂයක් මතු විය.'}`,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
     }
