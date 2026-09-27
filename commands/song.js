@@ -1,13 +1,12 @@
 // commands/song.js
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
 
 let yts = null;
 try {
   yts = require('yt-search');
 } catch (e) {}
+
+const CHAMINDU_API_KEY = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
 
 function extractYouTubeId(url) {
   const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/;
@@ -15,30 +14,32 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ Heroku-Safe Working Stream Engines
-async function fetchAudioLink(videoUrl) {
+// ⚡ 100% Working Fast Audio Stream Fetcher
+async function fetchAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // Engine 1: Dark Yasiya (High speed direct cdn)
+  // 🥇 Primary Engine: Chamindu Official MP3 API
   try {
-    const res1 = await axios.get(`https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    const dlUrl1 = res1.data?.result?.dl_link || res1.data?.result?.download;
-    if (dlUrl1) {
+    const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=${CHAMINDU_API_KEY}`;
+    const res = await axios.get(apiUrl, { timeout: 20000 });
+    const data = res.data?.data || res.data?.result;
+    const dlUrl = data?.download_url || data?.direct_url;
+
+    if (dlUrl) {
       return {
-        downloadUrl: dlUrl1,
-        title: res1.data?.result?.title || 'YouTube Audio',
-        thumbnail: res1.data?.result?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
+        downloadUrl: dlUrl,
+        title: data?.title || 'YouTube Audio',
+        thumbnail: data?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
       };
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('Chamindu API failed, attempting fallback...', e?.message);
+  }
 
-  // Engine 2: BK9 API
+  // 🥈 Fallback Engine: BK9 API
   try {
     const res2 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, {
-      timeout: 10000
+      timeout: 15000
     });
     const dlUrl2 = res2.data?.BK9?.BK8;
     if (dlUrl2) {
@@ -50,14 +51,14 @@ async function fetchAudioLink(videoUrl) {
     }
   } catch (e) {}
 
-  throw new Error('All download engines are currently offline.');
+  throw new Error('Failed to retrieve download link from API.');
 }
 
 module.exports = {
   name: 'song',
   alias: ['play', 'sing', 'mp3', 'ytmp3'],
   category: 'download',
-  desc: 'Download YouTube audio directly on Heroku',
+  desc: 'Download YouTube audio directly',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -95,8 +96,6 @@ module.exports = {
       text: `⚡ *Searching Track:* _${rawInput}_\n⏳ Searching audio on YouTube...`
     }, { quoted: msg }).catch(() => null);
 
-    let tempFile = null;
-
     try {
       let videoUrl = rawInput;
       let videoTitle = rawInput;
@@ -123,32 +122,29 @@ module.exports = {
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { 
-          text: `⚡ *Downloading Audio:* _${videoTitle}_\n📥 Sending audio track...`, 
+          text: `⚡ *Downloading Audio:* _${videoTitle}_\n📥 Fetching stream from Chamindu API...`, 
           edit: statusMsg.key 
         }).catch(() => {});
       }
 
-      const songData = await fetchAudioLink(videoUrl);
+      // 1. Chamindu API එකෙන් Direct SaveTube CDN URL එක ලබා ගැනීම
+      const songData = await fetchAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // 🛡️ HEROKU SAFE FILE STREAM (RAM එක පිරීම සම්පූර්ණයෙන් වළක්වයි)
-      tempFile = path.join(os.tmpdir(), `hesh_${Date.now()}.mp3`);
-      const fileStream = fs.createWriteStream(tempFile);
-
-      const downloadRes = await axios({
-        method: 'GET',
-        url: songData.downloadUrl,
-        responseType: 'stream',
-        timeout: 25000,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
+      // 2. Audio ගොනුව Buffer එකක් ලෙස කෙලින්ම ලබා ගැනීම (Timeout 40s)
+      const audioRes = await axios.get(songData.downloadUrl, {
+        responseType: 'arraybuffer',
+        timeout: 40000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
       });
 
-      downloadRes.data.pipe(fileStream);
+      const audioBuffer = Buffer.from(audioRes.data);
 
-      await new Promise((resolve, reject) => {
-        fileStream.on('finish', resolve);
-        fileStream.on('error', reject);
-      });
+      if (!audioBuffer || audioBuffer.length < 5000) {
+        throw new Error('Downloaded audio stream is invalid.');
+      }
 
       const songCard = 
 `*🎧 HESHAN-MD AUDIO PLAYER*
@@ -161,27 +157,22 @@ module.exports = {
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // 1. Card Image (Channel context එක සහිතව)
+      // 3. Thumbnail Card එක යැවීම (Channel Context සහිතයි)
       await sock.sendMessage(targetChat, {
         image: { url: songData.thumbnail || thumb },
         caption: songCard,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
 
-      // 2. Audio ගොනුව File Stream මඟින් යැවීම (ContextInfo රහිතව - Heroku Deadlock Bypass)
-      const audioBuffer = fs.readFileSync(tempFile);
+      // 4. Audio එක WhatsApp එකට Playable MP3 එකක් ලෙස යැවීම (Channel Header රහිතයි)
       await sock.sendMessage(targetChat, {
         audio: audioBuffer,
-        mimetype: 'audio/mp4',
+        mimetype: 'audio/mpeg',
         fileName: `${cleanTitle}.mp3`,
         ptt: false
       }, { quoted: msg });
 
-      // ගොනුව යවා අවසන් වූ සැනින් RAM එක හා Disk එක නිදහස් කිරීම
-      try {
-        if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-      } catch (e) {}
-
+      // Garbage collection මඟින් RAM එක ක්ෂණිකව නිදහස් කිරීම
       if (global.gc) {
         global.gc();
       }
@@ -193,11 +184,7 @@ module.exports = {
       await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error('Song Command Error:', err.message);
-
-      try {
-        if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-      } catch (e) {}
+      console.error('Song Command Error:', err?.message || err);
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
