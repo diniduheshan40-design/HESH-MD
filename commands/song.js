@@ -15,50 +15,11 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ High-Speed Audio Engine
-async function fetchAudioStream(videoUrl) {
-  const cleanId = extractYouTubeId(videoUrl);
-
-  try {
-    const apiUrl = `https://api.chamindu.site/api/v1/youtube/mp3?url=${encodeURIComponent(videoUrl)}&quality=320kbps&api_key=${CHAMINDU_API_KEY}`;
-    const res = await axios.get(apiUrl, { 
-      timeout: 12000, 
-      headers: { 'User-Agent': 'Mozilla/5.0' } 
-    });
-    const data = res.data?.data || res.data?.result;
-    const dlUrl = data?.download_url || data?.direct_url;
-
-    if (dlUrl) {
-      return {
-        downloadUrl: dlUrl,
-        title: data?.title || 'YouTube Audio',
-        thumbnail: data?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
-      };
-    }
-  } catch (e) {}
-
-  try {
-    const res2 = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(videoUrl)}`, { 
-      timeout: 10000 
-    });
-    const dlUrl2 = res2.data?.BK9?.BK8;
-    if (dlUrl2) {
-      return {
-        downloadUrl: dlUrl2,
-        title: res2.data?.BK9?.title || 'YouTube Audio',
-        thumbnail: res2.data?.BK9?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg')
-      };
-    }
-  } catch (e) {}
-
-  throw new Error('Failed to retrieve download link.');
-}
-
 module.exports = {
   name: 'song',
   alias: ['play', 'sing', 'mp3', 'ytmp3'],
   category: 'download',
-  desc: 'Interactive YouTube Music Downloader',
+  desc: 'Compact YouTube Music Downloader',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -82,13 +43,7 @@ module.exports = {
     if (!rawInput) {
       await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
       return await sock.sendMessage(targetChat, { 
-        text: `*╭━━━〔 ⚡ ʜᴇꜱʜᴀɴ ᴍᴜꜱɪᴄ ⚡ 〕━━━╮*\n` +
-              `┃\n` +
-              `┃  💡 කරුණාකර සින්දුවේ නම ඇතුළත් කරන්න.\n` +
-              `┃  📌 උදා: *.song Lelena*\n` +
-              `┃\n` +
-              `╰━━━━━━━━━━━━━━━━━━━━━╯\n` +
-              `🔗 *Pair Site :* https://heshan.devofc.top`,
+        text: `*🎧 HESHAN MUSIC*\n\n> 💡 Please enter song name.\n> 📌 Example: *.song Lelena*`,
         contextInfo: channelContext
       }, { quoted: msg });
     }
@@ -99,7 +54,6 @@ module.exports = {
       let videoUrl = rawInput;
       let videoTitle = rawInput;
       let duration = '03:20';
-      let author = 'YouTube Music';
       let thumb = 'https://files.catbox.moe/a58add.jpeg';
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(rawInput);
@@ -115,52 +69,45 @@ module.exports = {
         videoUrl = video.url;
         videoTitle = video.title || rawInput;
         duration = video.timestamp || duration;
-        author = video.author?.name || author;
         thumb = video.thumbnail || thumb;
       }
 
-      const cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
+      // අකුරු ගාන Phone Screen එකට ගැලපෙන සේ සීමා කිරීම (Read more වැළැක්වීමට)
+      let cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
+      if (cleanTitle.length > 22) cleanTitle = cleanTitle.slice(0, 19) + '...';
 
-      const menuCard = 
-`╭━━━〔 🎧 *ʜᴇꜱʜᴀɴ ᴍᴜꜱɪᴄ ᴘʟᴀʏᴇʀ* 〕━━━╮
-┃ 
-┃  🎵 *Track*    : ${cleanTitle.length > 25 ? cleanTitle.slice(0, 22) + '...' : cleanTitle}
-┃  👤 *Artist*   : ${author.length > 22 ? author.slice(0, 19) + '...' : author}
-┃  ⏱️ *Duration* : ${duration}
-┃
-┃  ▶ 🔘────────────── ${duration}
-┃  ⇄  ◃◃   ❚❚   ▹▹  ↻
-┃
-┣━━━━━━━━━━━━━━━━━━━━━
-┃  📥 *Select format by replying (1-3):*
-┃
-┃  *[1]* 🎵 Audio (Playable MP3)
-┃  *[2]* 📂 Document (Original File)
-┃  *[3]* 🎙️ Voice Note (PTT Waveform)
-┃
-╰━━━━━━━━━━━━━━━━━━━━━╯
-> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
+      // 📱 Compact Ultra-Clean Mini Player (No "Read more")
+      const miniCard = 
+`┌─❮ 🎧 *HESHAN PLAYER* ❯─┐
+│
+├ 🎵 *Song :* ${cleanTitle}
+├ ⏱️ *Time :* ${duration}
+│
+├ 🔘───── ❚❚ ───── ${duration}
+│
+├ 📥 *Reply with format:*
+│  *[1]* Audio (MP3)
+│  *[2]* Document (File)
+│  *[3]* Voice Note (PTT)
+│
+└────────────────────────┘`.trim();
 
-      // Cyber Music Card එක යැවීම
       const sentMsg = await sock.sendMessage(targetChat, {
         image: { url: thumb },
-        caption: menuCard,
+        caption: miniCard,
         contextInfo: channelContext
       }, { quoted: msg });
 
-      // Reply එක හඳුනාගැනීම සඳහා Session Map එකට තොරතුරු සුරැකීම
       if (sentMsg?.key?.id) {
         global.songSessions.set(sentMsg.key.id, {
           videoUrl,
           title: cleanTitle,
-          author,
           duration,
           thumb,
           sender: msg.key.participant || targetChat,
           time: Date.now()
         });
 
-        // මිනිත්තු 5කට පසු Session එක ඉවත් කිරීම
         setTimeout(() => {
           global.songSessions.delete(sentMsg.key.id);
         }, 5 * 60 * 1000);
@@ -170,7 +117,7 @@ module.exports = {
       console.error('Song Search Error:', err?.message || err);
       await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       await sock.sendMessage(targetChat, { 
-        text: `❌ *Error:* ${err.message || 'Unable to find song.'}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`,
+        text: `❌ *Error:* ${err.message || 'Unable to find song.'}`,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
     }
