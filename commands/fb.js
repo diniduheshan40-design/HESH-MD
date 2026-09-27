@@ -1,18 +1,57 @@
 // commands/fb.js
 const axios = require('axios');
 
-// ⚡ Facebook Video Data Extractor (Thinuzz API Integration)
+// ⚡ Multi-Engine Facebook Video Extractor
 async function fetchFbVideo(facebookUrl) {
-  const apiKey = 'key_525b5ceb068ac7f2';
-  const apiUrl = `https://mr-thinuzz-api-build.vercel.app/api/fbdown/download?url=${encodeURIComponent(facebookUrl)}&apiKey=${apiKey}`;
+  const targetUrl = encodeURIComponent(facebookUrl);
 
-  // 1. Primary: Mr Thinuzz FB API
+  // 1. Primary: GiftedTech FB API
   try {
+    const res = await axios.get(`https://api.giftedtech.web.id/api/download/facebook?apikey=gifted&url=${targetUrl}`, {
+      timeout: 15000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+
+    const result = res.data?.result;
+    const downloadUrl = result?.hd_video || result?.sd_video || result?.video;
+
+    if (downloadUrl && typeof downloadUrl === 'string' && downloadUrl.startsWith('http')) {
+      return {
+        videoUrl: downloadUrl,
+        title: result?.title || 'Facebook Video',
+        duration: result?.duration || 'N/A',
+        quality: result?.hd_video ? 'HD' : 'SD'
+      };
+    }
+  } catch (e) {}
+
+  // 2. Fallback 1: BK9 FB Gateway
+  try {
+    const res = await axios.get(`https://bk9.fun/download/fb?url=${targetUrl}`, {
+      timeout: 15000
+    });
+
+    const bkData = res.data?.BK9;
+    const dl = bkData?.hd || bkData?.sd || bkData?.video;
+
+    if (dl && typeof dl === 'string' && dl.startsWith('http')) {
+      return {
+        videoUrl: dl,
+        title: bkData?.title || 'Facebook Video',
+        duration: 'N/A',
+        quality: bkData?.hd ? 'HD' : 'SD'
+      };
+    }
+  } catch (e) {}
+
+  // 3. Fallback 2: Thinuzz API
+  try {
+    const apiKey = 'key_525b5ceb068ac7f2';
+    const apiUrl = `https://mr-thinuzz-api-build.vercel.app/api/fbdown/download?url=${targetUrl}&apiKey=${apiKey}`;
+
     const res = await axios.get(apiUrl, {
-      timeout: 25000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
+      timeout: 20000,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
     });
 
     const data = res.data?.data;
@@ -23,36 +62,15 @@ async function fetchFbVideo(facebookUrl) {
         videoUrl: downloadUrl,
         title: data?.title || 'Facebook Video',
         duration: data?.duration || 'N/A',
-        quality: data?.quality_found || (data?.links?.hd ? 'HD' : 'SD'),
-        thumbnail: data?.thumbnail
+        quality: data?.quality_found || (data?.links?.hd ? 'HD' : 'SD')
       };
     }
-  } catch (e) {
-    console.error('Thinuzz FB API Error:', e.message);
-  }
-
-  // 2. High-Speed Fallback 1: Siputzx
-  try {
-    const res = await axios.get(`https://api.siputzx.my.id/api/d/facebook?url=${encodeURIComponent(facebookUrl)}`, { timeout: 12000 });
-    const dl = res.data?.data?.urls?.[0]?.hd || res.data?.data?.urls?.[0]?.sd || res.data?.data?.download_url;
-    if (dl && typeof dl === 'string' && dl.startsWith('http')) {
-      return { videoUrl: dl, title: res.data?.data?.title || 'Facebook Video', quality: 'HD' };
-    }
   } catch (e) {}
 
-  // 3. High-Speed Fallback 2: Ryzendesu
-  try {
-    const res = await axios.get(`https://api.ryzendesu.vip/api/downloader/fbdl?url=${encodeURIComponent(facebookUrl)}`, { timeout: 12000 });
-    const dl = res.data?.hd || res.data?.sd || res.data?.url;
-    if (dl && typeof dl === 'string' && dl.startsWith('http')) {
-      return { videoUrl: dl, title: res.data?.title || 'Facebook Video', quality: 'HD' };
-    }
-  } catch (e) {}
-
-  throw new Error('Unable to fetch video. Please check if the link is valid and public.');
+  throw new Error('Unable to fetch video. Make sure the video is public and link is valid.');
 }
 
-// ⚡ Buffer Downloader (Network drop වීම් වැළැක්වීමට)
+// ⚡ Memory-Safe Video Fetcher
 async function downloadVideoBuffer(url) {
   const response = await axios.get(url, {
     responseType: 'arraybuffer',
@@ -66,52 +84,55 @@ async function downloadVideoBuffer(url) {
 
 module.exports = {
   name: 'fb',
-  alias: ['facebook', 'fbdl'],
+  alias: ['facebook', 'fbdl', 'fbreel'],
   category: 'download',
-  desc: 'Download Facebook Videos Error-Free',
+  desc: 'Download Facebook Videos & Reels Error-Free',
 
-  async execute(sock, msg, args, chatJid) {
+  async execute(sock, msg, args, chatJid, safeReply) {
     const DEFAULT_FOOTER = '\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡';
 
-    const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
-      ? chatJid 
-      : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
-
+    const targetChat = chatJid || msg.key?.remoteJid;
     if (!targetChat) return;
+
+    const reply = async (text) => {
+      if (typeof safeReply === 'function') return await safeReply(text);
+      return await sock.sendMessage(targetChat, { text, ...(global.channelContext || {}) }, { quoted: msg });
+    };
 
     const rawUrl = (Array.isArray(args) ? args[0] : String(args || '')).trim();
 
-    if (!rawUrl || (!rawUrl.includes('facebook.com') && !rawUrl.includes('fb.watch') && !rawUrl.includes('fb.gg') && !rawUrl.includes('fb.me'))) {
-      return await sock.sendMessage(targetChat, { 
-        text: `*❪ ERROR ❫*\n\n⚠️ *Please provide a valid Facebook video link!*\n\n📘 *Example:*\n• .fb https://www.facebook.com/share/v/xxxx/${DEFAULT_FOOTER}`,
-        contextInfo: global.channelContext?.contextInfo || {}
-      }, { quoted: msg });
+    const isFbUrl = /(?:facebook\.com|fb\.watch|fb\.gg|fb\.me)\//i.test(rawUrl);
+
+    if (!rawUrl || !isFbUrl) {
+      return await reply(
+        `*❪ FACEBOOK DOWNLOADER ❫*\n\n⚠️ *Please provide a valid Facebook video or reel link!*\n\n📘 *Example:*\n• .fb https://www.facebook.com/share/v/xxxx/${DEFAULT_FOOTER}`
+      );
     }
 
     sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
 
-    // ⚡ English Professional Waiting Message
     let loadMsg = await sock.sendMessage(targetChat, { 
-      text: `⚡ *Processing Facebook Video...*\nPlease wait a moment while we download your media. 🎥${DEFAULT_FOOTER}` 
+      text: `⚡ *Processing Facebook Media...*\nPlease wait a moment while we fetch your video. 🎥${DEFAULT_FOOTER}`,
+      ...(global.channelContext || {})
     }, { quoted: msg }).catch(() => null);
 
     try {
-      // 1. Video Data ලබා ගැනීම
+      // 1. Data Extract
       const fbData = await fetchFbVideo(rawUrl);
 
-      // 2. Video File එක Buffer එකක් ලෙස download කිරීම
+      // 2. Safe Buffer Download
       const videoBuffer = await downloadVideoBuffer(fbData.videoUrl);
 
-      if (videoBuffer.length < 10000) {
-        throw new Error('Downloaded file is invalid or corrupted.');
+      if (!videoBuffer || videoBuffer.length < 5000) {
+        throw new Error('Downloaded file is invalid or empty.');
       }
 
-      // 3. Waiting Message එක Delete කිරීම
       if (loadMsg?.key) {
         await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
       }
 
-      const caption = `╭──────❮ 📘 *HESHAN-MD FB DL* ❯──────╮
+      const caption = 
+`╭──────❮ 📘 *HESHAN-MD FB DL* ❯──────╮
 │
 ├ 🏷️ *Title    :* ${fbData.title.slice(0, 36)}
 ├ ⏱️ *Duration :* ${fbData.duration}
@@ -119,30 +140,28 @@ module.exports = {
 │
 ╰────────────────────────────────────╯${DEFAULT_FOOTER}`.trim();
 
-      // 4. Video Dispatch
+      await sock.sendMessage(targetChat, { react: { text: '⬆️', key: msg.key } }).catch(() => {});
+
+      // 3. Dispatch Video
       await sock.sendMessage(targetChat, {
         video: videoBuffer,
         caption: caption,
         mimetype: 'video/mp4',
         fileName: 'fb_video.mp4',
-        contextInfo: global.channelContext?.contextInfo || {}
+        ...(global.channelContext || {})
       }, { quoted: msg });
 
       sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error('FB Download Error:', err.message);
+      console.error('FB Download Error:', err?.message || err);
 
       if (loadMsg?.key) {
-        sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
+        await sock.sendMessage(targetChat, { delete: loadMsg.key }).catch(() => {});
       }
       sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
 
-      await sock.sendMessage(targetChat, { 
-        text: `❌ *Facebook Download Error:* ${err.message}${DEFAULT_FOOTER}`,
-        contextInfo: global.channelContext?.contextInfo || {}
-      }, { quoted: msg }).catch(() => {});
+      await reply(`❌ *Facebook Download Error:* ${err.message || 'Server busy'}${DEFAULT_FOOTER}`);
     }
   }
 };
-
