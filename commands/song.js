@@ -39,7 +39,6 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    // 1. Search කරද්දී 🔎 Reaction
     await sock.sendMessage(targetChat, { react: { text: "🔎", key: msg.key } }).catch(() => {});
 
     try {
@@ -72,7 +71,6 @@ module.exports = {
 
       let cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // ⚡ අලුත්ම Cyber-Pulse Header සහිත Luxury Audio Console
       const aestheticCard = 
 `⚡𝄢╶╶╶╶ ✦ 🎧 ✦ ╶╶╶╶𝄢⚡
       ◢◤ ʜ ᴇ ꜱ ʜ ᴀ ɴ  ᴏ ꜰ ᴄ ◥◣
@@ -105,27 +103,27 @@ module.exports = {
         contextInfo: channelContext
       }, { quoted: msg });
 
-      // 2. Card එක Chat එකට වැටුණු සැනින් 🎵 Reaction
       await sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
 
+      // 🛡️ Fail-Proof Session Storage (Message ID + TargetChat JID දෙකටම Store කරයි)
+      const sessionPayload = {
+        videoUrl,
+        title: cleanTitle,
+        duration,
+        thumb,
+        sender: msg.key.participant || targetChat,
+        time: Date.now()
+      };
+
       if (sentMsg?.key?.id) {
-        const sessionPayload = {
-          videoUrl,
-          title: cleanTitle,
-          duration,
-          thumb,
-          sender: msg.key.participant || targetChat,
-          time: Date.now()
-        };
-
         global.songSessions.set(sentMsg.key.id, sessionPayload);
-        global.songSessions.set(targetChat, sessionPayload);
-
-        setTimeout(() => {
-          global.songSessions.delete(sentMsg.key.id);
-          global.songSessions.delete(targetChat);
-        }, 10 * 60 * 1000);
       }
+      global.songSessions.set(targetChat, sessionPayload);
+
+      setTimeout(() => {
+        if (sentMsg?.key?.id) global.songSessions.delete(sentMsg.key.id);
+        global.songSessions.delete(targetChat);
+      }, 15 * 60 * 1000);
 
     } catch (err) {
       console.error('Song Search Error:', err?.message || err);
