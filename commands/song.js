@@ -1,25 +1,16 @@
 // commands/song.js
-const axios = require('axios');
-
 let yts = null;
 try {
   yts = require('yt-search');
 } catch (e) {}
 
-const CHAMINDU_API_KEY = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
 global.songSessions = global.songSessions || new Map();
-
-function extractYouTubeId(url) {
-  const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/;
-  const match = String(url).match(regExp);
-  return match ? match[1] : null;
-}
 
 module.exports = {
   name: 'song',
   alias: ['play', 'sing', 'mp3', 'ytmp3'],
   category: 'download',
-  desc: 'Compact YouTube Music Downloader',
+  desc: 'Fast Compact YouTube Downloader',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -43,12 +34,13 @@ module.exports = {
     if (!rawInput) {
       await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
       return await sock.sendMessage(targetChat, { 
-        text: `*🎧 HESHAN MUSIC*\n\n> 💡 Please enter song name.\n> 📌 Example: *.song Lelena*`,
+        text: `*🎧 HESHAN MUSIC*\n\n> 💡 ගීතයේ නම ඇතුළත් කරන්න.\n> 📌 උදා: *.song Lelena*`,
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
-    await sock.sendMessage(targetChat, { react: { text: "⬆️", key: msg.key } }).catch(() => {});
+    // 1. Search වෙද්දී 🔎 Reaction එක වැටේ
+    await sock.sendMessage(targetChat, { react: { text: "🔎", key: msg.key } }).catch(() => {});
 
     try {
       let videoUrl = rawInput;
@@ -72,25 +64,18 @@ module.exports = {
         thumb = video.thumbnail || thumb;
       }
 
-      // අකුරු ගාන Phone Screen එකට ගැලපෙන සේ සීමා කිරීම (Read more වැළැක්වීමට)
       let cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
-      if (cleanTitle.length > 22) cleanTitle = cleanTitle.slice(0, 19) + '...';
+      if (cleanTitle.length > 20) cleanTitle = cleanTitle.slice(0, 18) + '..';
 
-      // 📱 Compact Ultra-Clean Mini Player (No "Read more")
+      // 📱 Ultra-Compact Single Glance Box (Screen එකෙන් 25%ක් පමණි)
       const miniCard = 
-`┌─❮ 🎧 *HESHAN PLAYER* ❯─┐
-│
-├ 🎵 *Song :* ${cleanTitle}
-├ ⏱️ *Time :* ${duration}
-│
-├ 🔘───── ❚❚ ───── ${duration}
-│
-├ 📥 *Reply with format:*
-│  *[1]* Audio (MP3)
-│  *[2]* Document (File)
-│  *[3]* Voice Note (PTT)
-│
-└────────────────────────┘`.trim();
+`╭───❮ 🎧 *HESHAN* ❯───╮
+│ 🎵 *${cleanTitle}* [${duration}]
+├── Reply Number: ────┤
+│ *[1]* Audio (MP3)
+│ *[2]* Document (HQ)
+│ *[3]* Voice (PTT)
+╰─────────────────────╯`.trim();
 
       const sentMsg = await sock.sendMessage(targetChat, {
         image: { url: thumb },
@@ -98,12 +83,14 @@ module.exports = {
         contextInfo: channelContext
       }, { quoted: msg });
 
+      // 2. Card එක වැටුණු සැනින් User message එකට 🎵 වැටේ
+      await sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
+
       if (sentMsg?.key?.id) {
         global.songSessions.set(sentMsg.key.id, {
           videoUrl,
           title: cleanTitle,
           duration,
-          thumb,
           sender: msg.key.participant || targetChat,
           time: Date.now()
         });
