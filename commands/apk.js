@@ -1,39 +1,56 @@
 // commands/apk.js
 const axios = require('axios');
 
-// ⚡ Multi-Engine APK Fetcher (Chamindu + Fast Free Fallbacks)
-async function fetchApkDetails(query) {
-  const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
+const API_KEY = "chama_api_ec9848130d1aea209f08fb85e0b4720f";
 
-  // 1. Chamindu AN1 API (Primary)
-  if (query.includes('an1.com')) {
-    try {
-      const chamUrl = `https://api.chamindu.site/api/v1/apk/an1/infodl?q=${encodeURIComponent(query)}&api_key=${API_KEY}`;
-      const res = await axios.get(chamUrl, { timeout: 6000 });
-      if (res.data?.status && !res.data?.detail?.includes('exhausted')) {
-        const data = res.data?.data;
-        const apkItem = data?.downloads?.find(d => d.direct_link && d.direct_link.endsWith('.apk')) || data?.downloads?.[0];
-        if (apkItem?.direct_link) {
+// ⚡ Multi-Engine APK Fetcher (Chamindu AN-1 Search & DL + Multiple Direct Fallbacks)
+async function fetchApkDetails(query) {
+  let targetUrl = query.trim();
+
+  // 1. Chamindu AN1 Engine
+  try {
+    // නමක් දුන්නොත් search කරලා AN1 URL එක ගන්නවා
+    if (!targetUrl.startsWith('http')) {
+      const searchEndpoint = `https://api.chamindu.site/api/v1/apk/an1/search?q=${encodeURIComponent(targetUrl)}&api_key=${API_KEY}`;
+      const searchRes = await axios.get(searchEndpoint, { timeout: 10000 });
+      
+      if (searchRes.data?.status && Array.isArray(searchRes.data?.data) && searchRes.data.data.length > 0) {
+        targetUrl = searchRes.data.data[0].url;
+      }
+    }
+
+    // URL එක හරහා direct download link එක ලබාගැනීම
+    if (targetUrl.includes('an1.com')) {
+      const chamDlUrl = `https://api.chamindu.site/api/v1/apk/an1/infodl?q=${encodeURIComponent(targetUrl)}&api_key=${API_KEY}`;
+      const dlRes = await axios.get(chamDlUrl, { timeout: 15000 });
+
+      if (dlRes.data?.status && dlRes.data?.data) {
+        const item = dlRes.data.data;
+        const apkFile = item.downloads?.find(d => d.direct_link && d.direct_link.endsWith('.apk')) || item.downloads?.[0];
+        
+        if (apkFile?.direct_link) {
           return {
-            title: data.title || "Android App",
-            fileName: apkItem.name || `${data.title || 'App'}.apk`,
-            size: apkItem.name?.match(/\d+(\.\d+)?\s*(Mb|MB|Gb|GB|Kb|KB)/i)?.[0] || 'Unknown',
-            downloadUrl: apkItem.direct_link,
-            icon: null
+            title: item.title || query,
+            fileName: `${(item.title || query).replace(/[^a-zA-Z0-9._-]/g, '_')}.apk`,
+            size: apkFile.name?.match(/\d+(\.\d+)?\s*(Mb|MB|Gb|GB|Kb|KB)/i)?.[0] || 'Unknown',
+            downloadUrl: apkFile.direct_link,
+            icon: item.image || null
           };
         }
       }
-    } catch (e) {}
+    }
+  } catch (e) {
+    console.error('Chamindu AN1 API Error:', e?.message || e);
   }
 
-  // 2. Free Engine 1: BK9 APK Mirror (Direct search by App Name or Link)
+  // 2. Free Fallback Engine 1: BK9 API
   try {
     const cleanSearch = query.replace(/https?:\/\/[^\s]+/g, '').trim() || query;
-    const res = await axios.get(`https://bk9.fun/download/apk?q=${encodeURIComponent(cleanSearch)}`, { timeout: 10000 });
+    const res = await axios.get(`https://bk9.fun/download/apk?q=${encodeURIComponent(cleanSearch)}`, { timeout: 12000 });
     if (res.data?.status && res.data?.BK9?.download) {
       return {
         title: res.data.BK9.name || cleanSearch,
-        fileName: `${(res.data.BK9.name || 'App').replace(/[^a-zA-Z0-9._-]/g, '_')}.apk`,
+        fileName: `${(res.data.BK9.name || cleanSearch).replace(/[^a-zA-Z0-9._-]/g, '_')}.apk`,
         size: res.data.BK9.size || 'Unknown',
         downloadUrl: res.data.BK9.download,
         icon: res.data.BK9.icon || null
@@ -41,17 +58,18 @@ async function fetchApkDetails(query) {
     }
   } catch (e) {}
 
-  // 3. Free Engine 2: Siputzx Aptoide Gateway (Fast & Unlimited)
+  // 3. Free Fallback Engine 2: Siputzx Aptoide Gateway
   try {
     const cleanSearch = query.replace(/https?:\/\/[^\s]+/g, '').trim() || query;
     const res = await axios.get(`https://api.siputzx.my.id/api/apk/search?query=${encodeURIComponent(cleanSearch)}`, { timeout: 10000 });
     if (res.data?.status && Array.isArray(res.data?.data) && res.data.data.length > 0) {
       const topApp = res.data.data[0];
-      const dlRes = await axios.get(`https://api.siputzx.my.id/api/apk/download?package=${encodeURIComponent(topApp.package || topApp.id)}`, { timeout: 10000 });
+      const pkg = topApp.package || topApp.id;
+      const dlRes = await axios.get(`https://api.siputzx.my.id/api/apk/download?package=${encodeURIComponent(pkg)}`, { timeout: 12000 });
       if (dlRes.data?.status && dlRes.data?.data?.url) {
         return {
           title: topApp.name || cleanSearch,
-          fileName: `${(topApp.name || 'App').replace(/[^a-zA-Z0-9._-]/g, '_')}.apk`,
+          fileName: `${(topApp.name || cleanSearch).replace(/[^a-zA-Z0-9._-]/g, '_')}.apk`,
           size: dlRes.data.data.size || 'Unknown',
           downloadUrl: dlRes.data.data.url,
           icon: topApp.icon || null
@@ -69,26 +87,29 @@ module.exports = {
   category: 'download',
   desc: 'Download Android APK files by Name or Link',
 
-  async execute(sock, msg, args, chatJid) {
+  async execute(sock, msg, args, chatJid, safeReply) {
     const DEFAULT_FOOTER = '\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡';
-    const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
-      ? chatJid 
-      : (msg.key && msg.key.remoteJid ? msg.key.remoteJid : null);
-
+    const targetChat = chatJid || msg.key?.remoteJid;
     if (!targetChat) return;
 
     const query = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
 
+    const reply = async (text) => {
+      if (typeof safeReply === 'function') return await safeReply(text);
+      return await sock.sendMessage(targetChat, { text, ...(global.channelContext || {}) }, { quoted: msg });
+    };
+
     if (!query) {
-      return await sock.sendMessage(targetChat, { 
-        text: `*❪ APK DOWNLOADER ❫*\n\n⚠️ *කරුණාකර App එකේ නම හෝ Link එක ලබාදෙන්න!*\n\n📦 *උදාහරණ:*\n• \`.apk WhatsApp\`\n• \`.apk CapCut\`\n• \`.apk https://an1.com/...html\`${DEFAULT_FOOTER}` 
-      }, { quoted: msg });
+      return await reply(
+        `*❪ APK DOWNLOADER ❫*\n\n⚠️ *කරුණාකර App එකේ නම හෝ Link එක ලබාදෙන්න!*\n\n📦 *උදාහරණ:*\n• \`.apk WhatsApp\`\n• \`.apk CapCut\`\n• \`.apk https://an1.com/...html\`${DEFAULT_FOOTER}`
+      );
     }
 
     sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
 
     const statusMsg = await sock.sendMessage(targetChat, {
-      text: '⚡ *APK ගොනුව සොයමින් බාගත කරමින් පවතී, කරුණාකර රැඳී සිටින්න...*'
+      text: '⚡ *APK ගොනුව සොයමින් බාගත කරමින් පවතී, කරුණාකර රැඳී සිටින්න...*',
+      ...(global.channelContext || {})
     }, { quoted: msg }).catch(() => null);
 
     try {
@@ -107,25 +128,26 @@ module.exports = {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      // Send APK as Document
+      await sock.sendMessage(targetChat, { react: { text: '⬆️', key: msg.key } }).catch(() => {});
+
+      // Direct Document Dispatch
       await sock.sendMessage(targetChat, {
         document: { url: apkData.downloadUrl },
         fileName: validFileName,
         mimetype: 'application/vnd.android.package-archive',
-        caption: captionText
+        caption: captionText,
+        ...(global.channelContext || {})
       }, { quoted: msg });
 
       sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error('APK DL Error:', err.message);
+      console.error('APK DL Error:', err?.message || err);
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
       sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
-      await sock.sendMessage(targetChat, { 
-        text: `❌ *APK Download Error:* ${err.message || 'Server busy'}${DEFAULT_FOOTER}` 
-      }, { quoted: msg }).catch(() => {});
+      await reply(`❌ *APK Download Error:* ${err.message || 'Server busy'}${DEFAULT_FOOTER}`);
     }
   }
 };
