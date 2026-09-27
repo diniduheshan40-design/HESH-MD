@@ -10,7 +10,7 @@ module.exports = {
   name: 'song',
   alias: ['play', 'sing', 'mp3', 'ytmp3'],
   category: 'download',
-  desc: 'Fast Compact YouTube Downloader',
+  desc: 'Cyber Pulse Audio Downloader',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -34,18 +34,21 @@ module.exports = {
     if (!rawInput) {
       await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
       return await sock.sendMessage(targetChat, { 
-        text: `*🎧 HESHAN MUSIC*\n\n> 💡 ගීතයේ නම ඇතුළත් කරන්න.\n> 📌 උදා: *.song Lelena*`,
+        text: `*⚡ HESHAN AUDIO BEATS ⚡*\n\n> 💡 කරුණාකර සින්දුවේ නම ඇතුළත් කරන්න.\n> 📌 උදා: *.song Lelena*`,
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
-    // 1. Search වෙද්දී 🔎 Reaction එක වැටේ
+    // 1. Search කරද්දී 🔎 Reaction
     await sock.sendMessage(targetChat, { react: { text: "🔎", key: msg.key } }).catch(() => {});
 
     try {
       let videoUrl = rawInput;
       let videoTitle = rawInput;
-      let duration = '03:20';
+      let duration = '03:45';
+      let author = 'YouTube Artist';
+      let views = '1.2M';
+      let ago = 'Recent';
       let thumb = 'https://files.catbox.moe/a58add.jpeg';
 
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(rawInput);
@@ -61,43 +64,67 @@ module.exports = {
         videoUrl = video.url;
         videoTitle = video.title || rawInput;
         duration = video.timestamp || duration;
+        author = video.author?.name || author;
+        ago = video.ago || ago;
+        views = video.views ? (video.views > 1000000 ? (video.views / 1000000).toFixed(1) + 'M' : (video.views / 1000).toFixed(0) + 'K') : 'Trending';
         thumb = video.thumbnail || thumb;
       }
 
       let cleanTitle = videoTitle.replace(/[\\/:"*?<>|]/g, '').trim();
-      if (cleanTitle.length > 20) cleanTitle = cleanTitle.slice(0, 18) + '..';
 
-      // 📱 Ultra-Compact Single Glance Box (Screen එකෙන් 25%ක් පමණි)
-      const miniCard = 
-`╭───❮ 🎧 *HESHAN* ❯───╮
-│ 🎵 *${cleanTitle}* [${duration}]
-├── Reply Number: ────┤
-│ *[1]* Audio (MP3)
-│ *[2]* Document (HQ)
-│ *[3]* Voice (PTT)
-╰─────────────────────╯`.trim();
+      // ⚡ අලුත්ම Cyber-Pulse Header සහිත Luxury Audio Console
+      const aestheticCard = 
+`⚡𝄢╶╶╶╶ ✦ 🎧 ✦ ╶╶╶╶𝄢⚡
+      ◢◤ ʜ ᴇ ꜱ ʜ ᴀ ɴ  ᴏ ꜰ ᴄ ◥◣
+   ─── ❖ ꜱᴛᴜᴅɪᴏ ᴇɴɢɪɴᴇ ❖ ───
+
+╭─◈『 𝗧𝗥𝗔𝗖𝗞 𝗜𝗡𝗙𝗢 』◈─╮
+│ 🎵 *Title*  : ${cleanTitle}
+│ 👤 *Artist* : ${author}
+│ ⏱️ *Time*   : ${duration}
+│ 👁️ *Views*  : ${views}
+│ ⏳ *Age*    : ${ago}
+╰─────────────────────╯
+
+ ılı.lıllılı.ıllı. 320ᴋʙᴘꜱ ʜᴅ .ıllı.lıllılı.ıl
+ 0:00 ───🔘────────── ${duration}
+ ⇄   ◃◃   ❙❙   ▹▹   ↻
+
+┌──❮ 📥 𝗦𝗘𝗟𝗘𝗖𝗧 𝗙𝗢𝗥𝗠𝗔𝗧 ❯──┐
+│
+│  [1]  ▸ 🎵  Audio (MP3)
+│  [2]  ▸ 📂  Document (HQ)
+│  [3]  ▸ 🎙️  Voice (PTT)
+│
+└────────────────────────┘
+> ⚡ ʜᴇꜱʜᴀɴ.ᴅᴇᴠᴏꜰᴄ.ᴛᴏᴘ • ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ`.trim();
 
       const sentMsg = await sock.sendMessage(targetChat, {
         image: { url: thumb },
-        caption: miniCard,
+        caption: aestheticCard,
         contextInfo: channelContext
       }, { quoted: msg });
 
-      // 2. Card එක වැටුණු සැනින් User message එකට 🎵 වැටේ
+      // 2. Card එක Chat එකට වැටුණු සැනින් 🎵 Reaction
       await sock.sendMessage(targetChat, { react: { text: "🎵", key: msg.key } }).catch(() => {});
 
       if (sentMsg?.key?.id) {
-        global.songSessions.set(sentMsg.key.id, {
+        const sessionPayload = {
           videoUrl,
           title: cleanTitle,
           duration,
+          thumb,
           sender: msg.key.participant || targetChat,
           time: Date.now()
-        });
+        };
+
+        global.songSessions.set(sentMsg.key.id, sessionPayload);
+        global.songSessions.set(targetChat, sessionPayload);
 
         setTimeout(() => {
           global.songSessions.delete(sentMsg.key.id);
-        }, 5 * 60 * 1000);
+          global.songSessions.delete(targetChat);
+        }, 10 * 60 * 1000);
       }
 
     } catch (err) {
