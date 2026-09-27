@@ -1,4 +1,4 @@
-// commands/spotify.js
+// commands/song.js
 const axios = require('axios');
 
 let yts;
@@ -8,39 +8,61 @@ try {
   yts = null;
 }
 
-const CHAMINDU_API_KEY = 'chama_api_ec9848130d1aea209f08fb85e0b4720f';
+const MR_THINUZZ_API_KEY = 'key_525b5ceb068ac7f2';
 
-// Fast Multi-Engine Audio Stream Fetcher
-async function fetchAudioStream(query) {
-  // Engine 1: BK9 API
-  try {
-    const res = await axios.get(`https://bk9.fun/download/youtube?url=${encodeURIComponent(query)}`, { timeout: 10000 });
-    const dlUrl = res.data?.BK9?.BK8;
-    if (dlUrl) return dlUrl;
-  } catch (e) {}
+function extractYouTubeId(url) {
+  const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/;
+  const match = String(url).match(regExp);
+  return match ? match[1] : null;
+}
 
-  // Engine 2: Dark Yasiya API
+// ⚡ 100% Working Multi-Engine Audio Stream Fetcher
+async function fetchAudioStream(videoUrl) {
+  const cleanId = extractYouTubeId(videoUrl);
+
+  // 🥇 Primary Engine: Mr Thinuzz API
   try {
-    const res2 = await axios.get(`https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(query)}`, { timeout: 10000 });
+    const apiUrl = `https://mr-thinuzz-api-build.vercel.app/api/ytmp3/download?url=${encodeURIComponent(videoUrl)}&apiKey=${MR_THINUZZ_API_KEY}`;
+    const res = await axios.get(apiUrl, { timeout: 15000 });
+    const data = res.data?.data;
+    const dlUrl = data?.links?.audio;
+
+    if (dlUrl) {
+      return {
+        downloadUrl: dlUrl,
+        title: data?.title || 'YouTube Audio',
+        thumbnail: data?.thumbnail || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg'),
+        duration: data?.duration !== 'N/A' ? data?.duration : null
+      };
+    }
+  } catch (e) {
+    console.log("Mr Thinuzz API failed, switching to backup engine...");
+  }
+
+  // 🥈 Backup Engine: Dark Yasiya API
+  try {
+    const res2 = await axios.get(`https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
+      timeout: 12000
+    });
     const dlUrl2 = res2.data?.result?.dl_link || res2.data?.result?.download;
-    if (dlUrl2) return dlUrl2;
+    if (dlUrl2) {
+      return {
+        downloadUrl: dlUrl2,
+        title: res2.data?.result?.title || 'YouTube Audio',
+        thumbnail: res2.data?.result?.thumb || (cleanId ? `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg` : 'https://files.catbox.moe/a58add.jpeg'),
+        duration: null
+      };
+    }
   } catch (e) {}
 
-  // Engine 3: Siputzx API
-  try {
-    const res3 = await axios.get(`https://api.siputzx.my.id/api/d/youtube/mp3?url=${encodeURIComponent(query)}`, { timeout: 10000 });
-    const dlUrl3 = res3.data?.data?.dl;
-    if (dlUrl3) return dlUrl3;
-  } catch (e) {}
-
-  return null;
+  throw new Error('බාගත කිරීමේ සබැඳිය ලබාගැනීමට නොහැකි විය. කරුණාකර නැවත උත්සාහ කරන්න.');
 }
 
 module.exports = {
-  name: 'spotify',
-  alias: ['sp', 'spot'],
+  name: 'song',
+  alias: ['play', 'sing', 'mp3', 'ytmp3'],
   category: 'download',
-  desc: 'Download high quality Spotify tracks',
+  desc: 'Download YouTube audio in high quality',
 
   async execute(sock, msg, args, chatJid) {
     const targetChat = (typeof chatJid === 'string' && chatJid.includes('@')) 
@@ -59,99 +81,91 @@ module.exports = {
       }
     };
 
-    let query = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
+    let rawInput = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
 
-    if (!query) {
-      return await sock.sendMessage(targetChat, {
-        text: `*🟢 HESHAN-MD SPOTIFY DOWNLOADER*\n\n` +
-              `> 💡 Spotify Link එකක් හෝ සින්දුවේ නම ලබාදෙන්න.\n` +
-              `> 📌 උදා: *.spotify Shape of You*\n` +
-              `> 📌 උදා: *.spotify https://open.spotify.com/track/7qiZfU4dY1lWllzX7mPBI3*\n\n` +
+    if (!rawInput) {
+      return await sock.sendMessage(targetChat, { 
+        text: `*🎵 HESHAN MUSIC PLAYER*\n\n` +
+              `> 💡 සින්දුවේ නම හෝ Link එකක් ලබාදෙන්න.\n` +
+              `> 📌 උදා: *.song Lelena*\n\n` +
               `🔗 *Pair Site :* https://heshan.devofc.top\n\n` +
               `> ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`,
         contextInfo: channelContext
       }, { quoted: msg });
     }
 
-    await sock.sendMessage(targetChat, { react: { text: "🟢", key: msg.key } }).catch(() => {});
+    await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
 
     let statusMsg = await sock.sendMessage(targetChat, {
-      text: `⚡ *Fetching Spotify Track Info...*`
+      text: `⚡ *Searching Track:* _${rawInput}_...\n📥 සින්දුව සොයමින් පවතී...`
     }, { quoted: msg }).catch(() => null);
 
     try {
-      let title = query;
-      let artist = 'Spotify Artist';
-      let duration = '03:30';
+      let videoUrl = rawInput;
+      let videoTitle = rawInput;
+      let duration = '03:20';
+      let author = 'YouTube Music';
       let thumb = 'https://files.catbox.moe/a58add.jpeg';
-      let directDownloadUrl = null;
 
-      // 1. Chamindu API එකෙන් Track Metadata ලබාගැනීම
-      try {
-        const apiUrl = `https://api.chamindu.site/api/v1/spotify/download?q=${encodeURIComponent(query)}&quality=320kbps&api_key=${CHAMINDU_API_KEY}`;
-        const res = await axios.get(apiUrl, { timeout: 10000 });
-        const data = res.data?.data || res.data?.result;
+      const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(rawInput);
 
-        if (data && data.title) {
-          title = data.title;
-          artist = data.artist || artist;
-          duration = data.duration || duration;
-          thumb = data.thumbnail || thumb;
-          directDownloadUrl = data.download_url; // null නොවී තිබුණහොත් කෙලින්ම ගනියි
-        }
-      } catch (apiErr) {
-        console.log("Spotify metadata API skipped/failed:", apiErr.message);
-      }
-
-      // 2. Direct download URL එකක් නොලැබුණහොත් (API එකේ download_url: null නිසා) Full Track එක සඳහා YouTube Stream එක සෙවීම
-      if (!directDownloadUrl) {
-        if (statusMsg?.key) {
-          await sock.sendMessage(targetChat, { 
-            text: `⚡ *Searching Track:* _${title} - ${artist}_\n⏳ Audio Stream එක සකසමින් පවතී...`, 
-            edit: statusMsg.key 
-          }).catch(() => {});
+      if (!isYtUrl) {
+        if (!yts) throw new Error('yt-search library is missing.');
+        const searchResults = await yts(rawInput);
+        if (!searchResults?.videos?.length) {
+          throw new Error('සින්දුව YouTube හි හමු නොවීය!');
         }
 
-        const searchQuery = `${title} ${artist}`.trim();
-        let ytUrl = searchQuery;
-
-        if (yts) {
-          const searchResults = await yts(searchQuery);
-          if (searchResults?.videos?.length) {
-            ytUrl = searchResults.videos[0].url;
-            duration = duration === '03:30' ? (searchResults.videos[0].timestamp || duration) : duration;
+        const video = searchResults.videos[0];
+        videoUrl = video.url;
+        videoTitle = video.title || rawInput;
+        duration = video.timestamp || duration;
+        author = video.author?.name || author;
+        thumb = video.thumbnail || thumb;
+      } else if (yts) {
+        try {
+          const ytId = extractYouTubeId(videoUrl);
+          if (ytId) {
+            const searchResults = await yts({ videoId: ytId });
+            if (searchResults && searchResults.title) {
+              videoTitle = searchResults.title;
+              duration = searchResults.timestamp || duration;
+              author = searchResults.author?.name || author;
+              thumb = searchResults.thumbnail || thumb;
+            }
           }
-        }
-
-        directDownloadUrl = await fetchAudioStream(ytUrl);
-      }
-
-      if (!directDownloadUrl) {
-        throw new Error("ගීතය Download කර ගැනීමට Direct Link එකක් හමු නොවීය.");
+        } catch (e) {}
       }
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { 
-          text: `⚡ *Downloading:* _${title}_\n📥 බාගත වෙමින් පවතී...`, 
+          text: `⚡ *Downloading:* _${videoTitle}_\n⏳ ශ්‍රව්‍ය ගොනුව බාගත කරමින් පවතී...`, 
           edit: statusMsg.key 
         }).catch(() => {});
       }
 
-      // 3. Thumbnail Buffer Download
+      // Fetch Stream URL
+      const songData = await fetchAudioStream(videoUrl);
+      const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
+      if (songData.duration) duration = songData.duration;
+
+      // Thumbnail Image buffer download
       let thumbBuffer;
       try {
-        const thumbRes = await axios.get(thumb, { responseType: 'arraybuffer', timeout: 8000 });
+        const thumbRes = await axios.get(songData.thumbnail || thumb, { responseType: 'arraybuffer', timeout: 8000 });
         thumbBuffer = Buffer.from(thumbRes.data);
       } catch (e) {
-        const fallback = await axios.get('https://files.catbox.moe/a58add.jpeg', { responseType: 'arraybuffer' });
-        thumbBuffer = Buffer.from(fallback.data);
+        const fallbackThumb = await axios.get('https://files.catbox.moe/a58add.jpeg', { responseType: 'arraybuffer' });
+        thumbBuffer = Buffer.from(fallbackThumb.data);
       }
 
-      // 4. Audio Download
-      const audioRes = await axios.get(directDownloadUrl, {
+      // Download Audio Binary Stream
+      const audioRes = await axios.get(songData.downloadUrl, {
         responseType: 'arraybuffer',
-        timeout: 35000,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
+        timeout: 45000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
       });
       const audioBuffer = Buffer.from(audioRes.data);
 
@@ -163,32 +177,30 @@ module.exports = {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
 
-      const cleanTitle = `${title} - ${artist}`.replace(/[\\/:"*?<>|]/g, '').trim();
-
-      const spotifyCard = 
-`*🟢 HESHAN-MD SPOTIFY PLAYER*
+      // Compact & Clean Card Design
+      const songCard = 
+`*🎧 HESHAN-MD AUDIO PLAYER*
 ━━━━━━━━━━━━━━━━━━━━━
-• *Track*    : ${title}
-• *Artist*   : ${artist}
-• *Duration* : ${duration}
-• *Platform* : Spotify 🟢
+• *Track*    : ${cleanTitle.length > 28 ? cleanTitle.slice(0, 25) + '...' : cleanTitle}
+• *Artist*   : ${author.length > 24 ? author.slice(0, 21) + '...' : author}
+• *Length*   : ${duration}
 ━━━━━━━━━━━━━━━━━━━━━
 🔗 *Pair Site :* https://heshan.devofc.top
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // Send Card Image
+      // 1. Send Card Image
       try {
         await sock.sendMessage(targetChat, {
           image: thumbBuffer,
-          caption: spotifyCard,
+          caption: songCard,
           contextInfo: channelContext
         }, { quoted: msg });
       } catch (e) {
-        await sock.sendMessage(targetChat, { text: spotifyCard, contextInfo: channelContext }, { quoted: msg }).catch(() => {});
+        await sock.sendMessage(targetChat, { text: songCard, contextInfo: channelContext }, { quoted: msg }).catch(() => {});
       }
 
-      // Send Audio
+      // 2. Send Playable Audio File
       await sock.sendMessage(targetChat, {
         audio: audioBuffer,
         mimetype: 'audio/mp4',
@@ -200,7 +212,7 @@ module.exports = {
       await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error('Spotify Download Error:', err.message);
+      console.error('Song Download Error:', err?.message || err);
 
       if (statusMsg?.key) {
         sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
@@ -208,7 +220,7 @@ module.exports = {
       await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
 
       await sock.sendMessage(targetChat, { 
-        text: `❌ *Error:* ${err.message || 'Spotify Track එක බාගත කිරීමට නොහැකි විය.'}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`,
+        text: `❌ *Error:* ${err.message || 'සින්දුව බාගත කිරීමට නොහැකි විය.'}\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
     }
