@@ -12,11 +12,11 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ Fast & Crash-Proof Multi-Engine Stream Fetcher
+// ⚡ Ultra-Lightweight Stream Fetcher
 async function fetchAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
 
-  // 🥇 Engine 1: Dark Yasiya API (Very stable for YouTube Audio)
+  // 🥇 Engine 1: Dark Yasiya API
   try {
     const res1 = await axios.get(`https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`, {
       timeout: 10000,
@@ -141,32 +141,14 @@ module.exports = {
       const songData = await fetchAudioStream(videoUrl);
       const cleanTitle = (songData.title || videoTitle).replace(/[\\/:"*?<>|]/g, '').trim();
 
-      // Thumbnail Image එක Buffer කරගැනීම (Timeout 6s)
-      let thumbBuffer;
-      try {
-        const thumbRes = await axios.get(songData.thumbnail || thumb, {
-          responseType: 'arraybuffer',
-          timeout: 6000
-        });
-        thumbBuffer = Buffer.from(thumbRes.data);
-      } catch (e) {
-        const fallback = await axios.get('https://files.catbox.moe/a58add.jpeg', { responseType: 'arraybuffer' });
-        thumbBuffer = Buffer.from(fallback.data);
-      }
-
-      // Audio ගොනුව Safe Stream Buffer එකක් ලෙස බාගත කිරීම (Timeout 25s)
-      const audioRes = await axios.get(songData.downloadUrl, {
-        responseType: 'arraybuffer',
-        timeout: 25000,
+      // RAM Spike එක වැළැක්වීම සඳහා Stream Pipeline එකක් භාවිතයෙන් Audio Stream එක ලබාගැනීම
+      const audioStreamRes = await axios.get(songData.downloadUrl, {
+        responseType: 'stream',
+        timeout: 30000,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
       });
-      const audioBuffer = Buffer.from(audioRes.data);
-
-      if (!audioBuffer || audioBuffer.length < 5000) {
-        throw new Error('Downloaded audio is corrupted.');
-      }
 
       const songCard = 
 `*🎧 HESHAN-MD AUDIO PLAYER*
@@ -179,23 +161,25 @@ module.exports = {
 
 > ⚡ *ʜᴇꜱʜᴀɴ ᴏꜰᴄ • ᴀʟʟ ʀɪɢʜᴛꜱ ʀᴇꜱᴇʀᴠᴇᴅ*`.trim();
 
-      // 1. Send Card Image (Channel Context සහිතයි)
+      // 1. Send Card Image
       await sock.sendMessage(targetChat, {
-        image: thumbBuffer,
+        image: { url: songData.thumbnail || thumb },
         caption: songCard,
         contextInfo: channelContext
       }, { quoted: msg }).catch(() => {});
 
-      // 2. Send Audio File (Buffer එකක් ලෙස කෙලින්ම යැවීම - Timeout Guard සහිතයි)
-      await Promise.race([
-        sock.sendMessage(targetChat, {
-          audio: audioBuffer,
-          mimetype: 'audio/mp4',
-          fileName: `${cleanTitle}.mp3`,
-          ptt: false
-        }, { quoted: msg }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('WhatsApp upload timed out')), 25000))
-      ]);
+      // 2. Stream එක කෙලින්ම WhatsApp වෙත යැවීම (RAM එක 0% බරකින් යුක්ත වේ)
+      await sock.sendMessage(targetChat, {
+        audio: { stream: audioStreamRes.data },
+        mimetype: 'audio/mp4',
+        fileName: `${cleanTitle}.mp3`,
+        ptt: false
+      }, { quoted: msg });
+
+      // Node Garbage Collection manually call කිරීම (RAM එක ක්ෂණිකව නිදහස් කරයි)
+      if (global.gc) {
+        global.gc();
+      }
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
