@@ -2,51 +2,32 @@
 // 🎵 HESHAN-MD INTERACTIVE SONG CARD & DOWNLOADER (commands/song.js)
 // ============================================================================
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const youtubedl = require('youtube-dl-exec');
-const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-
-let yts = null;
-try {
-  yts = require('yt-search');
-} catch (e) {}
+const axios = require('axios');
+const yts = require('yt-search');
+const { gifted } = require('gifted-dls');
 
 global.songSessions = global.songSessions || new Map();
 
 /**
- * youtube-dl-exec හරහා Audio එක MP3 එකක් ලෙස බාගත කර Buffer එකක් ලබාගැනීම
+ * gifted-dls හරහා Audio Download URL ලබාගැනීම
  */
-async function downloadMp3Buffer(videoUrl) {
-  const tempFile = path.join(os.tmpdir(), `yt_${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`);
-  
+async function getAudioDownloadUrl(videoUrl) {
   try {
-    await youtubedl(videoUrl, {
-      extractAudio: true,
-      audioFormat: 'mp3',
-      audioQuality: '0',
-      ffmpegLocation: ffmpegInstaller.path,
-      output: tempFile,
-      noCheckCertificates: true,
-      noWarnings: true,
-      preferFreeFormats: true,
-      addHeader: [
-        'referer:youtube.com',
-        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      ]
-    });
-
-    if (!fs.existsSync(tempFile)) {
-      throw new Error('Audio conversion failed. File not generated.');
+    const res = await gifted.ytmp3(videoUrl);
+    if (res && res.result && res.result.download_url) {
+      return res.result.download_url;
     }
-
-    const audioBuffer = fs.readFileSync(tempFile);
-    fs.unlinkSync(tempFile); // Temp file ඉවත් කිරීම
-    return audioBuffer;
-  } catch (error) {
-    if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-    throw error;
+    if (res && res.download_url) {
+      return res.download_url;
+    }
+    throw new Error('Download URL not found in API response');
+  } catch (err) {
+    // Backup Scraper (Direct API Fallback)
+    const fallbackRes = await axios.get(`https://api.giftedtech.my.id/api/download/ytmp3?apikey=gifted&url=${encodeURIComponent(videoUrl)}`);
+    if (fallbackRes.data?.result?.download_url) {
+      return fallbackRes.data.result.download_url;
+    }
+    throw err;
   }
 }
 
@@ -85,7 +66,8 @@ module.exports = {
       await sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
       
       try {
-        const audioBuffer = await downloadMp3Buffer(session.videoUrl);
+        const downloadUrl = await getAudioDownloadUrl(session.videoUrl);
+        const audioBuffer = (await axios.get(downloadUrl, { responseType: 'arraybuffer' })).data;
 
         if (rawInput === '1') {
           // Audio (MP3)
@@ -96,7 +78,7 @@ module.exports = {
             contextInfo: channelContext
           }, { quoted: msg });
         } else if (rawInput === '2') {
-          // Document (HQ)
+          // Document (HQ File)
           await sock.sendMessage(targetChat, {
             document: audioBuffer,
             mimetype: 'audio/mpeg',
@@ -104,7 +86,7 @@ module.exports = {
             contextInfo: channelContext
           }, { quoted: msg });
         } else if (rawInput === '3') {
-          // Voice (PTT)
+          // Voice Note (PTT)
           await sock.sendMessage(targetChat, {
             audio: audioBuffer,
             mimetype: 'audio/ogg; codecs=opus',
@@ -126,7 +108,7 @@ module.exports = {
     }
 
     // ------------------------------------------------------------------------
-    // 2. සින්දුව සෙවීම සහ Interactive Menu Card එක යැවීම
+    // 2. සින්දුව සෙවීම සහ Card එක යැවීම
     // ------------------------------------------------------------------------
     if (!rawInput) {
       await sock.sendMessage(targetChat, { react: { text: "🎧", key: msg.key } }).catch(() => {});
@@ -150,7 +132,6 @@ module.exports = {
       const isYtUrl = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com|youtu\.be)\//i.test(rawInput);
 
       if (!isYtUrl) {
-        if (!yts) throw new Error('yt-search missing. Run: npm i yt-search');
         const searchResults = await yts(rawInput);
         if (!searchResults?.videos?.length) {
           throw new Error('සින්දුව YouTube හි සොයාගත නොහැකි විය!');
@@ -165,19 +146,15 @@ module.exports = {
         views = video.views ? (video.views > 1000000 ? (video.views / 1000000).toFixed(1) + 'M' : (video.views / 1000).toFixed(0) + 'K') : views;
         thumb = video.thumbnail || thumb;
       } else {
-        if (yts) {
-          try {
-            const videoIdMatch = rawInput.match(/(?:v=|\/)([0-9A-Za-z_-]{11}).*/);
-            if (videoIdMatch && videoIdMatch[1]) {
-              const videoData = await yts({ videoId: videoIdMatch[1] });
-              if (videoData) {
-                videoTitle = videoData.title || videoTitle;
-                duration = videoData.timestamp || duration;
-                author = videoData.author?.name || author;
-                thumb = videoData.thumbnail || thumb;
-              }
-            }
-          } catch (e) {}
+        const videoIdMatch = rawInput.match(/(?:v=|\/)([0-9A-Za-z_-]{11}).*/);
+        if (videoIdMatch && videoIdMatch[1]) {
+          const videoData = await yts({ videoId: videoIdMatch[1] });
+          if (videoData) {
+            videoTitle = videoData.title || videoTitle;
+            duration = videoData.timestamp || duration;
+            author = videoData.author?.name || author;
+            thumb = videoData.thumbnail || thumb;
+          }
         }
       }
 
