@@ -1,138 +1,95 @@
-// commands/autostatus.js
-const { downloadContentFromMessage, jidNormalizedUser } = require('@whiskeysockets/baileys');
+// commands/status.js
+const { downloadMediaMessage, jidNormalizedUser } = require('@whiskeysockets/baileys');
 
-function unwrapMessage(msgObj) {
-  if (!msgObj) return null;
-  return (
-    msgObj.ephemeralMessage?.message ||
-    msgObj.viewOnceMessage?.message ||
-    msgObj.viewOnceMessageV2?.message ||
-    msgObj.viewOnceMessageV2Extension?.message ||
-    msgObj.documentWithCaptionMessage?.message ||
-    msgObj
-  );
-}
+// 🎯 Status ඉල්ලන වචන ලැයිස්තුව
+const STATUS_KEYWORDS = [
+  'status', 'save', 'oni', 'ඕනි', 'ඕනෙ', 'දෙන්න', 'denna', 'dpn', 
+  'dapan', 'ewanna', 'එවන්න', 'ewpn', 'ewapan', 'send', 'evanna'
+];
 
 module.exports = {
-  name: 'autostatus',
-  alias: ['statussave', 'getstatus', 'savedstatus'],
+  name: 'status',
+  alias: STATUS_KEYWORDS,
   category: 'tools',
-  desc: 'Send status to inbox on specific emoji reaction, keyword or reply',
+  desc: 'Download WhatsApp Status via reply',
 
   async execute(sock, msg, args, chatJid, safeReply) {
     const targetChat = chatJid || msg.key?.remoteJid;
-    if (!targetChat) return;
+    const reply = async (text) => (typeof safeReply === 'function' ? safeReply(text) : sock.sendMessage(targetChat, { text }, { quoted: msg }));
 
-    const reply = async (content) => {
-      if (typeof safeReply === 'function' && typeof content === 'string') return await safeReply(content);
-      const payload = typeof content === 'string' ? { text: content } : content;
-      return await sock.sendMessage(targetChat, { ...payload, ...(global.channelContext || {}) }, { quoted: msg });
-    };
+    const quotedContext = msg.message?.extendedTextMessage?.contextInfo;
+    const quotedMsg = quotedContext?.quotedMessage;
+
+    if (!quotedMsg) {
+      return await reply('📌 කරුණාකර Status එකකට Reply කර `oni` හෝ `save` ලෙස එවන්න.');
+    }
+
+    // Media එක හඳුනා ගැනීම
+    const isImage = !!quotedMsg.imageMessage;
+    const isVideo = !!quotedMsg.videoMessage;
+    const isAudio = !!quotedMsg.audioMessage;
+
+    if (!isImage && !isVideo && !isAudio) {
+      return await reply('❌ මෙය Download කළ හැකි Status මාධ්‍යයක් නොවේ!');
+    }
 
     try {
-      const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
-      const quotedRaw = contextInfo?.quotedMessage;
+      await sock.sendMessage(targetChat, { react: { text: "⏳", key: msg.key } }).catch(() => {});
 
-      // Status එකක්ද කියා තහවුරු කිරීම (status@broadcast)
-      const remoteJid = contextInfo?.remoteJid || '';
-      const participantJid = contextInfo?.participant || '';
-      const isStatus = remoteJid === 'status@broadcast' || participantJid.includes('@broadcast');
+      const stanzaId = quotedContext?.stanzaId;
+      const participant = quotedContext?.participant || 'status@broadcast';
 
-      if (!quotedRaw || !isStatus) {
-        return await reply("⚠️ කරුණාකර Status එකකට Reply කර අදාළ Emoji එකක් හෝ `.autostatus` යොදන්න!");
-      }
+      const downloadKey = {
+        key: {
+          id: stanzaId,
+          remoteJid: 'status@broadcast',
+          participant: participant,
+          fromMe: false
+        },
+        message: quotedMsg
+      };
 
-      // Deep unwrap to extract media/text
-      const qm = unwrapMessage(quotedRaw);
-
-      let mediaType = null;
-      let mediaMsg = null;
-      let textStatus = null;
-
-      if (qm?.imageMessage) {
-        mediaType = 'image';
-        mediaMsg = qm.imageMessage;
-      } else if (qm?.videoMessage) {
-        mediaType = 'video';
-        mediaMsg = qm.videoMessage;
-      } else if (qm?.audioMessage) {
-        mediaType = 'audio';
-        mediaMsg = qm.audioMessage;
-      } else if (qm?.conversation || qm?.extendedTextMessage?.text) {
-        textStatus = qm.conversation || qm.extendedTextMessage?.text;
-      }
-
-      if (!mediaMsg && !textStatus) {
-        return await reply("❌ Status එකේ Photo, Video, Audio හෝ Text එකක් හමු නොවීය!");
-      }
-
-      sock.sendMessage(targetChat, { react: { text: '⏳', key: msg.key } }).catch(() => {});
-
-      // Sender Number Resolution (LID to Phone Number)
-      let senderParticipant = participantJid;
-      if (senderParticipant.endsWith('@lid') && sock.signalRepository?.lidToJid) {
-        try {
-          const resolved = await sock.signalRepository.lidToJid(senderParticipant);
-          if (resolved) senderParticipant = resolved;
-        } catch (e) {}
-      }
-
-      const cleanNum = jidNormalizedUser(senderParticipant).replace(/\D/g, '') || 'Status User';
-      const footer = '\n\n> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡';
-
-      // 1. Text Status Dispatch
-      if (textStatus) {
-        sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
-        return await reply(
-          `*📥 𝗦𝗧𝗔𝗧𝗨𝗦 𝗤𝗨𝗢𝗧𝗘*\n` +
-          `👤 *From:* +${cleanNum}\n\n` +
-          `💬 *Status:*\n${textStatus}${footer}`
-        );
-      }
-
-      // 2. Media Stream Download
-      const stream = await downloadContentFromMessage(mediaMsg, mediaType);
-      let buffer = Buffer.from([]);
-      for await (const chunk of stream) {
-        buffer = Buffer.concat([buffer, chunk]);
-      }
+      const buffer = await downloadMediaMessage(downloadKey, 'buffer', {});
 
       if (!buffer || buffer.length === 0) {
-        throw new Error('Buffer empty');
+        throw new Error('Download failed');
       }
 
-      const captionText = mediaMsg.caption ? `\n📝 *Caption:* ${mediaMsg.caption}` : '';
-      const baseCaption = `*📥 𝗦𝗧𝗔𝗧𝗨𝗦 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗𝗘𝗗*\n👤 *From:* +${cleanNum}${captionText}${footer}`;
+      const captionText = 
+`⚡ *HESHAN-MD STATUS DOWNLOADER* ⚡
+━━━━━━━━━━━━━━━━━━━━━
+👤 *From:* @${participant.split('@')[0]}
+━━━━━━━━━━━━━━━━━━━━━`;
 
-      // 3. Dispatch Media
-      if (mediaType === 'image') {
+      if (isImage) {
         await sock.sendMessage(targetChat, {
           image: buffer,
-          caption: baseCaption,
+          caption: quotedMsg.imageMessage?.caption ? `${captionText}\n\n💬 ${quotedMsg.imageMessage.caption}` : captionText,
+          mentions: [participant],
           ...(global.channelContext || {})
         }, { quoted: msg });
-      } else if (mediaType === 'video') {
+      } else if (isVideo) {
         await sock.sendMessage(targetChat, {
           video: buffer,
-          caption: baseCaption,
-          mimetype: 'video/mp4',
+          caption: quotedMsg.videoMessage?.caption ? `${captionText}\n\n💬 ${quotedMsg.videoMessage.caption}` : captionText,
+          mentions: [participant],
           ...(global.channelContext || {})
         }, { quoted: msg });
-      } else if (mediaType === 'audio') {
+      } else if (isAudio) {
         await sock.sendMessage(targetChat, {
           audio: buffer,
           mimetype: 'audio/mp4',
-          ptt: Boolean(mediaMsg.ptt),
+          ptt: true,
           ...(global.channelContext || {})
         }, { quoted: msg });
       }
 
-      sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
+      await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
     } catch (err) {
-      console.error("AutoStatus Error:", err?.message || err);
-      sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
-      await reply("❌ Status එක ලබා ගැනීමේදී දෝෂයක් ඇති විය!");
+      console.error('Status Download Error:', err?.message || err);
+      await sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
+      await reply('❌ Status එක Download කරගැනීමට නොහැකි විය. Status එක Expire වී තිබිය හැක.');
     }
   }
 };
