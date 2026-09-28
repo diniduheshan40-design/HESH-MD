@@ -1,5 +1,9 @@
 // commands/csong.js
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { exec } = require('child_process');
 
 let yts;
 try {
@@ -11,6 +15,34 @@ try {
 function extractYouTubeId(url) {
   const match = String(url).match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
   return match ? match[1] : null;
+}
+
+// ⚡ MP3 Buffer එක WhatsApp Voice Note (OGG Opus) එකක් බවට හරවන function එක
+function convertToOpusVoice(inputBuffer) {
+  return new Promise((resolve, reject) => {
+    const tempInput = path.join(os.tmpdir(), `input_${Date.now()}.mp3`);
+    const tempOutput = path.join(os.tmpdir(), `output_${Date.now()}.opus`);
+
+    fs.writeFileSync(tempInput, inputBuffer);
+
+    // ffmpeg හරහා libopus එකෙන් OGG/Opus format එකට convert කිරීම
+    exec(`ffmpeg -y -i "${tempInput}" -c:a libopus -b:a 64k -vbr on -compression_level 10 -application voip "${tempOutput}"`, (err) => {
+      try { fs.unlinkSync(tempInput); } catch (e) {}
+
+      if (err) {
+        // ffmpeg error එකක් ආවොත් මුල් buffer එකම fallback එකක් විදිහට ලබා දීම
+        return resolve(inputBuffer);
+      }
+
+      try {
+        const outBuffer = fs.readFileSync(tempOutput);
+        fs.unlinkSync(tempOutput);
+        resolve(outBuffer);
+      } catch (readErr) {
+        resolve(inputBuffer);
+      }
+    });
+  });
 }
 
 // ⚡ Multi-Engine MP3 Stream Fetcher (Gifted + Chamindu + Fallbacks)
@@ -205,12 +237,12 @@ module.exports = {
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { 
-          text: `⚡ *Uploading to Channel:* _${cleanTitle}_\n⚙️ Channel එකට Post වෙමින් පවතී...`, 
+          text: `⚡ *Converting & Uploading to Channel:* _${cleanTitle}_\n⚙️ Channel එකට Post වෙමින් පවතී...`, 
           edit: statusMsg.key 
         }).catch(() => {});
       }
 
-      // 🎨 1. Photo Card
+      // 🎨 1. Photo Card Send
       const cardCaption = 
 `🎶 ❝ ${cleanTitle} ❞
 
@@ -228,12 +260,13 @@ module.exports = {
 
       await new Promise(r => setTimeout(r, 2000));
 
-      // 2. Audio Send
+      // 🎙️ 2. Voice Note Convert & Send
+      const voiceBuffer = await convertToOpusVoice(rawAudioBuffer);
+
       await sock.sendMessage(channelJid, {
-        audio: rawAudioBuffer,
-        mimetype: 'audio/mp4',
-        fileName: `${cleanTitle}.mp3`,
-        ptt: false
+        audio: voiceBuffer,
+        mimetype: 'audio/ogg; codecs=opus',
+        ptt: true
       });
 
       if (statusMsg?.key) {
@@ -242,7 +275,7 @@ module.exports = {
 
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
-      await reply(`✅ *Track Uploaded Successfully!*\n\n• *Track:* ${cleanTitle}\n• *Duration:* ${timestampStr}`);
+      await reply(`✅ *Track Uploaded as Voice Note!*\n\n• *Track:* ${cleanTitle}\n• *Duration:* ${timestampStr}`);
 
     } catch (err) {
       console.error('Channel audio send error:', err?.message || err);
