@@ -11,6 +11,12 @@ const DEFAULT_LOGO_BACKUP = 'https://files.catbox.moe/a58add.jpeg';
 
 const memSettingsCache = new Map();
 
+// Helper to extract digits safely without device tags
+function extractCleanDigits(jid) {
+  if (!jid) return '';
+  return String(jid).split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
 // ⚡ Dynamic Session Logo Resolver
 async function getBotLogoBuffer(botNum) {
   try {
@@ -69,14 +75,14 @@ module.exports = {
 
     const channelContext = global.channelContext || {};
 
+    // ⚡ 1. BOT NUMBER & SENDER RESOLUTION (Full Multi-Device & LID Support)
     const rawBotId = sock.user?.id || sock.user?.jid || '';
-    const botNumber = jidNormalizedUser(rawBotId).replace(/\D/g, '') || 'default';
+    const cleanBotNum = extractCleanDigits(rawBotId) || 'default';
 
-    // ⚡ 1. SENDER RESOLUTION (Group / Private / LID Support)
     const isGroup = targetChat.endsWith('@g.us');
     let senderJid = isGroup 
       ? (msg.key?.participant || msg.participant || '') 
-      : (msg.key?.fromMe ? (sock.user?.id || '') : targetChat);
+      : (msg.key?.fromMe ? rawBotId : targetChat);
 
     if (senderJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
       try {
@@ -85,16 +91,22 @@ module.exports = {
       } catch (e) {}
     }
 
-    const cleanSenderNum = jidNormalizedUser(senderJid).replace(/\D/g, '');
+    const cleanSenderNum = extractCleanDigits(senderJid);
+    const cleanTargetChatNum = extractCleanDigits(targetChat);
 
-    // 👑 2. MASTER DEVELOPER & OWNER VERIFICATION
-    const isDeveloper = cleanSenderNum === DEVELOPER_NUMBER;
+    // 👑 2. MASTER DEVELOPER & BOT OWNER VERIFICATION
+    const isDeveloper = cleanSenderNum === DEVELOPER_NUMBER || cleanTargetChatNum === DEVELOPER_NUMBER;
+    const isFromMe = Boolean(msg.key?.fromMe);
+    const isSameBotOwner = Boolean(cleanSenderNum && cleanBotNum && cleanSenderNum === cleanBotNum);
+    const isOwnerChat = Boolean(!isGroup && cleanTargetChatNum === cleanBotNum);
+
     const isOwner = Boolean(
       isDeveloper ||
-      options.isOwner || 
-      msg.key?.fromMe || 
-      (Array.isArray(global.owner) && global.owner.some(o => String(o).replace(/\D/g, '') === cleanSenderNum)) ||
-      cleanSenderNum === botNumber
+      isFromMe ||
+      isSameBotOwner ||
+      isOwnerChat ||
+      options.isOwner ||
+      (Array.isArray(global.owner) && global.owner.some(o => extractCleanDigits(o) === cleanSenderNum))
     );
 
     const reply = async (content) => {
@@ -130,19 +142,24 @@ module.exports = {
 
     try {
       if (typeof global.getBotSettings === 'function') {
-        const doc = await global.getBotSettings(botNumber);
+        const doc = await global.getBotSettings(cleanBotNum);
         if (doc) settings = Object.assign(settings, doc);
       } else {
         const SettingsModel = getModel();
         if (SettingsModel) {
-          const doc = await SettingsModel.findById(botNumber).lean();
+          const doc = await SettingsModel.findById(cleanBotNum).lean();
           if (doc) settings = Object.assign(settings, doc);
         }
       }
     } catch (e) {}
 
-    // Input Extraction
-    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
+    // ⚡ 3. INPUT EXTRACTION (Direct Command or Reply to Settings Message)
+    const rawText = (
+      msg.message?.conversation || 
+      msg.message?.extendedTextMessage?.text || 
+      ''
+    ).trim();
+
     let input = "";
 
     if (Array.isArray(args) && args.length > 0) {
@@ -258,15 +275,15 @@ module.exports = {
       sock.sendPresenceUpdate('unavailable').catch(() => {});
     }
 
-    // UPDATE EXECUTOR
+    // ⚡ 4. UPDATE EXECUTOR
     if (isUpdated) {
-      memSettingsCache.set(botNumber, settings);
+      memSettingsCache.set(cleanBotNum, settings);
 
       try {
         const SettingsModel = getModel();
         if (SettingsModel) {
           await SettingsModel.findByIdAndUpdate(
-            botNumber,
+            cleanBotNum,
             { $set: settings },
             { upsert: true, new: true }
           );
@@ -274,7 +291,7 @@ module.exports = {
       } catch (e) {}
 
       if (typeof global.clearSettingsCache === 'function') {
-        global.clearSettingsCache(botNumber);
+        global.clearSettingsCache(cleanBotNum);
       }
 
       const reactEmojiDisplay = settings.statusReactEmoji === 'random' ? 'RANDOM EMOJIS 🔀' : (settings.statusReactEmoji || '💚');
@@ -283,7 +300,7 @@ module.exports = {
       await sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
 
       return await reply(
-        `✅ *[+${botNumber}]* Settings යාවත්කාලීන විය!\n\n` +
+        `✅ *[+${cleanBotNum}]* Settings යාවත්කාලීන විය!\n\n` +
         `• Work Mode       : *${settings.workMode.toUpperCase()}*\n` +
         `• Status Seen     : *${settings.autoStatusSeen ? 'ON 🟢' : 'OFF 🔴'}*\n` +
         `• Status React    : *${settings.statusReact ? 'ON 🟢' : 'OFF 🔴'}*\n` +
@@ -294,7 +311,7 @@ module.exports = {
       );
     }
 
-    // DISPLAY SETTINGS MENU
+    // ⚡ 5. DISPLAY SETTINGS MENU
     await sock.sendMessage(targetChat, { react: { text: "⚙️", key: msg.key } }).catch(() => {});
 
     const stateBadge = (val) => (val !== false ? '🟢 ON' : '🔴 OFF');
@@ -313,7 +330,7 @@ module.exports = {
     const menu = 
 `╭─── ⚡ *HESHAN-MD SYSTEM SETTINGS* ⚡ ───╮
 │
-├ 📱 *BOT NUMBER  :* +${botNumber}
+├ 📱 *BOT NUMBER  :* +${cleanBotNum}
 ├ 🔑 *PORTAL KEY  :* \`${displayPassword}\`
 ├ 🪙 *COIN BALANCE:* *${displayCoins} Coins*
 ├ 🛡️ *ACCESS LEVEL:* ${isDeveloper ? '👑 Root Developer' : 'Owner Verified'}
@@ -373,13 +390,13 @@ module.exports = {
 │
 ╰────────────────────────────────╯
 💡 *පාලනය කිරීමට:*
-• Settings පණිවිඩයට අදාළ අංකය Reply කරන්න (උදා: *11.1* හෝ *11.2*)
-• නැතහොත් command එක run කරන්න (උදා: *.set 11.1*, *.set antisend from*)
+• Settings පණිවිඩයට අදාළ අංකය Reply කරන්න (උදා: *9.1* හෝ *10.1*)[span_2](start_span)[span_2](end_span)
+• නැතහොත් command එක run කරන්න (උදා: *.set 9.1*, *.set antisend me*)[span_3](start_span)[span_3](end_span)
 
 > ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
 
     try {
-      const logoBuffer = await getBotLogoBuffer(botNumber);
+      const logoBuffer = await getBotLogoBuffer(cleanBotNum);
       if (logoBuffer) {
         await sock.sendMessage(targetChat, {
           image: logoBuffer,
