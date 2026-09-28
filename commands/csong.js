@@ -17,20 +17,18 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ MP3 Buffer එක WhatsApp Voice Note (OGG Opus) එකක් බවට හරවන function එක
+// ⚡ Audio Buffer එක Voice Note (OGG Opus) එකක් බවට convert කිරීම
 function convertToOpusVoice(inputBuffer) {
-  return new Promise((resolve, reject) => {
-    const tempInput = path.join(os.tmpdir(), `input_${Date.now()}.mp3`);
-    const tempOutput = path.join(os.tmpdir(), `output_${Date.now()}.opus`);
+  return new Promise((resolve) => {
+    const tempInput = path.join(os.tmpdir(), `in_${Date.now()}.mp3`);
+    const tempOutput = path.join(os.tmpdir(), `out_${Date.now()}.opus`);
 
     fs.writeFileSync(tempInput, inputBuffer);
 
-    // ffmpeg හරහා libopus එකෙන් OGG/Opus format එකට convert කිරීම
-    exec(`ffmpeg -y -i "${tempInput}" -c:a libopus -b:a 64k -vbr on -compression_level 10 -application voip "${tempOutput}"`, (err) => {
+    exec(`ffmpeg -y -i "${tempInput}" -c:a libopus -b:a 64k -vbr on -compression_level 10 "${tempOutput}"`, (err) => {
       try { fs.unlinkSync(tempInput); } catch (e) {}
 
       if (err) {
-        // ffmpeg error එකක් ආවොත් මුල් buffer එකම fallback එකක් විදිහට ලබා දීම
         return resolve(inputBuffer);
       }
 
@@ -45,12 +43,12 @@ function convertToOpusVoice(inputBuffer) {
   });
 }
 
-// ⚡ Multi-Engine MP3 Stream Fetcher (Gifted + Chamindu + Fallbacks)
+// ⚡ Multi-Engine MP3 Stream Fetcher
 async function fetchVoiceAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
   const targetUrl = encodeURIComponent(videoUrl);
 
-  // Engine 1: Gifted Tech (Primary)
+  // Engine 1: Gifted Tech
   try {
     const res = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${targetUrl}`, {
       timeout: 20000,
@@ -101,7 +99,7 @@ module.exports = {
   name: 'csong',
   alias: ['channelsong', 'cplay', 'chsong'],
   category: 'channel',
-  desc: 'Download and post Audio & Card directly into any WhatsApp Channel',
+  desc: 'Download and post Audio as Voice into any WhatsApp Channel',
 
   async execute(sock, msg, args, chatJid, safeReply) {
     const targetChat = chatJid || msg.key?.remoteJid;
@@ -114,7 +112,6 @@ module.exports = {
 
     const rawInput = (Array.isArray(args) ? args.join(' ') : String(args || '')).trim();
 
-    // 🎯 Input Split (Comma හෝ Space)
     let channelInput = '';
     let songQuery = '';
 
@@ -141,34 +138,40 @@ module.exports = {
 
     sock.sendMessage(targetChat, { react: { text: "🎙️", key: msg.key } }).catch(() => {});
 
-    // 🛡️ 1. Safe Channel Extraction
+    // 🛡️ 1. Channel JID Extraction
     let channelJid = null;
 
     if (channelInput.endsWith('@newsletter')) {
       channelJid = channelInput;
     } else {
-      const cleanUrl = channelInput.split('?')[0].replace(/\/+$/, '');
-      const pathParts = cleanUrl.split('/');
-      
-      let inviteCode = null;
-      for (const part of pathParts) {
-        if (/^[a-zA-Z0-9]{20,28}$/.test(part)) {
-          inviteCode = part;
-          break;
-        }
-      }
+      const codeMatch = channelInput.match(/(?:whatsapp\.com\/channel\/|channel\/|^)([a-zA-Z0-9]{20,28})/i);
+      const inviteCode = codeMatch ? codeMatch[1] : null;
 
-      if (inviteCode && typeof sock.newsletterMetadata === 'function') {
-        try {
-          const meta = await Promise.race([
-            sock.newsletterMetadata('invite', inviteCode),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 8000))
-          ]);
-          if (meta?.id) {
-            channelJid = meta.id.includes('@newsletter') ? meta.id : `${meta.id}@newsletter`;
+      if (inviteCode) {
+        // ක්‍රමය A: newsletterMetadata API එක මඟින්
+        if (typeof sock.newsletterMetadata === 'function') {
+          try {
+            const meta = await Promise.race([
+              sock.newsletterMetadata('invite', inviteCode),
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+            ]);
+            if (meta?.id) {
+              channelJid = meta.id.includes('@newsletter') ? meta.id : `${meta.id}@newsletter`;
+            }
+          } catch (e) {
+            console.error("Invite code metadata error:", e?.message);
           }
-        } catch (e) {
-          console.error("Newsletter Metadata Error:", e?.message);
+        }
+
+        // ක්‍රමය B: Bot join වී ඇති Channels අතරින් සෙවීම (Fallback)
+        if (!channelJid && typeof sock.newsletterSubscribed === 'function') {
+          try {
+            const subs = await sock.newsletterSubscribed();
+            const found = Array.isArray(subs) ? subs.find(c => c?.invite === inviteCode || c?.id?.includes(inviteCode)) : null;
+            if (found?.id) {
+              channelJid = found.id.includes('@newsletter') ? found.id : `${found.id}@newsletter`;
+            }
+          } catch (err) {}
         }
       }
     }
@@ -176,7 +179,7 @@ module.exports = {
     if (!channelJid) {
       sock.sendMessage(targetChat, { react: { text: "❌", key: msg.key } }).catch(() => {});
       return await reply(
-        '❌ *Channel එක සොයාගත නොහැකි විය!*\n\n• කරුණාකර Channel Invite Link එක නිවැරදිදැයි බලන්න.\n• Bot අනිවාර්යයෙන්ම එම Channel එකේ *Admin* කෙනෙක් විය යුතුය.'
+        '❌ *Channel එක සොයාගත නොහැකි විය!*\n\n• Link එක වෙනුවට Channel JID එක (`120363xxx@newsletter`) ලබා දිය හැක.\n• Bot අනිවාර්යයෙන්ම එම Channel එකේ *Admin* කෙනෙක් විය යුතුය.'
       );
     }
 
@@ -237,7 +240,7 @@ module.exports = {
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { 
-          text: `⚡ *Converting & Uploading to Channel:* _${cleanTitle}_\n⚙️ Channel එකට Post වෙමින් පවතී...`, 
+          text: `⚡ *Processing Voice & Uploading:* _${cleanTitle}_\n⚙️ Channel එකට Post වෙමින් පවතී...`, 
           edit: statusMsg.key 
         }).catch(() => {});
       }
@@ -260,7 +263,7 @@ module.exports = {
 
       await new Promise(r => setTimeout(r, 2000));
 
-      // 🎙️ 2. Voice Note Convert & Send
+      // 🎙️ 2. Convert to Voice Note (OGG/Opus) and Send
       const voiceBuffer = await convertToOpusVoice(rawAudioBuffer);
 
       await sock.sendMessage(channelJid, {
