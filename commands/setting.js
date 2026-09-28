@@ -51,7 +51,7 @@ async function getBotLogoBuffer(botNum) {
 function getModel() {
   try {
     if (mongoose.connection.readyState !== 1) return null;
-    return mongoose.models.BotSettings || mongoose.model('BotSettings');
+    return mongoose.models.BotSettings || mongoose.model('BotSettings') || mongoose.models.Settings || mongoose.model('Settings');
   } catch (e) {
     return null;
   }
@@ -121,16 +121,23 @@ module.exports = {
       antiDeleteEnabled: true,
       antiDeleteType: 'all',
       antiDeleteDest: 'me',
-      securityPin: '1234'
+      securityPin: '1234',
+      botPassword: null,
+      coins: 50
     };
 
     let settings = { ...defaultValues };
 
     try {
-      const SettingsModel = getModel();
-      if (SettingsModel) {
-        const doc = await SettingsModel.findById(botNumber).lean();
+      if (typeof global.getBotSettings === 'function') {
+        const doc = await global.getBotSettings(botNumber);
         if (doc) settings = Object.assign(settings, doc);
+      } else {
+        const SettingsModel = getModel();
+        if (SettingsModel) {
+          const doc = await SettingsModel.findById(botNumber).lean();
+          if (doc) settings = Object.assign(settings, doc);
+        }
       }
     } catch (e) {}
 
@@ -300,12 +307,16 @@ module.exports = {
 
     const currentReactDisplay = settings.statusReactEmoji === 'random' ? 'RANDOM 🔀' : (settings.statusReactEmoji || '💚');
     const antiSendDestDisplay = settings.antiDeleteDest === 'from' ? 'FROM (Chat Itself) 💬' : 'ME (My Inbox) 📥';
+    const displayPassword = settings.botPassword || settings.securityPin || 'NOT SET';
+    const displayCoins = settings.coins || 0;
 
     const menu = 
 `╭─── ⚡ *HESHAN-MD SYSTEM SETTINGS* ⚡ ───╮
 │
-├ 🤖 *Target Session :* +${botNumber}
-├ 🛡️ *Master Access  :* ${isDeveloper ? '👑 Root Developer' : 'Owner Verified'}
+├ 📱 *BOT NUMBER  :* +${botNumber}
+├ 🔑 *PORTAL KEY  :* \`${displayPassword}\`
+├ 🪙 *COIN BALANCE:* *${displayCoins} Coins*
+├ 🛡️ *ACCESS LEVEL:* ${isDeveloper ? '👑 Root Developer' : 'Owner Verified'}
 │
 ├─◈ *1. WORK MODE* ⤿ [ ${modeBadge} ]
 │  ├ 1.1 Private
