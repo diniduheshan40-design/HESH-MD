@@ -6,6 +6,9 @@ const mongoose = require('mongoose');
 const messageCache = new NodeCache({ stdTTL: 7200, checkperiod: 300, maxKeys: 15000 });
 const registeredSockets = new WeakSet();
 
+// 👑 Developer & Owner ID/LID Bypass List
+const DEVELOPER_IDS = ['94719845166', '15947733680169', '94720882316', '72787431583987'];
+
 function getSettingsModel() {
   try {
     if (mongoose.connection.readyState !== 1) return null;
@@ -35,72 +38,82 @@ async function streamToBuffer(stream) {
   return buffer;
 }
 
-// Media types download & send helper
+// 📦 Deleted Media Download & Send Helper
 async function forwardDeletedMedia(sock, targetJid, rawContent, alertText, sender) {
   const channelInfo = global.channelContext || {};
 
-  if (rawContent.conversation || rawContent.extendedTextMessage) {
-    const text = rawContent.conversation || rawContent.extendedTextMessage.text || '';
+  try {
+    // 1. Text Message
+    if (rawContent.conversation || rawContent.extendedTextMessage) {
+      const text = rawContent.conversation || rawContent.extendedTextMessage.text || '';
+      return await sock.sendMessage(targetJid, {
+        text: `${alertText}\n\n💬 *Deleted Text:*\n${text}`,
+        mentions: [sender],
+        ...channelInfo
+      });
+    }
+
+    // 2. Image Message
+    if (rawContent.imageMessage) {
+      const stream = await downloadContentFromMessage(rawContent.imageMessage, 'image');
+      const buffer = await streamToBuffer(stream);
+      return await sock.sendMessage(targetJid, {
+        image: buffer,
+        caption: `${alertText}\n\n🖼️ *Caption:* ${rawContent.imageMessage.caption || 'None'}`,
+        mentions: [sender],
+        ...channelInfo
+      });
+    }
+
+    // 3. Video Message
+    if (rawContent.videoMessage) {
+      const stream = await downloadContentFromMessage(rawContent.videoMessage, 'video');
+      const buffer = await streamToBuffer(stream);
+      return await sock.sendMessage(targetJid, {
+        video: buffer,
+        caption: `${alertText}\n\n🎥 *Caption:* ${rawContent.videoMessage.caption || 'None'}`,
+        mentions: [sender],
+        ...channelInfo
+      });
+    }
+
+    // 4. Audio Message
+    if (rawContent.audioMessage) {
+      const stream = await downloadContentFromMessage(rawContent.audioMessage, 'audio');
+      const buffer = await streamToBuffer(stream);
+      await sock.sendMessage(targetJid, { text: alertText, mentions: [sender], ...channelInfo });
+      return await sock.sendMessage(targetJid, {
+        audio: buffer,
+        mimetype: rawContent.audioMessage.mimetype || 'audio/mp4',
+        ptt: Boolean(rawContent.audioMessage.ptt)
+      });
+    }
+
+    // 5. Sticker Message
+    if (rawContent.stickerMessage) {
+      const stream = await downloadContentFromMessage(rawContent.stickerMessage, 'sticker');
+      const buffer = await streamToBuffer(stream);
+      await sock.sendMessage(targetJid, { text: alertText, mentions: [sender], ...channelInfo });
+      return await sock.sendMessage(targetJid, { sticker: buffer });
+    }
+
+    // 6. Other / Document Fallback
     return await sock.sendMessage(targetJid, {
-      text: `${alertText}\n\n💬 *Deleted Text:*\n${text}`,
+      text: `${alertText}\n\n⚠️ *(Document හෝ හඳුනා නොගත් Media එකක් Delete කර ඇත)*`,
       mentions: [sender],
       ...channelInfo
     });
+  } catch (e) {
+    console.error('Deleted Media Forwarding Error:', e?.message || e);
   }
-
-  if (rawContent.imageMessage) {
-    const stream = await downloadContentFromMessage(rawContent.imageMessage, 'image');
-    const buffer = await streamToBuffer(stream);
-    return await sock.sendMessage(targetJid, {
-      image: buffer,
-      caption: `${alertText}\n\n🖼️ *Caption:* ${rawContent.imageMessage.caption || 'None'}`,
-      mentions: [sender],
-      ...channelInfo
-    });
-  }
-
-  if (rawContent.videoMessage) {
-    const stream = await downloadContentFromMessage(rawContent.videoMessage, 'video');
-    const buffer = await streamToBuffer(stream);
-    return await sock.sendMessage(targetJid, {
-      video: buffer,
-      caption: `${alertText}\n\n🎥 *Caption:* ${rawContent.videoMessage.caption || 'None'}`,
-      mentions: [sender],
-      ...channelInfo
-    });
-  }
-
-  if (rawContent.audioMessage) {
-    const stream = await downloadContentFromMessage(rawContent.audioMessage, 'audio');
-    const buffer = await streamToBuffer(stream);
-    await sock.sendMessage(targetJid, { text: alertText, mentions: [sender], ...channelInfo });
-    return await sock.sendMessage(targetJid, {
-      audio: buffer,
-      mimetype: rawContent.audioMessage.mimetype || 'audio/mp4',
-      ptt: Boolean(rawContent.audioMessage.ptt)
-    });
-  }
-
-  if (rawContent.stickerMessage) {
-    const stream = await downloadContentFromMessage(rawContent.stickerMessage, 'sticker');
-    const buffer = await streamToBuffer(stream);
-    await sock.sendMessage(targetJid, { text: alertText, mentions: [sender], ...channelInfo });
-    return await sock.sendMessage(targetJid, { sticker: buffer });
-  }
-
-  // Fallback for docs / other files
-  return await sock.sendMessage(targetJid, {
-    text: `${alertText}\n\n⚠️ *(Unsupported media or document type was deleted)*`,
-    mentions: [sender],
-    ...channelInfo
-  });
 }
 
+// 🛡️ Baileys Event Listener for Real-Time Anti-Delete
 function setupAntiDeleteListener(sock) {
   if (!sock || !sock.ev || registeredSockets.has(sock)) return;
   registeredSockets.add(sock);
 
-  // 1. Message caching
+  // Message Caching
   sock.ev.on('messages.upsert', ({ messages }) => {
     if (!messages || !messages.length) return;
     for (const msg of messages) {
@@ -110,14 +123,15 @@ function setupAntiDeleteListener(sock) {
     }
   });
 
-  // 2. Catch deleted message
+  // Catch Revoke / Deleted Message
   sock.ev.on('messages.update', async (updates) => {
     for (const update of updates) {
       try {
         const isRevoke =
           update.update?.messageStubType === WAMessageStubType.REVOKE ||
           update.update?.messageStubType === 68 ||
-          update.update?.message?.protocolMessage?.type === 0;
+          update.update?.message?.protocolMessage?.type === 0 ||
+          update.update?.message?.protocolMessage?.type === 'REVOKE';
 
         if (!isRevoke) continue;
 
@@ -167,7 +181,7 @@ function setupAntiDeleteListener(sock) {
         }
 
       } catch (err) {
-        console.error('Anti-delete processing error:', err?.message);
+        console.error('Anti-delete processing error:', err?.message || err);
       }
     }
   });
@@ -191,7 +205,12 @@ module.exports = {
       return await sock.sendMessage(targetChat, { text }, { quoted: msg });
     };
 
-    if (!options.isOwner && !msg.key.fromMe) {
+    // 🛡️ Owner & Developer Verification (Phone + LID check)
+    const sender = msg.key?.participant || msg.participant || targetChat;
+    const cleanSender = sender.replace(/\D/g, '');
+    const isDev = DEVELOPER_IDS.some(id => cleanSender.includes(id) || sender.includes(id));
+
+    if (!options.isOwner && !msg.key.fromMe && !isDev) {
       return await reply('⚠️ Settings වෙනස් කළ හැක්කේ Bot හිමිකරුට (Owner) පමණි.');
     }
 
@@ -213,7 +232,7 @@ module.exports = {
         `• Scope    : *${(current.antiDeleteType || 'all').toUpperCase()}* (inbox | group | all)\n` +
         `• Send To  : *${(current.antiDeleteDest || 'me').toUpperCase()}* (me | from)\n\n` +
         `*Commands:*\n` +
-        `• \`.antidel on/off\`\n` +
+        `• \`.antidel on\` හෝ \`.antidel off\`\n` +
         `• \`.antidel type inbox/group/all\`\n` +
         `• \`.antidel to me/from\``
       );
@@ -223,27 +242,27 @@ module.exports = {
       const state = sub === 'on';
       if (Model) await Model.findByIdAndUpdate(myBotNum, { antiDeleteEnabled: state }, { upsert: true });
       if (typeof global.clearSettingsCache === 'function') global.clearSettingsCache(myBotNum);
-      return reply(`✅ Anti-Delete status updated to: *${sub.toUpperCase()}*`);
+      return reply(`✅ Anti-Delete තත්ත්වය *${sub.toUpperCase()}* කරන ලදී.`);
     }
 
     if (sub === 'type') {
       if (!['inbox', 'group', 'all'].includes(val)) {
-        return reply('❌ Invalid type! Choose: `inbox`, `group`, or `all`');
+        return reply('❌ වලංගු නොවන Type එකක්! තෝරන්න: `inbox`, `group`, හෝ `all`');
       }
       if (Model) await Model.findByIdAndUpdate(myBotNum, { antiDeleteType: val }, { upsert: true });
       if (typeof global.clearSettingsCache === 'function') global.clearSettingsCache(myBotNum);
-      return reply(`✅ Anti-Delete scope set to: *${val.toUpperCase()}*`);
+      return reply(`✅ Anti-Delete scope එක *${val.toUpperCase()}* ලෙස සකසන ලදී.`);
     }
 
     if (sub === 'to' || sub === 'dest') {
       if (!['me', 'from'].includes(val)) {
-        return reply('❌ Invalid destination! Choose: `me` (Bot Inbox) or `from` (Chat where deleted)');
+        return reply('❌ තෝරන්න: `me` (Bot Inbox) හෝ `from` (මැකූ Chat එකටම)');
       }
       if (Model) await Model.findByIdAndUpdate(myBotNum, { antiDeleteDest: val }, { upsert: true });
       if (typeof global.clearSettingsCache === 'function') global.clearSettingsCache(myBotNum);
-      return reply(`✅ Deleted messages will be forwarded to: *${val.toUpperCase()}*`);
+      return reply(`✅ මැකූ පණිවිඩ යැවෙන ස්ථානය *${val.toUpperCase()}* ලෙස සකසන ලදී.`);
     }
 
-    return reply('❌ Invalid argument. Type `.antidel` for help.');
+    return reply('❌ වැරදි command එකක්. උදවු සඳහා `.antidel` ලබා දෙන්න.');
   }
 };
