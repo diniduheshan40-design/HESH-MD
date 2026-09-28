@@ -72,7 +72,7 @@ module.exports = {
       return await reply('⛔ *Access Denied!* මෙම විධානය Bot Owner සහ Developer ට පමණයි.');
     }
 
-    // ⚡ 3. ACTION RESOLUTION (Block ද Unblock ද යන්න හඳුනාගැනීම)
+    // ⚡ 3. ACTION RESOLUTION
     const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
     const commandUsed = rawText.slice(1).trim().split(/\s+/)[0].toLowerCase();
     const isUnblock = commandUsed.includes('unblock');
@@ -81,7 +81,6 @@ module.exports = {
     // ⚡ 4. TARGET USER RESOLUTION
     let rawTarget = null;
 
-    // ක්‍රමය 1: අංකයක් ලබා දී ඇත්නම් (.block 9477xxxxxxx / .unblock 9477xxxxxxx)
     const fullArgs = args.length > 0 ? args.join(' ') : rawText.replace(/^[./!#]?(block|unblock|userblock|userunblock)\s*/i, '');
     const cleanArgsDigits = fullArgs.replace(/\D/g, '');
 
@@ -89,7 +88,6 @@ module.exports = {
       rawTarget = `${cleanArgsDigits}@s.whatsapp.net`;
     }
 
-    // ක්‍රමය 2: මැසේජ් එකකට Reply කර ඇත්නම්
     if (!rawTarget) {
       const quoted = msg.message?.extendedTextMessage?.contextInfo;
       if (quoted?.participant) {
@@ -97,7 +95,6 @@ module.exports = {
       }
     }
 
-    // ක්‍රමය 3: Private Chat එකකදී නම්
     if (!rawTarget && !isGroup && cleanTargetChatNum !== cleanBotNum && cleanTargetChatNum !== DEVELOPER_NUMBER) {
       rawTarget = targetChat;
     }
@@ -110,7 +107,6 @@ module.exports = {
       );
     }
 
-    // Standard JID එකට සකස් කිරීම
     let targetJid = jidNormalizedUser(rawTarget);
     if (targetJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
       try {
@@ -124,7 +120,14 @@ module.exports = {
       return await reply('❌ වලංගු WhatsApp අංකයක් හඳුනාගත නොහැක.');
     }
 
-    const finalJid = `${targetDigits}@s.whatsapp.net`;
+    // WhatsApp user existence check හරහා සත්‍ය JID එක තහවුරු කර ගැනීම
+    let finalJid = `${targetDigits}@s.whatsapp.net`;
+    try {
+      const [result] = await sock.onWhatsApp(finalJid);
+      if (result?.jid) {
+        finalJid = result.jid;
+      }
+    } catch (e) {}
 
     // 🛡️ Safety Checks
     if (targetDigits === cleanBotNum) {
@@ -135,7 +138,30 @@ module.exports = {
     }
 
     try {
-      await sock.updateBlockStatus(finalJid, action);
+      // ක්‍රමය 1: Standard updateBlockStatus
+      try {
+        await sock.updateBlockStatus(finalJid, action);
+      } catch (innerErr) {
+        // ක්‍රමය 2: Low-level Query Fallback (bad-request bypass කිරීමට)
+        await sock.query({
+          tag: 'iq',
+          attrs: {
+            xmlns: 'blocklist',
+            to: '@s.whatsapp.net',
+            type: 'set'
+          },
+          content: [
+            {
+              tag: 'item',
+              attrs: {
+                action: action,
+                jid: finalJid
+              }
+            }
+          ]
+        });
+      }
+
       const reactEmoji = isUnblock ? "✅" : "🚫";
       await sock.sendMessage(targetChat, { react: { text: reactEmoji, key: msg.key } }).catch(() => {});
 
