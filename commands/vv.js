@@ -1,127 +1,60 @@
-// commands/save.js
-const { downloadContentFromMessage, jidNormalizedUser } = require('@whiskeysockets/baileys');
-
-// 🎯 ViewOnce save සඳහා වලංගු Emoji ලැයිස්තුව
-const TRIGGER_EMOJIS = ['❤️', '🥺', '😚', '🌚', '😼', '😂', '🫡', '🥱', '🙌', '🖤', '👍', '🤣', '🥰', '🫢', '🤭', '🫣', 'vv'];
-
-function deepUnwrapViewOnce(quotedMsg) {
-  if (!quotedMsg) return { mediaMsg: null, mediaType: null, isViewOnce: false };
-
-  let isViewOnce = Boolean(
-    quotedMsg?.viewOnceMessage ||
-    quotedMsg?.viewOnceMessageV2 ||
-    quotedMsg?.viewOnceMessageV2Extension
-  );
-
-  let qm = quotedMsg;
-
-  while (
-    qm?.viewOnceMessage?.message ||
-    qm?.viewOnceMessageV2?.message ||
-    qm?.viewOnceMessageV2Extension?.message ||
-    qm?.ephemeralMessage?.message ||
-    qm?.documentWithCaptionMessage?.message
-  ) {
-    if (qm?.viewOnceMessage || qm?.viewOnceMessageV2 || qm?.viewOnceMessageV2Extension) {
-      isViewOnce = true;
-    }
-    qm = qm.viewOnceMessage?.message ||
-         qm.viewOnceMessageV2?.message ||
-         qm.viewOnceMessageV2Extension?.message ||
-         qm.ephemeralMessage?.message ||
-         qm.documentWithCaptionMessage?.message;
-  }
-
-  let mediaMsg = null;
-  let mediaType = null;
-
-  if (qm?.imageMessage) {
-    mediaType = 'image';
-    mediaMsg = qm.imageMessage;
-    if (qm.imageMessage.viewOnce) isViewOnce = true;
-  } else if (qm?.videoMessage) {
-    mediaType = 'video';
-    mediaMsg = qm.videoMessage;
-    if (qm.videoMessage.viewOnce) isViewOnce = true;
-  } else if (qm?.audioMessage) {
-    mediaType = 'audio';
-    mediaMsg = qm.audioMessage;
-    if (qm.audioMessage.viewOnce) isViewOnce = true;
-  }
-
-  return { mediaMsg, mediaType, isViewOnce };
-}
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 module.exports = {
-  name: 'save',
-  alias: ['vv', 'viewonce', ...TRIGGER_EMOJIS],
+  name: 'vv',
+  alias: ['oneview', 'viewonce', 'save'],
   category: 'tools',
-  desc: 'Download and save ViewOnce photos, videos, or audios using emojis or .vv',
+  desc: 'Retrieve ViewOnce photos/videos/audio',
 
   async execute(sock, msg, args, chatJid, safeReply) {
     const targetChat = chatJid || msg.key?.remoteJid;
-    if (!targetChat) return;
+    const reply = async (text) => (typeof safeReply === 'function' ? safeReply(text) : sock.sendMessage(targetChat, { text }, { quoted: msg }));
+
+    const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+    if (!quoted) {
+      return await reply('📌 කරුණාකර ViewOnce මාධ්‍යයකට Reply කර `.vv` ලබා දෙන්න.');
+    }
+
+    const viewOnce = quoted.viewOnceMessageV2?.message || 
+                     quoted.viewOnceMessage?.message || 
+                     quoted.viewOnceMessageV2Extension?.message || 
+                     quoted;
+
+    const isImage = !!viewOnce.imageMessage;
+    const isVideo = !!viewOnce.videoMessage;
+    const isAudio = !!viewOnce.audioMessage;
+
+    if (!isImage && !isVideo && !isAudio) {
+      return await reply('❌ මෙය ViewOnce පණිවිඩයක් නොවේ!');
+    }
 
     try {
-      const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-      if (!quotedMsg) return;
+      const stanzaId = msg.message?.extendedTextMessage?.contextInfo?.stanzaId;
+      const buffer = await downloadMediaMessage(
+        { key: { id: stanzaId, remoteJid: targetChat }, message: viewOnce },
+        'buffer',
+        {}
+      );
 
-      const { mediaMsg, mediaType, isViewOnce } = deepUnwrapViewOnce(quotedMsg);
-
-      // ViewOnce එකක් නොවේ නම් අනවශ්‍ය messages නොයවා නවත්වයි
-      if (!isViewOnce || !mediaMsg || !mediaType) return;
-
-      sock.sendMessage(targetChat, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
-
-      // 1. Fast Stream Buffering
-      const stream = await downloadContentFromMessage(mediaMsg, mediaType);
-      let buffer = Buffer.from([]);
-      for await (const chunk of stream) {
-        buffer = Buffer.concat([buffer, chunk]);
-      }
-
-      if (!buffer || buffer.length === 0) return;
-
-      const originalCaption = mediaMsg.caption ? `\n\n*📝 Caption:* ${mediaMsg.caption}` : '';
-      const captionText = 
-`*⚡ HESHAN-MD VIEW ONCE SAVER ⚡*
-────────────────────────────
-*📥 Type   :* ${mediaType.toUpperCase()}
-*🟢 Status :* Successfully Retrieved${originalCaption}
-────────────────────────────
-> ⚡ ᴘᴏᴡᴇʀᴇᴅ ʙʏ ʜᴇꜱʜᴀɴ-ᴍᴅ ⚡`.trim();
-
-      // 2. Dispatch Media
-      let sendPayload = {};
-
-      if (mediaType === 'image') {
-        sendPayload = {
+      if (isImage) {
+        await sock.sendMessage(targetChat, {
           image: buffer,
-          caption: captionText,
-          ...(global.channelContext || {})
-        };
-      } else if (mediaType === 'video') {
-        sendPayload = {
+          caption: viewOnce.imageMessage?.caption || '🔓 ViewOnce Decrypted'
+        }, { quoted: msg });
+      } else if (isVideo) {
+        await sock.sendMessage(targetChat, {
           video: buffer,
-          caption: captionText,
-          mimetype: mediaMsg.mimetype || 'video/mp4',
-          ...(global.channelContext || {})
-        };
-      } else if (mediaType === 'audio') {
-        sendPayload = {
+          caption: viewOnce.videoMessage?.caption || '🔓 ViewOnce Decrypted'
+        }, { quoted: msg });
+      } else if (isAudio) {
+        await sock.sendMessage(targetChat, {
           audio: buffer,
-          mimetype: mediaMsg.mimetype || (mediaMsg.ptt ? 'audio/ogg; codecs=opus' : 'audio/mp4'),
-          ptt: Boolean(mediaMsg.ptt),
-          ...(global.channelContext || {})
-        };
+          mimetype: 'audio/mp4',
+          ptt: true
+        }, { quoted: msg });
       }
-
-      await sock.sendMessage(targetChat, sendPayload, { quoted: msg });
-      sock.sendMessage(targetChat, { react: { text: '✅', key: msg.key } }).catch(() => {});
-
     } catch (err) {
-      console.error('Save Command Error:', err?.message || err);
-      sock.sendMessage(targetChat, { react: { text: '❌', key: msg.key } }).catch(() => {});
+      await reply('❌ ViewOnce මාධ්‍යය ලබාගැනීමට නොහැකි විය.');
     }
   }
 };
