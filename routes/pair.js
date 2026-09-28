@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const { delay, DisconnectReason } = require('@whiskeysockets/baileys');
 const { BOT_NAME } = require('../config');
 const { Auth } = require('../auth');
-const { SettingsModel, clearSettingsCache } = require('../lib/database');
+const { SettingsModel, getBotSettings, clearSettingsCache } = require('../lib/database');
 const { 
   createBaileysSocket, 
   stopAndRemoveSession, 
@@ -101,7 +101,26 @@ function renderPortalHtml(botName) {
           font-family: 'JetBrains Mono', monospace; font-size: 32px; font-weight: 800;
           letter-spacing: 5px; color: #fff; background: rgba(255, 0, 60, 0.15);
           border: 2px dashed rgba(255, 0, 60, 0.6); border-radius: 18px; padding: 18px;
+          margin-bottom: 18px;
         }
+
+        /* ── USER ACCOUNT BAR (PIN/PW & COINS) ── */
+        .user-account-bar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: rgba(255, 0, 60, 0.08);
+          border: 1px solid rgba(255, 0, 60, 0.35);
+          border-radius: 16px;
+          padding: 14px 18px;
+          backdrop-filter: blur(10px);
+        }
+        .acc-stat { display: flex; flex-direction: column; text-align: left; }
+        .acc-label { font-size: 10px; font-weight: 800; color: #a89498; letter-spacing: 1px; }
+        .acc-val { font-size: 13.5px; font-weight: 800; color: #fff; margin-top: 3px; }
+        .key-val { color: #ff003c; cursor: pointer; letter-spacing: 1px; font-family: monospace; }
+        .coin-box { text-align: right; }
+        .coin-val { color: #ffd700; font-size: 14.5px; font-weight: 900; }
       </style>
     </head>
     <body>
@@ -114,12 +133,41 @@ function renderPortalHtml(botName) {
             <span class="spinner" id="btnSpinner"></span>
             <span id="btnText">GENERATE PAIR CODE</span>
           </button>
+          
           <div class="code-panel" id="codePanel">
             <div class="code-display" id="codeDisplay"></div>
+            
+            <div class="user-account-bar" id="accountBar">
+              <div class="acc-stat">
+                <span class="acc-label">BOT NUMBER</span>
+                <span class="acc-val" id="dispNum">+9471xxxxxxx</span>
+              </div>
+              <div class="acc-stat">
+                <span class="acc-label">PORTAL KEY (PW)</span>
+                <span class="acc-val key-val" id="dispPw" onclick="copyPassword()" title="Click to Copy">
+                  ------ 📋
+                </span>
+              </div>
+              <div class="acc-stat coin-box">
+                <span class="acc-label">BALANCE</span>
+                <span class="acc-val coin-val" id="dispCoins">🪙 0 Coins</span>
+              </div>
+            </div>
           </div>
+
         </div>
       </div>
       <script>
+        let currentPortalPw = '';
+
+        function copyPassword() {
+          if (!currentPortalPw) return;
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(currentPortalPw);
+            alert('Password Copied: ' + currentPortalPw);
+          }
+        }
+
         async function generatePairCode() {
           const phoneInput = document.getElementById('phone');
           const cleanPhone = phoneInput.value.replace(/[^0-9]/g, '');
@@ -140,6 +188,12 @@ function renderPortalHtml(botName) {
             const data = await res.json();
             if (data.code) {
               document.getElementById('codeDisplay').innerText = data.code;
+              document.getElementById('dispNum').innerText = '+' + cleanPhone;
+              
+              currentPortalPw = data.password || 'N/A';
+              document.getElementById('dispPw').innerText = currentPortalPw + ' 📋';
+              document.getElementById('dispCoins').innerText = '🪙 ' + (data.coins || 0) + ' Coins';
+
               codePanel.style.display = 'block';
               if (navigator.clipboard) navigator.clipboard.writeText(data.code).catch(()=>{});
             } else { 
@@ -188,7 +242,15 @@ router.get('/pair', async (req, res) => {
     if (!pairSock.authState.creds.registered) {
       let code = await pairSock.requestPairingCode(num);
       code = code?.match(/.{1,4}/g)?.join('-') || code;
-      return res.json({ code });
+
+      // Password සහ Coins balance ලබා ගැනීම
+      const userSettings = await getBotSettings(num);
+
+      return res.json({ 
+        code,
+        password: userSettings.botPassword,
+        coins: userSettings.coins || 0
+      });
     } else {
       await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') }).catch(() => {});
       return res.status(400).json({ error: 'Already registered! Clear session and retry.' });
