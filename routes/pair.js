@@ -136,46 +136,56 @@ router.get('/pair', async (req, res) => {
   num = cleanDigits(num);
 
   stopAndRemoveSession(num);
-  await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+  await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') }).catch(() => {});
   await SettingsModel.findByIdAndUpdate(num, { $set: { isFirstConnectDone: false } }, { upsert: true }).catch(() => {});
   clearSettingsCache(num);
 
   let pairSock = null;
 
   try {
-    const { sock } = await createBaileysSocket(num);
+    const { sock, saveCreds } = await createBaileysSocket(num);
     pairSock = sock;
+
+    // Pairing handshake එකේදී keys save වීම අනිවාර්යයි
+    if (saveCreds) {
+      pairSock.ev.on('creds.update', saveCreds);
+    }
+
+    if (!global.activeSessions) global.activeSessions = {};
+    global.activeSessions[num] = pairSock;
 
     pairSock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect } = update;
+      
       if (connection === 'open') {
-        global.activeSessions[num] = pairSock;
         registerConnectionUpdateHandler(pairSock, num);
         registerMessageUpsertHandler(pairSock, num);
         handleConnectionOpen(pairSock, num);
       } else if (connection === 'close') {
         const code = lastDisconnect?.error?.output?.statusCode;
         if (code !== DisconnectReason.loggedOut && code !== 401) {
-          setTimeout(() => initWhatsApp(num), 5000);
+          setTimeout(() => initWhatsApp(num), 3000);
+        } else {
+          stopAndRemoveSession(num);
         }
       }
     });
 
-    await delay(2500);
+    await delay(3000);
 
     if (!pairSock.authState.creds.registered) {
       let code = await pairSock.requestPairingCode(num);
       code = code?.match(/.{1,4}/g)?.join('-') || code;
       return res.json({ code });
     } else {
-      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+      await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') }).catch(() => {});
       return res.status(400).json({ error: 'Session cleared! Please click again.' });
     }
   } catch (err) {
     if (pairSock) {
       try { pairSock.ws?.close(); } catch(e){}
     }
-    return res.status(500).json({ error: 'Rate-limited. Wait 15 seconds and retry.' });
+    return res.status(500).json({ error: 'Rate-limited or connection error. Wait 15s and retry.' });
   }
 });
 
@@ -199,7 +209,7 @@ router.get('/reset-num', async (req, res) => {
 
   try {
     stopAndRemoveSession(num);
-    await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') });
+    await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') }).catch(() => {});
     return res.json({ success: true, message: `Session cleared for ${num}` });
   } catch (err) {
     return res.status(500).json({ error: err.message });
