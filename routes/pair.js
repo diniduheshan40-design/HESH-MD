@@ -80,6 +80,21 @@ function renderPortalHtml(botName) {
           width: 100%; padding: 18px; border: none; border-radius: 18px;
           background: linear-gradient(135deg, var(--deep-red) 0%, var(--neon-red) 100%);
           color: #fff; font-size: 15px; font-weight: 800; cursor: pointer; text-transform: uppercase;
+          display: flex; align-items: center; justify-content: center; gap: 10px;
+          transition: 0.2s;
+        }
+        .btn-generate:disabled { opacity: 0.75; cursor: not-allowed; }
+        .spinner {
+          display: none;
+          width: 18px;
+          height: 18px;
+          border: 2.5px solid rgba(255, 255, 255, 0.3);
+          border-top-color: #ffffff;
+          border-radius: 50%;
+          animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
         }
         .code-panel { display: none; margin-top: 25px; }
         .code-display {
@@ -95,7 +110,10 @@ function renderPortalHtml(botName) {
           <h1 class="brand-title">${botName}</h1>
           <p class="brand-subtitle">Enter WhatsApp Number with Country Code</p>
           <input type="tel" id="phone" class="phone-field" placeholder="e.g. 9471xxxxxxx" autofocus />
-          <button id="genBtn" class="btn-generate" onclick="generatePairCode()">GENERATE PAIR CODE</button>
+          <button id="genBtn" class="btn-generate" onclick="generatePairCode()">
+            <span class="spinner" id="btnSpinner"></span>
+            <span id="btnText">GENERATE PAIR CODE</span>
+          </button>
           <div class="code-panel" id="codePanel">
             <div class="code-display" id="codeDisplay"></div>
           </div>
@@ -106,19 +124,34 @@ function renderPortalHtml(botName) {
           const phoneInput = document.getElementById('phone');
           const cleanPhone = phoneInput.value.replace(/[^0-9]/g, '');
           if (!cleanPhone || cleanPhone.length < 10) return alert('කරුණාකර නිවැරදි අංකය ලබාදෙන්න!');
+
           const btn = document.getElementById('genBtn');
-          btn.innerText = 'GENERATING...';
+          const btnText = document.getElementById('btnText');
+          const spinner = document.getElementById('btnSpinner');
+          const codePanel = document.getElementById('codePanel');
+
+          btnText.innerText = 'GENERATING...';
+          spinner.style.display = 'inline-block';
           btn.disabled = true;
+          codePanel.style.display = 'none';
+
           try {
             const res = await fetch('/pair?num=' + cleanPhone);
             const data = await res.json();
             if (data.code) {
               document.getElementById('codeDisplay').innerText = data.code;
-              document.getElementById('codePanel').style.display = 'block';
+              codePanel.style.display = 'block';
               if (navigator.clipboard) navigator.clipboard.writeText(data.code).catch(()=>{});
-            } else { alert(data.error || 'Connection rate-limited.'); }
-          } catch(e) { alert('Server error!'); }
-          finally { btn.innerText = 'GENERATE PAIR CODE'; btn.disabled = false; }
+            } else { 
+              alert(data.error || 'Connection rate-limited.'); 
+            }
+          } catch(e) { 
+            alert('Server error! Please try again.'); 
+          } finally { 
+            btnText.innerText = 'GENERATE PAIR CODE'; 
+            spinner.style.display = 'none';
+            btn.disabled = false; 
+          }
         }
       </script>
     </body>
@@ -143,33 +176,12 @@ router.get('/pair', async (req, res) => {
   let pairSock = null;
 
   try {
-    const { sock, saveCreds } = await createBaileysSocket(num);
+    const { sock, clearSessionData } = await createBaileysSocket(num);
     pairSock = sock;
-
-    // Pairing handshake එකේදී keys save වීම අනිවාර්යයි
-    if (saveCreds) {
-      pairSock.ev.on('creds.update', saveCreds);
-    }
-
-    if (!global.activeSessions) global.activeSessions = {};
     global.activeSessions[num] = pairSock;
 
-    pairSock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect } = update;
-      
-      if (connection === 'open') {
-        registerConnectionUpdateHandler(pairSock, num);
-        registerMessageUpsertHandler(pairSock, num);
-        handleConnectionOpen(pairSock, num);
-      } else if (connection === 'close') {
-        const code = lastDisconnect?.error?.output?.statusCode;
-        if (code !== DisconnectReason.loggedOut && code !== 401) {
-          setTimeout(() => initWhatsApp(num), 3000);
-        } else {
-          stopAndRemoveSession(num);
-        }
-      }
-    });
+    registerConnectionUpdateHandler(pairSock, num, clearSessionData);
+    registerMessageUpsertHandler(pairSock, num);
 
     await delay(3000);
 
@@ -179,11 +191,11 @@ router.get('/pair', async (req, res) => {
       return res.json({ code });
     } else {
       await Auth.deleteMany({ _id: new RegExp('^' + num, 'i') }).catch(() => {});
-      return res.status(400).json({ error: 'Session cleared! Please click again.' });
+      return res.status(400).json({ error: 'Already registered! Clear session and retry.' });
     }
   } catch (err) {
     if (pairSock) {
-      try { pairSock.ws?.close(); } catch(e){}
+      try { pairSock.ws?.close(); } catch(e) {}
     }
     return res.status(500).json({ error: 'Rate-limited or connection error. Wait 15s and retry.' });
   }
