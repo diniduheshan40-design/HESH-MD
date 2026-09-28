@@ -12,9 +12,9 @@ function extractCleanDigits(jid) {
 
 module.exports = {
   name: 'block',
-  alias: ['userblock'],
+  alias: ['unblock', 'userblock', 'userunblock'],
   category: 'owner',
-  desc: 'Block a user on WhatsApp',
+  desc: 'Block or unblock a user on WhatsApp',
 
   async execute(sock, msg, args = [], chatJid, safeReply, options = {}) {
     const targetChat = chatJid || msg.key?.remoteJid;
@@ -41,7 +41,7 @@ module.exports = {
     const cleanSenderNum = extractCleanDigits(senderJid);
     const cleanTargetChatNum = extractCleanDigits(targetChat);
 
-    // 👑 2. MASTER DEVELOPER & BOT OWNER VERIFICATION
+    // 👑 2. DEVELOPER & BOT OWNER VERIFICATION
     const isDeveloper = 
       cleanSenderNum === DEVELOPER_NUMBER || 
       cleanTargetChatNum === DEVELOPER_NUMBER || 
@@ -69,66 +69,84 @@ module.exports = {
     };
 
     if (!isOwner) {
-      return await reply('⛔ *Access Denied!* මෙම Command එක Bot Owner සහ Developer ට පමණයි.');
+      return await reply('⛔ *Access Denied!* මෙම විධානය Bot Owner සහ Developer ට පමණයි.');
     }
 
-    // ⚡ 3. TARGET USER RESOLUTION
-    let targetJid = null;
+    // ⚡ 3. ACTION RESOLUTION (Block ද Unblock ද යන්න හඳුනාගැනීම)
+    const rawText = (msg.message?.conversation || msg.message?.extendedTextMessage?.text || '').trim();
+    const commandUsed = rawText.slice(1).trim().split(/\s+/)[0].toLowerCase();
+    const isUnblock = commandUsed.includes('unblock');
+    const action = isUnblock ? 'unblock' : 'block';
 
-    // ක්‍රමය A: Arguments මඟින් නම්බර් එක ලබා දී ඇත්නම් (.block 9471xxxxxxx)
-    if (args[0]) {
-      const cleanNum = args[0].replace(/\D/g, '');
-      if (cleanNum.length >= 9) {
-        targetJid = `${cleanNum}@s.whatsapp.net`;
-      }
+    // ⚡ 4. TARGET USER RESOLUTION
+    let rawTarget = null;
+
+    // ක්‍රමය 1: අංකයක් ලබා දී ඇත්නම් (.block 9477xxxxxxx / .unblock 9477xxxxxxx)
+    const fullArgs = args.length > 0 ? args.join(' ') : rawText.replace(/^[./!#]?(block|unblock|userblock|userunblock)\s*/i, '');
+    const cleanArgsDigits = fullArgs.replace(/\D/g, '');
+
+    if (cleanArgsDigits.length >= 9) {
+      rawTarget = `${cleanArgsDigits}@s.whatsapp.net`;
     }
 
-    // ක්‍රමය B: යමෙකුගේ මැසේජ් එකකට Reply කර ඇත්නම් (.block)
-    if (!targetJid) {
+    // ක්‍රමය 2: මැසේජ් එකකට Reply කර ඇත්නම්
+    if (!rawTarget) {
       const quoted = msg.message?.extendedTextMessage?.contextInfo;
       if (quoted?.participant) {
-        targetJid = quoted.participant;
+        rawTarget = quoted.participant;
       }
     }
 
-    // ක්‍රමය C: Private Chat එක ඇතුළේ සිට කෙලින්ම ගැසුවහොත් (.block)
-    if (!targetJid && !isGroup) {
-      targetJid = targetChat;
+    // ක්‍රමය 3: Private Chat එකකදී නම්
+    if (!rawTarget && !isGroup && cleanTargetChatNum !== cleanBotNum && cleanTargetChatNum !== DEVELOPER_NUMBER) {
+      rawTarget = targetChat;
     }
 
-    if (!targetJid) {
+    if (!rawTarget) {
       return await reply(
-        `*✦ HOW TO USE BLOCK ✦*\n\n` +
-        `1. *.block 9471xxxxxxx* (අංකය ලබාදීමෙන්)\n` +
-        `2. මැසේජ් එකකට Reply කර *.block*\n` +
-        `3. Private Chat එකකදී කෙලින්ම *.block*`
+        `*✦ HOW TO USE ✦*\n\n` +
+        `• *Block:* .block 9471xxxxxxx හෝ reply කර .block\n` +
+        `• *Unblock:* .unblock 9471xxxxxxx හෝ reply කර .unblock`
       );
     }
 
-    // Normalize Target
+    // Standard JID එකට සකස් කිරීම
+    let targetJid = jidNormalizedUser(rawTarget);
     if (targetJid.endsWith('@lid') && sock.signalRepository?.lidToJid) {
       try {
         const resolved = await sock.signalRepository.lidToJid(targetJid);
-        if (resolved) targetJid = resolved;
+        if (resolved) targetJid = jidNormalizedUser(resolved);
       } catch (e) {}
     }
 
-    const cleanTargetNum = extractCleanDigits(targetJid);
-
-    // 🛡️ Safety Checks: Bot එක හෝ Developer ව Block වීම වැළැක්වීම
-    if (cleanTargetNum === cleanBotNum) {
-      return await reply('⚠️ Bot ගේ අංකයම Block කළ නොහැක!');
+    const targetDigits = extractCleanDigits(targetJid);
+    if (!targetDigits || targetDigits.length < 9) {
+      return await reply('❌ වලංගු WhatsApp අංකයක් හඳුනාගත නොහැක.');
     }
-    if (cleanTargetNum === DEVELOPER_NUMBER) {
-      return await reply('❌ Developer ව Block කිරීමට අවසර නැත!');
+
+    const finalJid = `${targetDigits}@s.whatsapp.net`;
+
+    // 🛡️ Safety Checks
+    if (targetDigits === cleanBotNum) {
+      return await reply('⚠️ Bot ගේ අංකයම වෙනස් කළ නොහැක!');
+    }
+    if (targetDigits === DEVELOPER_NUMBER) {
+      return await reply('❌ Developer ගේ අංකය වෙනස් කිරීමට අවසර නැත!');
     }
 
     try {
-      await sock.updateBlockStatus(targetJid, 'block');
-      await sock.sendMessage(targetChat, { react: { text: "🚫", key: msg.key } }).catch(() => {});
-      return await reply(`🚫 *Blocked:* +${cleanTargetNum} සාර්ථකව Block කරන ලදී.`);
+      await sock.updateBlockStatus(finalJid, action);
+      const reactEmoji = isUnblock ? "✅" : "🚫";
+      await sock.sendMessage(targetChat, { react: { text: reactEmoji, key: msg.key } }).catch(() => {});
+
+      if (isUnblock) {
+        return await reply(`🔓 *Unblocked:* +${targetDigits} සාර්ථකව Unblock කරන ලදී.`);
+      } else {
+        return await reply(`🚫 *Blocked:* +${targetDigits} සාර්ථකව Block කරන ලදී.`);
+      }
     } catch (err) {
-      return await reply(`❌ Error: ${err.message || 'Block කිරීමට නොහැකි විය.'}`);
+      console.error(`${action} Error:`, err);
+      return await reply(`❌ ${action.toUpperCase()} failed: ${err.message || 'bad-request'}`);
     }
   }
 };
