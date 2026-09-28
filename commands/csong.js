@@ -1,9 +1,9 @@
-// commands/csong.js
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
+const ffmpegPath = require('ffmpeg-static');
 
 let yts;
 try {
@@ -17,20 +17,19 @@ function extractYouTubeId(url) {
   return match ? match[1] : null;
 }
 
-// ⚡ Audio Buffer එක Voice Note (OGG Opus) එකක් බවට convert කිරීම
 function convertToOpusVoice(inputBuffer) {
   return new Promise((resolve) => {
+    if (!ffmpegPath) return resolve(inputBuffer);
+
     const tempInput = path.join(os.tmpdir(), `in_${Date.now()}.mp3`);
-    const tempOutput = path.join(os.tmpdir(), `out_${Date.now()}.opus`);
+    const tempOutput = path.join(os.tmpdir(), `out_${Date.now()}.ogg`);
 
     fs.writeFileSync(tempInput, inputBuffer);
 
-    exec(`ffmpeg -y -i "${tempInput}" -c:a libopus -b:a 64k -vbr on -compression_level 10 "${tempOutput}"`, (err) => {
+    execFile(ffmpegPath, ['-y', '-i', tempInput, '-c:a', 'libopus', '-b:a', '64k', '-vbr', 'on', tempOutput], (err) => {
       try { fs.unlinkSync(tempInput); } catch (e) {}
 
-      if (err) {
-        return resolve(inputBuffer);
-      }
+      if (err) return resolve(inputBuffer);
 
       try {
         const outBuffer = fs.readFileSync(tempOutput);
@@ -43,12 +42,11 @@ function convertToOpusVoice(inputBuffer) {
   });
 }
 
-// ⚡ Multi-Engine MP3 Stream Fetcher
 async function fetchVoiceAudioStream(videoUrl) {
   const cleanId = extractYouTubeId(videoUrl);
   const targetUrl = encodeURIComponent(videoUrl);
 
-  // Engine 1: Gifted Tech
+  // Engine 1: Gifted Tech (Primary)
   try {
     const res = await axios.get(`https://api.giftedtech.web.id/api/download/ytmp3?apikey=gifted&url=${targetUrl}`, {
       timeout: 20000,
@@ -99,7 +97,7 @@ module.exports = {
   name: 'csong',
   alias: ['channelsong', 'cplay', 'chsong'],
   category: 'channel',
-  desc: 'Download and post Audio as Voice into any WhatsApp Channel',
+  desc: 'Download and post Audio & Card directly into any WhatsApp Channel',
 
   async execute(sock, msg, args, chatJid, safeReply) {
     const targetChat = chatJid || msg.key?.remoteJid;
@@ -138,17 +136,16 @@ module.exports = {
 
     sock.sendMessage(targetChat, { react: { text: "🎙️", key: msg.key } }).catch(() => {});
 
-    // 🛡️ 1. Channel JID Extraction
+    // 🛡️ 1. Safe Channel Extraction
     let channelJid = null;
 
     if (channelInput.endsWith('@newsletter')) {
       channelJid = channelInput;
     } else {
-      const codeMatch = channelInput.match(/(?:whatsapp\.com\/channel\/|channel\/|^)([a-zA-Z0-9]{20,28})/i);
+      const codeMatch = channelInput.match(/(?:whatsapp\.com\/channel\/|^)([a-zA-Z0-9]{20,28})/i);
       const inviteCode = codeMatch ? codeMatch[1] : null;
 
       if (inviteCode) {
-        // ක්‍රමය A: newsletterMetadata API එක මඟින්
         if (typeof sock.newsletterMetadata === 'function') {
           try {
             const meta = await Promise.race([
@@ -158,12 +155,9 @@ module.exports = {
             if (meta?.id) {
               channelJid = meta.id.includes('@newsletter') ? meta.id : `${meta.id}@newsletter`;
             }
-          } catch (e) {
-            console.error("Invite code metadata error:", e?.message);
-          }
+          } catch (e) {}
         }
 
-        // ක්‍රමය B: Bot join වී ඇති Channels අතරින් සෙවීම (Fallback)
         if (!channelJid && typeof sock.newsletterSubscribed === 'function') {
           try {
             const subs = await sock.newsletterSubscribed();
@@ -240,12 +234,12 @@ module.exports = {
 
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { 
-          text: `⚡ *Processing Voice & Uploading:* _${cleanTitle}_\n⚙️ Channel එකට Post වෙමින් පවතී...`, 
+          text: `⚡ *Converting Voice & Uploading:* _${cleanTitle}_\n⚙️ Channel එකට Post වෙමින් පවතී...`, 
           edit: statusMsg.key 
         }).catch(() => {});
       }
 
-      // 🎨 1. Photo Card Send
+      // 🎨 1. Photo Card
       const cardCaption = 
 `🎶 ❝ ${cleanTitle} ❞
 
@@ -277,11 +271,9 @@ module.exports = {
       }
 
       sock.sendMessage(targetChat, { react: { text: "✅", key: msg.key } }).catch(() => {});
-
       await reply(`✅ *Track Uploaded as Voice Note!*\n\n• *Track:* ${cleanTitle}\n• *Duration:* ${timestampStr}`);
 
     } catch (err) {
-      console.error('Channel audio send error:', err?.message || err);
       if (statusMsg?.key) {
         await sock.sendMessage(targetChat, { delete: statusMsg.key }).catch(() => {});
       }
